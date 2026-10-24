@@ -103,6 +103,16 @@ body {
 .dock .label b { color: var(--ink); font-weight: 500; }
 .sep { width: 1px; height: 30px; background: var(--tray-line); }
 
+.right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.who {
+  display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 999px;
+  background: var(--chip); font-size: 13.5px; white-space: nowrap; min-width: 0;
+}
+.who img { width: 24px; height: 24px; border-radius: 50%; display: block; flex: none; }
+.who span { overflow: hidden; text-overflow: ellipsis; max-width: 14ch; }
+.who a { color: var(--muted); text-decoration: none; font-size: 12.5px; }
+.who a:hover, .who a:focus-visible { color: var(--ink); text-decoration: underline; }
+a.btn { text-decoration: none; }
 .btn {
   font: 500 15px/1 var(--font-display); padding: 11px 17px; border-radius: 999px; cursor: pointer; white-space: nowrap;
   border: 1.5px solid transparent; background: var(--chip); color: var(--ink);
@@ -186,6 +196,8 @@ body {
 .nametag.pop { animation: pop .4s cubic-bezier(.3, 1.6, .5, 1); }
 
 @media (max-width: 560px) {
+  .who span { display: none; }
+  .who { padding-right: 10px; }
   .steps button { padding: 7px 8px; font-size: 11px; }
   .brand span:last-child { display: none; }
   .prompt { top: calc(62px + env(safe-area-inset-top, 0px)); }
@@ -210,12 +222,19 @@ body {
 
 <header class="topbar">
   <div class="brand"><span class="mark" aria-hidden="true"></span><span>ai buddie</span></div>
-  <nav class="steps" aria-label="Steps">
+  <div class="right">
+  <div class="who" id="who" hidden>
+    <img id="whoAvatar" alt="" width="24" height="24">
+    <span id="whoName"></span>
+    <a href="/api/auth/logout" id="signout">Sign out</a>
+  </div>
+  <nav class="steps" id="stepsNav" aria-label="Steps">
     <button type="button" data-go="shape">Shape</button>
     <button type="button" data-go="eyes">Eyes</button>
     <button type="button" data-go="paint">Paint</button>
     <button type="button" data-go="name">Name</button>
   </nav>
+  </div>
 </header>
 
 <div class="prompt" id="prompt" aria-live="polite">
@@ -226,6 +245,13 @@ body {
 <div class="ring" id="eyeRing" role="radiogroup" aria-label="Eyes" hidden></div>
 
 <div class="dock" id="dock">
+  <section data-step="signin" hidden>
+    <a class="btn primary" id="signin" href="/api/auth/login">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>
+      Sign in with Discord
+    </a>
+  </section>
+
   <section data-step="shape">
     <button class="btn" id="surprise" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2"/></svg>
@@ -1622,6 +1648,8 @@ body {
     promptEl.classList.remove('swap'); void promptEl.offsetWidth; promptEl.classList.add('swap');
   }
   const PROMPTS = {
+    loading: ['', ''],
+    signin: ['Make your own bud', 'Sign in with Discord so your bud is yours: it’s saved to your account and waits for you here.'],
     shape: ['Draw your buddy', 'Drag a loop around the eyes. Whatever you draw becomes its body.'],
     eyes: ['Pick its eyes', 'Every pair has its own personality. Tap one to try it on.'],
     paint: ['Paint it', 'Grab a brush and paint right on your buddy. Drag the empty space to turn it around.'],
@@ -1642,6 +1670,8 @@ body {
       b.toggleAttribute('aria-current', current);
     });
     dockEl.querySelectorAll('section').forEach(sec => { sec.hidden = sec.dataset.step !== s; });
+    dockEl.hidden = !dockEl.querySelector(`section[data-step="${s}"]`);
+    document.getElementById('stepsNav').hidden = s === 'signin' || s === 'loading';
     if (s !== 'eyes') hideRing();
     if (s !== 'name' && nameTimers.length) { nameTimers.forEach(clearTimeout); nameTimers = []; thinkUntil = 0; bubble.hidden = true; }
     tagEl.hidden = !(s === 'meet');
@@ -1707,7 +1737,7 @@ body {
       return;
     }
     clearTimeout(resetArmed); resetArmed = 0; resetBtn.textContent = 'Start over';
-    try { localStorage.removeItem(KEY); } catch (e) {}
+    removeSaved();
     leave3D();
     body = null; trueName = ''; nickname = ''; nickInput.value = ''; bubble.hidden = true; paintedOnce = false;
     pctx.fillStyle = BASE; pctx.fillRect(0, 0, PW, PH); paintDirty = true; undoStack.length = 0; undoBtn.disabled = true;
@@ -1763,7 +1793,7 @@ body {
       return;
     }
     if (onBody) { if (live) startSpin(x, y, false); else poke(x, y); return; }
-    if (step === 'name' || step === 'meet' || step === 'paint') { eyes.blinkStart = T; return; }
+    if (step === 'name' || step === 'meet' || step === 'paint' || step === 'signin' || step === 'loading') { eyes.blinkStart = T; return; }
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch (err) {}
     clearTimeout(pending3D);
@@ -1803,21 +1833,45 @@ body {
   cv.addEventListener('pointerup', endPointer);
   cv.addEventListener('pointercancel', endPointer);
 
-  /* ---------- persistence ---------- */
-  function maybeSave() { if (trueName && reached >= 4) save(); }
-  function save() {
-    if (!body) return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify({
-        r: body.r.map(p => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10]),
-        fx: body.fx, fy: body.fy, eyeRel: body.eyeRel, eyeR: body.eyeR, eyes: eyeStyle,
-        trueName, nickname, paint: pcv.toDataURL('image/jpeg', 0.86),
-      }));
-    } catch (e) {}
+  /* ---------- persistence: saved to the signed-in person's account ---------- */
+  // Edits after the bud is finished (eyes, paint) save on their own, a moment after you stop.
+  let saveTimer = 0, saving = null;
+  function maybeSave() {
+    if (!trueName || reached < 4) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 1200);
   }
-  function load() {
+  async function save() {
+    if (!body || !trueName) return false;
+    clearTimeout(saveTimer);
+    const payload = {
+      r: body.r.map(p => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10]),
+      fx: body.fx, fy: body.fy, eyeRel: body.eyeRel, eyeR: body.eyeR, eyes: eyeStyle,
+      trueName, nickname, paint: pcv.toDataURL('image/jpeg', 0.86),
+    };
+    const run = async () => {
+      try {
+        const res = await fetch('/api/bud', {
+          method: 'PUT', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        if (res.status === 401) { say('you got signed out. sign in again to save me', 3200); return false; }
+        if (!res.ok) throw new Error(String(res.status));
+        return true;
+      } catch (e) {
+        say('hmm, I couldn’t save just now. try again in a sec?', 3000);
+        return false;
+      }
+    };
+    saving = (saving || Promise.resolve()).then(run);
+    return saving;
+  }
+  async function removeSaved() {
+    clearTimeout(saveTimer);
+    try { await fetch('/api/bud', { method: 'DELETE', credentials: 'same-origin' }); } catch (e) {}
+  }
+  function load(d) {
     try {
-      const d = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (!d || !Array.isArray(d.r) || d.r.length !== N || !d.trueName) return false;
       if (EYES.some(e => e[0] === d.eyes)) eyeStyle = d.eyes;
       trueName = String(d.trueName).slice(0, 6); nickname = String(d.nickname || '').slice(0, 16);
@@ -1851,18 +1905,51 @@ body {
   const h0 = home();
   eyes.x = h0.x; eyes.y = h0.y; mouse.x = h0.x + 120; mouse.y = h0.y - 160;
   updateTone();
-  if (load()) {
-    reached = 4;
-    goStep('meet');
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      body.c.x = body.cT.x; body.c.y = body.cT.y;
-      body.p.forEach((p, i) => { p.x = body.c.x + body.r[i].x; p.y = body.c.y + body.r[i].y; });
-      eyes.x = body.c.x + body.eyeRel.x; eyes.y = body.c.y + body.eyeRel.y;
-      enter3D(); updateTone();
-    }));
-    setTimeout(() => say(`hi, it’s ${nickname || trueName}`, 2200), 900);
-  } else goStep('shape');
+  goStep('loading');
   requestAnimationFrame(frame);
+
+  // Who's here? Signed-in people get their saved bud back; everyone else signs in with Discord first.
+  const SIGNIN_NOTES = {
+    'not-member': 'bud is only for members of the server it lives in. Ask for an invite, then try again.',
+    error: 'That sign-in didn’t go through. Give it another try.',
+    cancelled: 'No worries. Sign in whenever you’re ready.',
+  };
+  (async () => {
+    const note = new URLSearchParams(location.search).get('signin');
+    if (note) history.replaceState(null, '', location.pathname);
+    let me = null;
+    try {
+      const res = await fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' });
+      me = await res.json().catch(() => null);
+      if (!res.ok && !me?.signedIn) me = null;
+    } catch (e) { me = null; }
+
+    if (!me || !me.signedIn) {
+      goStep('signin');
+      if (note && SIGNIN_NOTES[note]) textEl.textContent = SIGNIN_NOTES[note];
+      return;
+    }
+
+    const who = document.getElementById('who');
+    document.getElementById('whoName').textContent = me.user.name;
+    document.getElementById('whoAvatar').src = me.user.avatarUrl;
+    who.hidden = false;
+
+    if (me.bud && load(me.bud)) {
+      reached = 4;
+      goStep('meet');
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        body.c.x = body.cT.x; body.c.y = body.cT.y;
+        body.p.forEach((p, i) => { p.x = body.c.x + body.r[i].x; p.y = body.c.y + body.r[i].y; });
+        eyes.x = body.c.x + body.eyeRel.x; eyes.y = body.c.y + body.eyeRel.y;
+        enter3D(); updateTone();
+      }));
+      setTimeout(() => say(`welcome back, ${me.user.name}. it’s me, ${nickname || trueName}!`, 2600), 900);
+    } else {
+      goStep('shape');
+      if (me.error === 'load-failed') textEl.textContent = 'I couldn’t load your saved bud just now. Reload the page to try again before drawing a new one.';
+    }
+  })();
 })();
 </script>
 

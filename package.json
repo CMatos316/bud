@@ -2,5 +2,8 @@
   "name": "bud",
   "private": true,
   "type": "module",
-  "description": "bud: make your own buddy. Maker page plus the Discord bot endpoint."
+  "description": "bud: make your own buddy. Maker page, Discord sign-in, and the Discord bot endpoint.",
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
 }
