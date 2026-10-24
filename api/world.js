@@ -19,7 +19,7 @@ export async function GET(request) {
   try {
     const me = session.id;
     const buds = db().collection('guilds').doc(GUILD_ID).collection('buds');
-    const [snap, pending, sent, friendships, meDoc, photos] = await Promise.all([
+    const [snap, pending, sent, friendships, meDoc, photos, profileDoc] = await Promise.all([
       buds.select(...FIELDS).limit(MAX_BUDS).get(),
       // every unanswered note on the island: anyone can see that a bud has notes on it, not what they say
       refs.notes().where('status', '==', 'pending').select('from', 'to', 'color', 'text', 'createdAt').limit(2000).get(),
@@ -28,6 +28,7 @@ export async function GET(request) {
       refs.user(me).get(),
       // photos your bud was in (filtered by time below, so no extra index is needed)
       refs.photos().where('buds', 'array-contains', me).limit(30).get(),
+      refs.profile(me).get(),
     ]);
     // When you were last here, so your bud can greet you to match ("oh hi again!" vs "it's been forever!").
     const lastVisit = meDoc.exists ? meDoc.get('lastIslandVisit')?.toMillis() ?? null : null;
@@ -94,7 +95,7 @@ export async function GET(request) {
       ? `https://cdn.discordapp.com/avatars/${session.id}/${session.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(session.id) >> 22n) % 6}.png`;
     return json({
-      me: { id: me, name: session.name, avatarUrl, lastVisit },
+      me: { id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists },
       buds: list,
       diary,
       inbox: inbox.map((n) => ({ from: n.from, fromName: names.get(n.from) || 'someone', fromBud: budNames.get(n.from) || null, text: n.text, color: n.color })),

@@ -1816,6 +1816,10 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     if (s === 'name') startNaming();
     if (s === 'meet') {
       const nm = nickname || trueName;
+      const ask = document.getElementById('chatAgain');
+      ask.textContent = hasProfile ? 'Chat' : 'Answer its questions';
+      ask.classList.toggle('primary', !hasProfile);
+      document.getElementById('toWorld').classList.toggle('primary', hasProfile);
       setPrompt(`Meet ${esc(nm)}`, nickname && nickname !== trueName ? '' : 'Drag to spin it, tap to say hi.', true);
       if (nickname && nickname !== trueName) textEl.innerHTML = `Real name <span class="tn">${esc(trueName)}</span>. Drag to spin it, tap to say hi.`;
       showTag();
@@ -1970,6 +1974,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   cv.addEventListener('pointercancel', endPointer);
 
   if (window.BudSound) BudSound.bindToggle(document.getElementById('soundBtn'));
+  else document.getElementById('soundBtn').hidden = true;
 
   /* ---------- getting to know you: bud asks, you answer (Claude Haiku on the server) ---------- */
   let hasProfile = false, chat = null, learnedProfile = null;
@@ -2240,7 +2245,19 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
         eyes.x = body.c.x + body.eyeRel.x; eyes.y = body.c.y + body.eyeRel.y;
         enter3D(); updateTone();
       }));
-      setTimeout(() => say(`welcome back, ${me.user.name}. it’s me, ${nickname || trueName}!`, 2600), 900);
+      const openChat = new URLSearchParams(location.search).get('chat') === '1';
+      if (openChat) history.replaceState(null, '', location.pathname);
+      if (openChat) {
+        setTimeout(() => say(hasProfile ? 'ooh, catch-up time!' : `yay! okay, a few questions…`, 1600), 700);
+        setTimeout(startChat, 2100);
+      } else {
+        setTimeout(() => say(`welcome back, ${me.user.name}. it’s me, ${nickname || trueName}!`, 2600), 900);
+        if (!hasProfile) setTimeout(() => {
+          if (step !== 'meet') return;
+          say(`hey ${me.user.name}! I have a few questions for you. got a minute?`, 4200);
+          setPrompt(`${esc(nickname || trueName)} has a few questions`, 'It wants to know what you’re into, so it can help you find friends here.', true);
+        }, 3800);
+      }
     } else {
       goStep('shape');
       if (me.error === 'load-failed') textEl.textContent = 'I couldn’t load your saved bud just now. Reload the page to try again before drawing a new one.';

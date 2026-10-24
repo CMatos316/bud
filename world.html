@@ -1157,6 +1157,7 @@ const card = document.getElementById('card');
 const cardBody = document.getElementById('cardBody');
 let inbox = [];        // notes stuck on my bud: { from, fromName, fromBud, text, color }
 let diary = [];        // what my bud got up to: { at, kind, text, with?, fresh }
+let hasProfile = true; // false until you've done the getting-to-know-you chat
 let cardBud = null;
 const nameOf = (bud) => bud.data.nickname || bud.data.trueName;
 const myBud = () => buds.find((b) => b.data.isMe);
@@ -1239,6 +1240,16 @@ function renderCardBody() {
   if (!bud) return;
   const d = bud.data;
   if (d.isMe) {
+    if (!hasProfile) {
+      // it hasn't had its getting-to-know-you chat with you yet
+      const ask = el('div', 'note small');
+      ask.style.background = 'var(--n-sky)';
+      ask.append(el('p', 'text', `hey! ${nameOf(bud)} has a few questions for you.`));
+      ask.append(el('p', 'from', 'So it can help you find friends here. Takes a couple of minutes.'));
+      const r = el('div', 'row'), go = el('a', 'btn primary', 'Answer its questions');
+      go.href = '/?chat=1'; r.append(go); ask.append(r);
+      cardBody.append(ask);
+    }
     if (!inbox.length) {
       if (!diary.length) cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
       renderDiary(bud);
@@ -1482,6 +1493,10 @@ function welcomeBack(mine, lastVisit) {
       say(mine, greetingFor(lastVisit), 2800);
       const fresh = diary.filter((e) => e.fresh);
       if (OPEN_NOTES) setTimeout(showMyNotes, 900);
+      else if (!hasProfile) {
+        setTimeout(() => say(mine, pick(['hey, I have a few questions for you!', 'psst… can I ask you some stuff?', 'oh! I’ve been wanting to ask you things']), 2800), 3000);
+        setTimeout(() => { if (!photo && !composing && card.hidden) openCard(mine); }, 5600);
+      }
       else if (fresh.length) {
         // tell you the best bit, then show the whole diary
         const best = fresh.find((e) => e.kind === 'friend' || e.kind === 'note' || e.kind === 'photo') || fresh.find((e) => e.kind === 'play') || fresh[0];
@@ -1869,6 +1884,7 @@ function showCenter(title, text, linkText, href = '/') {
 
   inbox = world.inbox || [];
   diary = world.diary || [];
+  hasProfile = world.me.hasProfile !== false;
   for (const d of world.buds) {
     try { buds.push(await makeBud(d)); } catch (e) { console.error('could not build bud', d.id, e); }
   }
@@ -1915,6 +1931,7 @@ function showCenter(title, text, linkText, href = '/') {
 })();
 
 S.bindToggle(document.getElementById('soundBtn'));
+if (!window.BudSound) document.getElementById('soundBtn').hidden = true;
 S.onChange(() => S.ambient(!S.muted));   // wind and birds once sound is allowed, off when muted
 S.ambient(true);
 
