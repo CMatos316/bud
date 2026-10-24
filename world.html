@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>bud world</title>
+<title>bud island · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<meta name="theme-color" content="#BFD9FF">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -58,7 +62,9 @@ body {
 }
 .topbar > * { pointer-events: auto; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 17px; white-space: nowrap; color: var(--ink); text-decoration: none; }
-.brand .mark { width: 18px; height: 14px; border-radius: 50% 50% 44% 44%; background: #F6F2EC; box-shadow: inset 0 -3px 0 rgba(0,0,0,.13), 0 0 0 1.5px var(--chip-line); }
+.brand .mark { width: 22px; height: 22px; flex: none; overflow: visible; }
+.brand .mark-body { fill: #8DB9FF; stroke: rgba(62, 99, 184, .35); stroke-width: 3; }
+.brand .mark-eye { fill: #15161F; }
 .right { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pill {
   display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 999px;
@@ -212,7 +218,7 @@ body {
 <div id="labels" aria-hidden="true"></div>
 
 <header class="topbar">
-  <a class="brand" href="/"><span class="mark" aria-hidden="true"></span><span>ai buddie</span></a>
+  <a class="brand" href="/"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7C48 7 58 17 58 33c0 14-4 24-26 24S6 47 6 33C6 17 16 7 32 7z" class="mark-body"/><ellipse cx="21" cy="19" rx="7" ry="4" fill="#fff" opacity=".5" transform="rotate(-25 21 19)"/><ellipse cx="25" cy="34" rx="3.8" ry="5.2" class="mark-eye"/><ellipse cx="39" cy="34" rx="3.8" ry="5.2" class="mark-eye"/></svg><span>the buddie system</span></a>
   <div class="right">
     <button class="pill" id="findMe" type="button" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
