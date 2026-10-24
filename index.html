@@ -107,6 +107,10 @@ body {
 .sep { width: 1px; height: 30px; background: var(--tray-line); }
 
 .right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sound-btn { appearance: none; width: 34px; height: 34px; flex: none; border-radius: 50%; border: 0; background: var(--chip); color: var(--ink); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.sound-btn svg { width: 17px; height: 17px; }
+.sound-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.sound-btn[aria-pressed="false"] { color: var(--muted); }
 .who {
   display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 999px;
   background: var(--chip); font-size: 13.5px; white-space: nowrap; min-width: 0;
@@ -278,6 +282,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
 <header class="topbar">
   <div class="brand"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7C48 7 58 17 58 33c0 14-4 24-26 24S6 47 6 33C6 17 16 7 32 7z" class="mark-body"/><ellipse cx="21" cy="19" rx="7" ry="4" fill="#fff" opacity=".5" transform="rotate(-25 21 19)"/><ellipse cx="25" cy="34" rx="3.8" ry="5.2" class="mark-eye"/><ellipse cx="39" cy="34" rx="3.8" ry="5.2" class="mark-eye"/></svg><span>the buddie system</span></div>
   <div class="right">
+  <button class="sound-btn" id="soundBtn" type="button"></button>
   <div class="who" id="who" hidden>
     <img id="whoAvatar" alt="" width="24" height="24">
     <span id="whoName"></span>
@@ -377,9 +382,12 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
 <div class="nametag" id="nametag" hidden><span class="nick" id="tagNick"></span><span class="aka" id="tagAka"></span></div>
 <div class="bubble" id="bubble" hidden></div>
 
+<script src="/js/sound.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
 <script>
+  // sound effects and bud voices (js/sound.js); silent stand-in if it didn't load
+  const S = window.BudSound || { play() {}, babble() {}, ambient() {}, bindToggle() {} };
 (() => {
   const cv = document.getElementById('stage');
   const glCanvas = document.getElementById('gl');
@@ -628,6 +636,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
       p.vx += dx / m * f * 7; p.vy += dy / m * f * 7;
     }
     b.syv -= 0.1;
+    S.play('squish', { rate: 0.9 + Math.min(pokes.length, 8) * 0.06 });
     if (gl && gl.active) gl.rollV += (x < b.c.x ? -1 : 1) * 0.05;
     if (T < thinkUntil) return;
 
@@ -906,7 +915,9 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     pctx.beginPath(); pctx.arc(0, 0, 1, 0, Math.PI * 2); pctx.fill();
     pctx.restore();
   }
+  let paintSoundAt = 0;
   function paintTo(uv) {
+    if (performance.now() - paintSoundAt > 110) { paintSoundAt = performance.now(); S.play('paint'); }
     const px = uv.x * PW, py = (1 - uv.y) * PH, col = PALETTE[brushIdx][0];
     const lastP = painting.last;
     if (lastP && Math.hypot(px - lastP.x, py - lastP.y) < PW * 0.3) {
@@ -1269,9 +1280,10 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     if (T >= dizzyUntil && T >= sulkUntil && T >= thinkUntil) {
       if (turnAcc > Math.PI * 2 * 1.6) {
         dizzyUntil = T + 3.4; wasDizzy = true; turnAcc = 0; eyes.happyUntil = 0;
+        S.play('boing', { rate: 0.55, gain: 0.9 });
         say(pick(DIZZY), 2200);
       } else if (turnAcc > Math.PI * 2 * 0.7 && T - wheeAt > 2.5 && !gl.drag && Math.abs(gl.spinV) < 0.06) {
-        wheeAt = T; eyes.happyUntil = T + 1; say(pick(WHEE), 1400);
+        wheeAt = T; eyes.happyUntil = T + 1; S.play('whoosh', { gain: 0.7 }); say(pick(WHEE), 1400);
       }
     }
     const dizzy = T < dizzyUntil;
@@ -1353,8 +1365,12 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   /* ---------- speech bubble + name tag ---------- */
   const bubble = document.getElementById('bubble');
   let bubbleTimer = 0;
+  let nameTick = 0;
   function say(text, ms = 1800, mono = false) {
     if (!body) return;
+    if (text === '• • •') {}
+    else if (mono && ms === 0) { if (++nameTick % 2 === 0) S.play('tick', { gain: 0.35, rate: 1.5 + Math.random() * 0.3 }); }
+    else S.babble(text, trueName || 'newbud');
     bubble.textContent = text; bubble.hidden = false;
     bubble.classList.toggle('mono', mono);
     bubble.classList.toggle('talk', text.length > 26);
@@ -1571,6 +1587,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   }
 
   function chooseEyes(id) {
+    if (id !== eyeStyle) S.play('pop', { rate: 0.9 + Math.random() * 0.3 });
     eyeStyle = id; refreshPickers();
     if (gl) gl.faceKey = '';
     eyes.blinkStart = T;
@@ -1631,6 +1648,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     if (!body || dipAnim) return;
     pushUndo();
     dipAnim = { col: PALETTE[brushIdx][0], t0: T };
+    S.play('splash');
     body.syv -= 0.16; eyes.happyUntil = T + 0.8;
     say(pick(['splash!', 'blub blub', 'ooh, a bath']), 1500);
   });
@@ -1694,6 +1712,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
           clearInterval(iv);
           trueName = name;
           eyes.happyUntil = T + 1.2; body.syv -= 0.12;
+          S.play('chime');
           say('I’m ' + name + '!', 2600, true);
           nameReady(true);
         }
@@ -1742,7 +1761,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     leaving = true;
     say('see you on the island!', 1800);
     eyes.happyUntil = T + 2; body.syv -= 0.1;
-    setTimeout(() => document.body.classList.add('leaving'), 1100);
+    setTimeout(() => { document.body.classList.add('leaving'); S.play('boing', { rate: 1.2 }); setTimeout(() => S.play('whoosh'), 250); }, 1100);
     setTimeout(() => { location.href = '/world?drop=1'; }, 2200);
   }
   document.getElementById('toWorld').addEventListener('click', async (e) => {
@@ -1812,6 +1831,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   }));
 
   function shaped() {
+    S.play('pop', { rate: 0.75 }); S.play('sparkle', { gain: 0.8 });
     goStep('eyes');
     clearTimeout(pending3D);
     pending3D = setTimeout(() => {
@@ -1949,6 +1969,8 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   cv.addEventListener('pointerup', endPointer);
   cv.addEventListener('pointercancel', endPointer);
 
+  if (window.BudSound) BudSound.bindToggle(document.getElementById('soundBtn'));
+
   /* ---------- getting to know you: bud asks, you answer (Claude Haiku on the server) ---------- */
   let hasProfile = false, chat = null, learnedProfile = null;
   const chatLog = document.getElementById('chatLog'), chatChips = document.getElementById('chatChips');
@@ -2025,6 +2047,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     text = String(text || '').trim();
     if (!chat || chat.busy || chat.done || !text) return;
     chat.history.push({ role: 'you', text });
+    S.play('click');
     addLog('you', text);
     chatInput.value = ''; chatChips.textContent = '';
     budTurn();
@@ -2043,6 +2066,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     thinkUntil = 0;
     if (!data.profile) { say('oops, my notes got smudged. let’s chat again another time!', 3000); setTimeout(() => endChat(), 3200); return; }
     learnedProfile = data.profile; hasProfile = true;
+    S.play('sparkle');
     say(data.profile.summary || 'got it! I’ll remember.', 0);
     eyes.happyUntil = T + 2; body.syv -= 0.12;
     renderLearned();
@@ -2074,6 +2098,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
         body: JSON.stringify({ interests: learnedProfile.interests, lookingFor: learnedProfile.lookingFor, matchable }),
       });
     } catch (e) {}
+    S.play(matchable ? 'chime' : 'pop');
     say(matchable ? 'yay! I’ll keep an eye out for you.' : 'okay! just us for now.', 2000);
     eyes.happyUntil = T + 2; body.syv -= 0.1;
     chat = null;

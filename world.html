@@ -74,6 +74,8 @@ body {
 }
 .pill:hover { transform: translateY(-1px); }
 .pill svg { width: 15px; height: 15px; }
+.pill.icon-only { padding: 8px 10px; }
+.pill.icon-only[aria-pressed="false"] { color: var(--muted); }
 .who { padding: 4px 12px 4px 4px; font-size: 13.5px; cursor: default; }
 .who:hover { transform: none; }
 .who img { width: 24px; height: 24px; border-radius: 50%; }
@@ -268,6 +270,7 @@ body {
 <header class="topbar">
   <a class="brand" href="/"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7C48 7 58 17 58 33c0 14-4 24-26 24S6 47 6 33C6 17 16 7 32 7z" class="mark-body"/><ellipse cx="21" cy="19" rx="7" ry="4" fill="#fff" opacity=".5" transform="rotate(-25 21 19)"/><ellipse cx="25" cy="34" rx="3.8" ry="5.2" class="mark-eye"/><ellipse cx="39" cy="34" rx="3.8" ry="5.2" class="mark-eye"/></svg><span>the buddie system</span></a>
   <div class="right">
+    <button class="pill icon-only" id="soundBtn" type="button"></button>
     <button class="pill" id="findMe" type="button" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
       <span class="label">Find my bud</span>
@@ -325,12 +328,17 @@ body {
 </div>
 <div class="center" id="center" hidden><div><h2 id="centerTitle"></h2><p id="centerText"></p><a class="pill" id="centerLink" href="/"></a></div></div>
 
+<script src="/js/sound.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
 <script type="module">
 import { setExtents, buildMesh, drawEyeStyle, setClock, clamp, inPoly, distToPoly } from '/js/bud-core.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
+// sound effects and bud voices (js/sound.js); silent stand-in if it didn't load
+const S = window.BudSound || { play() {}, babble() {}, ambient() {}, bindToggle() {}, onChange() {}, muted: true };
+// buds further from the camera are quieter
+const near = (bud, k = 1) => (bud && bud.root ? clamp(14 / Math.max(1, camera.position.distanceTo(bud.root.position)), 0, 1) * k : k);
 const canvas = document.getElementById('world');
 const labels = document.getElementById('labels');
 const params = new URLSearchParams(location.search);
@@ -699,6 +707,9 @@ function freeSpot(minDistFromOthers = 2.2, near = null, spread = WALK_R) {
 }
 
 function say(bud, text, ms = 1800) {
+  if (/^z+$/.test(text)) S.play('snore', { gain: near(bud, 0.9), rate: 0.9 + (bud.b.w % 7) / 30 });
+  else if (text === '!') S.play('alert', { gain: near(bud, 1.2) });
+  else S.babble(text, bud.data.trueName, { gain: near(bud, bud.data.isMe || bud === cardBud ? 1.2 : 0.9) });
   if (!bud.bubble) { bud.bubble = document.createElement('div'); bud.bubble.className = 'bubble'; labels.appendChild(bud.bubble); }
   bud.bubble.textContent = text; bud.bubble.hidden = false;
   bud.bubble.classList.remove('pop'); void bud.bubble.offsetWidth; bud.bubble.classList.add('pop');
@@ -728,6 +739,7 @@ function updateBud(bud, dt) {
     if (bud.y <= 0) {
       bud.y = 0; bud.vy = 0; bud.sy = 0.5; bud.syv = 0.04; bud.state = 'idle'; bud.timer = 2.5;
       bud.happyUntil = T + 1.6; puff(bud.x, bud.z);
+      S.play('thump', { gain: near(bud, 1.4) });
       say(bud, 'hi everyone!', 2600);
       welcome(bud);
     }
@@ -911,7 +923,7 @@ function updateActivity(bud, dt) {
   } else if (a.kind === 'hop') {
     bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt);
     if (bud.y === 0 && bud.vy < 0) { bud.vy = 0; bud.syv -= 0.08 * RM; }
-    if (T > a.next && bud.y === 0) { bud.vy = 5.2 * RM; bud.syv += 0.06; a.next = T + rand(0.55, 0.8); if (!a.said) { a.said = true; say(bud, pick(['hop!', 'hop hop', 'boing!', 'look how high!']), 1200); } }
+    if (T > a.next && bud.y === 0) { S.play('boing', { gain: near(bud, 0.5), rate: 1 + (bud.b.h % 5) / 20 }); bud.vy = 5.2 * RM; bud.syv += 0.06; a.next = T + rand(0.55, 0.8); if (!a.said) { a.said = true; say(bud, pick(['hop!', 'hop hop', 'boing!', 'look how high!']), 1200); } }
     if (T > a.until && bud.y === 0) { bud.y = 0; endActivity(bud); }
     return;
   } else if (a.kind === 'tag') {
@@ -951,6 +963,7 @@ function updateActivity(bud, dt) {
     const touch = (bud.width + other.width) * 0.5 * 0.85 + 0.25;
     if (it && Math.hypot(other.x - bud.x, other.z - bud.z) < touch && T - g.tagAt > 1.2) {
       g.it = other; g.tagAt = T; g.freezeUntil = T + 1.8;
+      S.play('giggle', { gain: near(bud, 0.8) });
       say(bud, pick(['tag! you’re it!', 'got you!', 'tag!']), 1100);
       bud.happyUntil = T + 1; other.syv -= 0.12;
       setTimeout(() => { if (other.act && other.act.game === g) say(other, pick(['no fair!', 'aaah!', 'hey!']), 700); }, 450);
@@ -1180,6 +1193,7 @@ function clickAt(x, y) {
   if (!bud) { if (!composing) closeCard(); return; }
   if (composing) return;
   bud.syv -= 0.12; bud.happyUntil = T + 1.1; bud.lookCameraUntil = T + 2.5;
+  S.play('squish', { gain: 1 });
   const wasNapping = bud.state === 'act' && bud.act && bud.act.kind === 'nap';
   if (bud.state === 'act') endActivity(bud, 1.6);
   if (bud.state === 'walk') { bud.state = 'idle'; bud.timer = 1.6; }
@@ -1366,7 +1380,8 @@ composer.addEventListener('submit', async (e) => {
       { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 60}px) rotate(8deg) scale(.5)`, opacity: 1, offset: 0.55 },
       { transform: `translate(${dx}px, ${dy}px) rotate(-6deg) scale(.08)`, opacity: 0.4 },
     ], { duration: 640 * Math.max(RM, 0.5), easing: 'cubic-bezier(.45, 0, .8, .6)' });
-    anim.onfinish = () => flyer.remove();
+    anim.onfinish = () => { flyer.remove(); S.play('slap'); };
+    S.play('whoosh', { gain: 0.6 });
     addSticky(bud, color, 'mine', 0.6 * Math.max(RM, 0.5));
     setTimeout(() => {
       bud.syv -= 0.14; bud.happyUntil = T + 1.6;
@@ -1385,6 +1400,7 @@ async function takeBack(bud, btn) {
   try {
     await api('DELETE', `/api/notes?to=${encodeURIComponent(bud.data.id)}`);
     removeSticky(bud, (st) => st.tag === 'mine');
+    S.play('pop', { rate: 0.7 });
     bud.data.myNote = null;
     renderCardBody();
   } catch (err) { btn.disabled = false; say(bud, 'it’s stuck! try again?', 1600); }
@@ -1398,6 +1414,7 @@ async function answer(n, ans, btns) {
     inbox = inbox.filter((x) => x !== n);
     updateNotesPill();
     if (mine) removeSticky(mine, (st) => st.tag === n.from);
+    S.play(ans === 'yes' ? 'chime' : 'pop', { rate: ans === 'yes' ? 1 : 0.8 });
     if (ans === 'yes') {
       const theirs = buds.find((b) => b.data.id === n.from);
       if (theirs) becameFriends(theirs, false);
@@ -1412,6 +1429,7 @@ async function answer(n, ans, btns) {
 
 // Friends now: hearts on the name tag, and their bud comes over to say hi.
 function becameFriends(bud, viaNote) {
+  S.play('chime');
   bud.data.friend = true; bud.data.myNote = null;
   bud.tag.classList.add('friend');
   removeSticky(bud, (st) => st.tag === 'mine');
@@ -1533,6 +1551,7 @@ function enterPhoto() {
 }
 function togglePicked(bud, quiet = false) {
   if (!bud.placed || bud.state === 'drop') return;
+  if (!quiet) S.play('pop', { rate: photo.picked.includes(bud) ? 0.75 : 1.1 });
   const i = photo.picked.indexOf(bud);
   if (i >= 0) { photo.picked.splice(i, 1); bud.tag.classList.remove('picked'); if (!quiet) say(bud, pick(['aw', 'next time!', 'ok!']), 1000); }
   else if (photo.picked.length < MAX_IN_PHOTO) {
@@ -1615,6 +1634,7 @@ function countdown() {
   steps.forEach((t, i) => setTimeout(() => {
     if (!photo) return;
     countdownEl.innerHTML = ''; countdownEl.append(el('span', null, t));
+    S.play('tick', { rate: t === '1' ? 1.5 : 1 });
     if (t === '1') for (const b of photo.picked) { say(b, 'cheese!', 900); b.happyUntil = T + 2.5; b.syv -= 0.08; }
   }, i * 800));
   setTimeout(snap, steps.length * 800);
@@ -1626,6 +1646,7 @@ function snap() {
   for (const b of photo.picked) { b.happyUntil = T + 2; drawFace(b); }
   const shot = capture();
   const fl = el('div', 'flash'); document.body.append(fl); setTimeout(() => fl.remove(), 800);
+  S.play('shutter');
   photo.shot = shot;
   photo.stage = 'review';
   boothCaption.value = '';
@@ -1715,6 +1736,7 @@ boothPost.addEventListener('click', async () => {
     boothMsg.className = 'msg'; boothMsg.textContent = '';
     const a = el('a', null, 'See it in Discord'); a.href = res.url; a.target = '_blank'; a.rel = 'noopener';
     boothMsg.append('Posted to #photo-booth. ', a);
+    S.play('ding');
     boothMsg.hidden = false;
     boothPost.textContent = 'Done';
     boothPost.disabled = false;
@@ -1891,6 +1913,10 @@ function showCenter(title, text, linkText, href = '/') {
   setTimeout(() => document.getElementById('title').classList.add('fade'), DROP ? 9000 : 6000);
   requestAnimationFrame(frame);
 })();
+
+S.bindToggle(document.getElementById('soundBtn'));
+S.onChange(() => S.ambient(!S.muted));   // wind and birds once sound is allowed, off when muted
+S.ambient(true);
 
 document.getElementById('findMe').addEventListener('click', () => {
   const mine = buds.find((b) => b.data.isMe);
