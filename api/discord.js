@@ -3,9 +3,10 @@
 import { waitUntil } from '@vercel/functions';
 import {
   isValidRequest, discordApi, InteractionType, ResponseType, EPHEMERAL,
-  SITE_URL, WELCOME_CHANNEL_ID, APP_ID, linkButton, button, row,
+  SITE_URL, WELCOME_CHANNEL_ID, BUDS_CHANNEL_ID, APP_ID, linkButton, button, row,
 } from '../lib/discord.js';
 import { sendQuestions, handleQuestionInteraction } from '../lib/questions.js';
+import { publishIssue } from '../lib/newsletter.js';
 
 const json = (data, status = 200) => Response.json(data, { status });
 
@@ -40,6 +41,18 @@ export async function POST(request) {
         `${pick(HELLOS)} Let’s make you a buddy of your own: shape it, paint it, and it’ll pick its own name.`,
         [row(linkButton('Make your bud', SITE_URL))],
       );
+    }
+
+    if (name === 'bud-news') {
+      waitUntil((async () => {
+        let content;
+        try {
+          const r = await publishIssue({ force: true });
+          content = r.published ? `The Island Times is out in <#${BUDS_CHANNEL_ID}>!` : 'Couldn’t publish just now.';
+        } catch (err) { console.error(err); content = 'Something went wrong putting the paper together. Check the Vercel logs.'; }
+        await discordApi(`/webhooks/${APP_ID}/${interaction.token}/messages/@original`, { method: 'PATCH', body: { content } }).catch(console.error);
+      })());
+      return json({ type: ResponseType.DEFERRED_CHANNEL_MESSAGE, data: { flags: EPHEMERAL } });
     }
 
     if (name === 'bud-nudge') {

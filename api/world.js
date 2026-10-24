@@ -4,6 +4,8 @@ import { db, refs, Timestamp } from '../lib/firebase.js';
 import { GUILD_ID } from '../lib/discord.js';
 import { budForWorld } from '../lib/bud.js';
 import { RETRY_AFTER_MS } from '../lib/notes.js';
+import { latestIssue } from '../lib/newsletter.js';
+import { sameOrigin } from '../lib/session.js';
 import { lifeDiary, hobbyOf, HOBBY_LABEL } from '../lib/life.js';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -19,7 +21,7 @@ export async function GET(request) {
   try {
     const me = session.id;
     const buds = db().collection('guilds').doc(GUILD_ID).collection('buds');
-    const [snap, pending, sent, friendships, meDoc, photos, profileDoc] = await Promise.all([
+    const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news] = await Promise.all([
       buds.select(...FIELDS).limit(MAX_BUDS).get(),
       // every unanswered note on the island: anyone can see that a bud has notes on it, not what they say
       refs.notes().where('status', '==', 'pending').select('from', 'to', 'color', 'text', 'createdAt').limit(2000).get(),
@@ -29,6 +31,7 @@ export async function GET(request) {
       // photos your bud was in (filtered by time below, so no extra index is needed)
       refs.photos().where('buds', 'array-contains', me).limit(30).get(),
       refs.profile(me).get(),
+      latestIssue().catch(() => null),
     ]);
     // When you were last here, so your bud can greet you to match ("oh hi again!" vs "it's been forever!").
     const lastVisit = meDoc.exists ? meDoc.get('lastIslandVisit')?.toMillis() ?? null : null;
@@ -98,10 +101,23 @@ export async function GET(request) {
       me: { id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists, dms: !meDoc.get?.('questionsOff') },
       buds: list,
       diary,
+      news: news ? { ...news, seen: meDoc.exists && meDoc.get('newsSeen') === news.id } : null,
       inbox: inbox.map((n) => ({ from: n.from, fromName: names.get(n.from) || 'someone', fromBud: budNames.get(n.from) || null, text: n.text, color: n.color })),
     });
   } catch (err) {
     console.error('loading world failed:', err);
     return json({ error: 'could not load the world' }, 500);
   }
+}
+
+// The island remembers which Island Times issue you've read, so it only opens by itself once.
+export async function POST(request) {
+  if (!sameOrigin(request)) return json({ error: 'wrong origin' }, 403);
+  const session = readSession(request);
+  if (!session) return json({ error: 'sign in first' }, 401);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+  if (typeof body?.newsSeen !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.newsSeen)) return json({ error: 'bad issue' }, 400);
+  await refs.user(session.id).set({ newsSeen: body.newsSeen }, { merge: true });
+  return json({ saved: true });
 }

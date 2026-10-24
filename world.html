@@ -18,7 +18,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#BFD9FF">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,800&family=Fredoka:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: the whole screen is sky with the floating island in the middle; a slim top bar, name tags and
    speech bubbles float over the 3D scene, and a small hint pill sits at the bottom. */
@@ -210,6 +210,67 @@ body { transition: background 2s linear; }
 .dm-row { justify-content: space-between; border-top: 1px solid var(--chip-line); padding-top: 10px; }
 .dm-row .muted { font-size: 13px; }
 .dm-row .btn { padding: 7px 12px; font-size: 13px; }
+/* ---------- The Island Times ---------- */
+.pill .newdot { width: 8px; height: 8px; border-radius: 50%; background: #E2557A; margin-left: -2px; }
+.paper-wrap {
+  position: fixed; inset: 0; z-index: 11; display: grid; place-items: start center; overflow-y: auto;
+  background: rgba(20, 18, 40, .5); padding: calc(24px + env(safe-area-inset-top, 0px)) 16px 32px; box-sizing: border-box;
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+}
+.paper {
+  --paper: #FBF7EE; --paper-ink: #2B2A33; --paper-mute: #6E6A79; --paper-rule: rgba(43, 42, 51, .2); --paper-tint: #F2EBDC;
+  position: relative; width: min(640px, 100%); box-sizing: border-box; padding: 28px 30px 24px; border-radius: 18px;
+  background: var(--paper); color: var(--paper-ink); box-shadow: 0 40px 80px -40px rgba(0, 0, 0, .6);
+  background-image: radial-gradient(rgba(120, 100, 60, .05) 1px, transparent 1px); background-size: 4px 4px;
+  animation: rise .4s cubic-bezier(.2, .9, .3, 1.1); font-family: var(--font-display);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .paper { --paper: #26232F; --paper-ink: #EEEAF6; --paper-mute: #A9A4BA; --paper-rule: rgba(238, 234, 246, .18); --paper-tint: #302C3B; } }
+:root[data-theme="dark"] .paper { --paper: #26232F; --paper-ink: #EEEAF6; --paper-mute: #A9A4BA; --paper-rule: rgba(238, 234, 246, .18); --paper-tint: #302C3B; }
+.paper .x { position: absolute; top: 12px; right: 14px; appearance: none; border: 0; background: none; color: var(--paper-mute); font-size: 26px; line-height: 1; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
+.paper .x:focus-visible { outline: 2px solid var(--paper-ink); }
+.mast { text-align: center; border-bottom: 3px double var(--paper-rule); padding-bottom: 12px; margin-bottom: 16px; }
+.mast .kicker { margin: 0; font: 500 11.5px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--paper-mute); }
+.mast h2 { margin: 6px 0 4px; font-family: Fraunces, Georgia, serif; font-weight: 800; font-size: clamp(34px, 7vw, 50px); letter-spacing: -0.02em; line-height: 1; }
+.mast .dateline { margin: 8px 0 0; display: flex; justify-content: space-between; font: 500 12px var(--font-mono); color: var(--paper-mute); border-top: 1px solid var(--paper-rule); padding-top: 7px; }
+.paper.spooky .mast h2 { color: #E0731A; }
+.paper .lede { font-family: Fraunces, Georgia, serif; font-size: 19px; line-height: 1.45; margin: 0 0 18px; font-style: italic; color: var(--paper-ink); }
+.paper .lede::first-letter { font-style: normal; font-weight: 800; font-size: 3em; float: left; line-height: .8; margin: 6px 8px 0 0; }
+.paper .stats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--paper-rule); border-bottom: 1px solid var(--paper-rule); margin-bottom: 18px; }
+.paper .stat { text-align: center; padding: 12px 6px; }
+.paper .stat + .stat { border-left: 1px solid var(--paper-rule); }
+.paper .stat b { display: block; font-family: Fraunces, Georgia, serif; font-weight: 800; font-size: 34px; line-height: 1.05; }
+.paper .stat span { font: 500 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--paper-mute); }
+.paper section.col { margin-bottom: 16px; }
+.paper h3 { margin: 0 0 10px; font: 600 12px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--paper-mute); display: flex; align-items: center; gap: 10px; }
+.paper h3::after { content: ""; flex: 1; height: 1px; background: var(--paper-rule); }
+.paper .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 22px; }
+.por { --c: #CFC8BA; position: relative; display: inline-block; flex: none; width: 34px; height: 30px; background: var(--c) center / cover;
+  border-radius: 50% 50% 44% 44% / 58% 58% 42% 42%; box-shadow: inset 0 -3px 0 rgba(0,0,0,.12), 0 2px 6px -3px rgba(0,0,0,.4); }
+.por::before, .por::after { content: ""; position: absolute; top: 44%; width: 4px; height: 6px; border-radius: 50%; background: #15161F; }
+.por::before { left: 34%; } .por::after { right: 34%; }
+.por.big { width: 76px; height: 66px; }
+.por.big::before, .por.big::after { width: 7px; height: 11px; }
+.paper .newbuds { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.paper .budtag { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; font-size: 15px; }
+.paper .pairs { display: grid; gap: 8px; }
+.paper .pair { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; }
+.paper .pair .heart { color: #E2557A; margin: 0 2px; }
+.paper .spot { display: flex; gap: 14px; align-items: center; background: var(--paper-tint); border-radius: 14px; padding: 12px 14px; }
+.paper .spot h4 { margin: 0; font-family: Fraunces, Georgia, serif; font-size: 22px; font-weight: 700; }
+.paper .spot p { margin: 2px 0 0; color: var(--paper-mute); font-size: 13.5px; }
+.paper .spot blockquote { margin: 6px 0 0; font-family: Fraunces, Georgia, serif; font-style: italic; font-size: 15px; color: var(--paper-ink); }
+.paper .gossip { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.paper .gossip li { display: flex; gap: 10px; align-items: center; font-size: 15px; line-height: 1.35; }
+.paper .gossip b { font-weight: 600; }
+.paper .quiet { margin: 0; color: var(--paper-mute); font-size: 14px; }
+.paper footer { margin-top: 14px; padding-top: 10px; border-top: 3px double var(--paper-rule); text-align: center; font: 500 11.5px var(--font-mono); color: var(--paper-mute); letter-spacing: .06em; }
+@media (max-width: 560px) {
+  .paper { padding: 22px 18px 18px; }
+  .paper .grid2 { grid-template-columns: 1fr; }
+  .paper .lede { font-size: 17px; }
+  .paper .stat b { font-size: 28px; }
+}
+@media (prefers-reduced-motion: reduce) { .paper { animation: none; } }
 .diary h3 { margin: 4px 0 6px; font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
 .diary ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .diary li { display: grid; grid-template-columns: 22px 1fr; gap: 2px 8px; align-items: start; font-size: 14.5px; line-height: 1.35; }
@@ -290,6 +351,10 @@ body { transition: background 2s linear; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
       <span class="label">Find my bud</span>
     </button>
+    <button class="pill" id="newsBtn" type="button" hidden aria-label="The Island Times">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 5h12v14H6a2 2 0 0 1-2-2V8"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M8 9h6M8 12.5h6M8 16h4"/></svg>
+      <span class="label">News</span><span class="newdot" id="newsDot" hidden></span>
+    </button>
     <button class="pill" id="photoBtn" type="button" hidden aria-label="Photo booth">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
       <span class="label">Photo</span>
@@ -341,6 +406,20 @@ body { transition: background 2s linear; }
     </div>
   </div>
 </div>
+<div class="paper-wrap" id="paperWrap" hidden role="dialog" aria-modal="true" aria-labelledby="paperTitle">
+  <article class="paper" id="paper">
+    <button class="x" type="button" id="paperClose" aria-label="Close">&times;</button>
+    <header class="mast">
+      <p class="kicker" id="paperKicker">Weekly edition</p>
+      <h2 id="paperTitle">The Island Times</h2>
+      <p class="dateline"><span id="paperDate"></span><span id="paperPop"></span></p>
+    </header>
+    <p class="lede" id="paperNote"></p>
+    <div class="stats" id="paperStats"></div>
+    <div id="paperBody"></div>
+    <footer>written by Scoop, the island’s bud reporter</footer>
+  </article>
+</div>
 <div class="center" id="center" hidden><div><h2 id="centerTitle"></h2><p id="centerText"></p><a class="pill" id="centerLink" href="/"></a></div></div>
 
 <script src="/js/sound.js"></script>
@@ -359,7 +438,7 @@ const labels = document.getElementById('labels');
 const params = new URLSearchParams(location.search);
 const DROP = params.get('drop') === '1';
 const OPEN_NOTES = params.get('notes') === '1';
-if (DROP || OPEN_NOTES) history.replaceState(null, '', location.pathname);
+if (DROP || OPEN_NOTES || params.get('news') === '1') history.replaceState(null, '', location.pathname);
 
 const HELLOS = ['hi!', 'hey!', 'oh hi', 'hello!', 'yo', 'hiii'];
 const POKED = ['hehe', 'hi there!', 'boop', 'oh! hello', 'that tickles'];
@@ -1756,6 +1835,76 @@ function becameFriends(bud, viaNote) {
   if (cardBud === bud) renderCardBody();
 }
 
+/* ---------------- The Island Times ---------------- */
+let news = null;
+const paperWrap = document.getElementById('paperWrap');
+function portrait(id, big = false) {
+  const p = el('span', 'por' + (big ? ' big' : ''));
+  const bud = buds.find((b) => b.data.id === id);
+  if (bud && bud.data.paint) p.style.backgroundImage = `url("${bud.data.paint}")`;
+  p.setAttribute('aria-hidden', 'true');
+  return p;
+}
+function section(title, ...kids) {
+  const sec = el('section', 'col');
+  sec.append(el('h3', null, title), ...kids);
+  return sec;
+}
+function openNews() {
+  if (!news) return;
+  closeCard(); if (photo) return;
+  const paper = document.getElementById('paper');
+  paper.classList.toggle('spooky', !!news.halloween);
+  document.getElementById('paperKicker').textContent = news.halloween ? 'Spooky season edition 🎃' : 'Weekly edition';
+  document.getElementById('paperDate').textContent = new Date(news.publishedAt).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  document.getElementById('paperPop').textContent = `pop. ${news.population}`;
+  document.getElementById('paperNote').textContent = news.note || '';
+  const stats = document.getElementById('paperStats'); stats.textContent = '';
+  for (const [n, label] of [[news.newBuds.length, news.newBuds.length === 1 ? 'new bud' : 'new buds'], [news.friendships.length, news.friendships.length === 1 ? 'new friendship' : 'new friendships'], [news.photos, news.photos === 1 ? 'photo' : 'photos']]) {
+    const st = el('div', 'stat'); st.append(el('b', null, String(n)), el('span', null, label)); stats.append(st);
+  }
+  const body = document.getElementById('paperBody'); body.textContent = '';
+  const grid = el('div', 'grid2');
+  // new buds
+  const nb = el('div', 'newbuds');
+  if (news.newBuds.length) for (const b of news.newBuds.slice(0, 12)) { const t = el('span', 'budtag'); t.append(portrait(b.id), b.name); nb.append(t); }
+  else nb.append(el('p', 'quiet', 'No new faces this week. Know someone who should make a bud?'));
+  grid.append(section('New on the island', nb));
+  // friendships
+  const fr = el('div', 'pairs');
+  if (news.friendships.length) for (const [a, b] of news.friendships) {
+    const row = el('div', 'pair'); row.append(portrait(a.id), a.name, el('span', 'heart', '♥'), portrait(b.id), b.name); fr.append(row);
+  } else fr.append(el('p', 'quiet', 'No new friendships yet. A sticky note is a good start!'));
+  grid.append(section('New friends', fr));
+  body.append(grid);
+  // bud of the week
+  if (news.budOfWeek) {
+    const spot = el('div', 'spot'), txt = el('div');
+    txt.append(el('h4', null, news.budOfWeek.name), el('p', null, `loves ${news.budOfWeek.hobby}`));
+    if (news.budOfWeek.line) txt.append(el('blockquote', null, `“${news.budOfWeek.line}”`));
+    spot.append(portrait(news.budOfWeek.id, true), txt);
+    body.append(section('Bud of the week', spot));
+  }
+  // gossip
+  if (news.gossip.length) {
+    const ul = el('ul', 'gossip');
+    for (const g of news.gossip) { const li = el('li'); const span = el('span'); span.append(el('b', null, g.name), ` ${g.text}`); li.append(portrait(g.id), span); ul.append(li); }
+    body.append(section('Island gossip', ul));
+  }
+  body.append(section('Most popular hobby', el('p', 'quiet', `${news.topHobby.label}, loved by ${news.topHobby.count} ${news.topHobby.count === 1 ? 'bud' : 'buds'}`)));
+  paperWrap.hidden = false; paperWrap.scrollTop = 0;
+  S.play('pop', { rate: 0.8 });
+  document.getElementById('paperClose').focus();
+  if (!news.seen) {
+    news.seen = true; document.getElementById('newsDot').hidden = true;
+    api('POST', '/api/world', { newsSeen: news.id }).catch(() => {});
+  }
+}
+function closeNews() { paperWrap.hidden = true; }
+document.getElementById('newsBtn').addEventListener('click', openNews);
+document.getElementById('paperClose').addEventListener('click', closeNews);
+paperWrap.addEventListener('click', (e) => { if (e.target === paperWrap) closeNews(); });
+
 /* ---------------- coming back to the island ---------------- */
 // Your bud was busy with its own life. Then it notices you're here, and comes running.
 function greetingFor(lastVisit) {
@@ -1840,6 +1989,7 @@ notesPill.addEventListener('click', showMyNotes);
 document.getElementById('cardClose').addEventListener('click', closeCard);
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (!paperWrap.hidden) { closeNews(); return; }
   if (photo) { if (!document.getElementById('booth').hidden || photo.stage === 'pick') exitPhoto(); return; }
   if (composing) { closeComposer(); } else closeCard();
 });
@@ -2186,6 +2336,14 @@ function showCenter(title, text, linkText, href = '/') {
 
   inbox = world.inbox || [];
   diary = world.diary || [];
+  news = world.news || null;
+  if (news) {
+    document.getElementById('newsBtn').hidden = false;
+    document.getElementById('newsDot').hidden = !!news.seen;
+    const OPEN_NEWS = params.get('news') === '1';
+    if (OPEN_NEWS) setTimeout(openNews, 1200);
+    else if (!news.seen && !DROP) setTimeout(() => { if (card.hidden && !photo && !composing) openNews(); }, 9500);
+  }
   hasProfile = world.me.hasProfile !== false;
   dmsOn = world.me.dms !== false;
   for (const d of world.buds) {
