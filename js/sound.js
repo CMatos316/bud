@@ -4,7 +4,7 @@
 // window.BudSound.play(name, opts) · .babble(text, seed, opts) · .ambient(on) · .muted / .setMuted(bool)
 (function () {
   const KEY = 'bud-sound';
-  let ctx = null, master = null, unlocked = false, muted = false, noiseBuf = null, amb = null, babbling = 0;
+  let ctx = null, master = null, unlocked = false, muted = false, noiseBuf = null, amb = null, babbling = 0, night = false;
   try { muted = localStorage.getItem(KEY) === 'off'; } catch (e) {}
   const listeners = new Set();
 
@@ -127,13 +127,23 @@
     src.connect(f); f.connect(g); g.connect(master);
     src.start(); lfo.start();
     amb = { src, g };
+    // birds by day; crickets (and the odd owl) by night
     const bird = () => {
       if (!amb) return;
       if (ready()) {
-        const base = 2200 + Math.random() * 1400, n = 2 + Math.floor(Math.random() * 3);
-        for (let i = 0; i < n; i++) tone({ f0: base, f1: base * (1.15 + Math.random() * 0.3), dur: 0.07, gain: 0.025, at: i * 0.11 });
+        if (night) {
+          if (Math.random() < 0.08) {
+            tone({ f0: 420, f1: 390, dur: 0.35, gain: 0.03, attack: 0.08 }); tone({ f0: 400, f1: 360, dur: 0.5, gain: 0.03, attack: 0.08, at: 0.45 });
+          } else {
+            const base = 4200 + Math.random() * 500;
+            for (let i = 0; i < 3; i++) tone({ f0: base, dur: 0.03, gain: 0.012, at: i * 0.06, attack: 0.004 });
+          }
+        } else {
+          const base = 2200 + Math.random() * 1400, n = 2 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < n; i++) tone({ f0: base, f1: base * (1.15 + Math.random() * 0.3), dur: 0.07, gain: 0.025, at: i * 0.11 });
+        }
       }
-      amb.bird = setTimeout(bird, 7000 + Math.random() * 12000);
+      amb.bird = setTimeout(bird, night ? 700 + Math.random() * 900 : 7000 + Math.random() * 12000);
     };
     amb.bird = setTimeout(bird, 4000);
   }
@@ -161,6 +171,7 @@
 
   window.BudSound = {
     play, babble, ambient, setMuted, bindToggle, onChange: (f) => listeners.add(f),
+    setNight: (n) => { night = !!n; },
     get muted() { return muted; }, get ready() { return ready(); },
   };
 })();
