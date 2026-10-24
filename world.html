@@ -924,8 +924,13 @@ function updateActivity(bud, dt) {
       return;
     }
     if (T < g.startAt) return;
-    a.moving = true;
     const it = g.it === bud;
+    if (it && T < g.freezeUntil) {   // counting to three after being tagged
+      a.moving = false;
+      bud.heading += angleTo(bud.heading, Math.atan2(other.x - bud.x, other.z - bud.z)) * Math.min(1, dt * 5);
+      return;
+    }
+    a.moving = true;
     let mx, mz;
     if (it) { mx = other.x - bud.x; mz = other.z - bud.z; }
     else {
@@ -943,14 +948,39 @@ function updateActivity(bud, dt) {
     bud.heading += angleTo(bud.heading, Math.atan2(mx, mz)) * Math.min(1, dt * 8);
     const before = Math.sin(bud.hopPhase); bud.hopPhase += dt * 11;
     if (Math.sin(bud.hopPhase) * before < 0) bud.syv -= 0.04 * RM;
-    if (it && Math.hypot(other.x - bud.x, other.z - bud.z) < 1.15 && T - g.tagAt > 1.2) {
-      g.it = other; g.tagAt = T;
+    const touch = (bud.width + other.width) * 0.5 * 0.85 + 0.25;
+    if (it && Math.hypot(other.x - bud.x, other.z - bud.z) < touch && T - g.tagAt > 1.2) {
+      g.it = other; g.tagAt = T; g.freezeUntil = T + 1.8;
       say(bud, pick(['tag! you’re it!', 'got you!', 'tag!']), 1100);
       bud.happyUntil = T + 1; other.syv -= 0.12;
+      setTimeout(() => { if (other.act && other.act.game === g) say(other, pick(['no fair!', 'aaah!', 'hey!']), 700); }, 450);
+      setTimeout(() => { if (other.act && other.act.game === g && g.it === other) say(other, '1… 2… 3!', 800); }, 1000);
     }
     return;
   }
   if (T > a.until) endActivity(bud);
+}
+
+// Buds are solid: if two get closer than their bodies allow, nudge them apart.
+// Someone holding still (card open, posing, being written to) stays put and the other one moves.
+function separateBuds() {
+  for (let i = 0; i < buds.length; i++) {
+    const a = buds[i];
+    if (!a.placed || a.state === 'drop' || a.y > 1) continue;
+    for (let j = i + 1; j < buds.length; j++) {
+      const b = buds[j];
+      if (!b.placed || b.state === 'drop' || b.y > 1) continue;
+      const dx = b.x - a.x, dz = b.z - a.z, min = (a.width + b.width) * 0.5 * 0.85;
+      if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
+      const d = Math.hypot(dx, dz);
+      if (d >= min) continue;
+      const nx = d > 1e-4 ? dx / d : Math.cos(i + j), nz = d > 1e-4 ? dz / d : Math.sin(i + j), push = min - d;
+      const aStill = a.held || a.pose, bStill = b.held || b.pose;
+      const wa = aStill && !bStill ? 0 : bStill && !aStill ? 1 : 0.5;
+      a.x -= nx * push * wa; a.z -= nz * push * wa;
+      b.x += nx * push * (1 - wa); b.z += nz * push * (1 - wa);
+    }
+  }
 }
 
 function nearestBud(bud, within) {
@@ -1749,6 +1779,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
   setClock(T);
   for (const bud of buds) if (bud.placed) { updateBud(bud, dt); drawFace(bud); animateStickies(bud, dt); }
+  separateBuds();
   photoTick();
   for (const c of clouds) {
     c.a += c.sp * dt;
