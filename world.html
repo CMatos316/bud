@@ -738,6 +738,7 @@ function updateBud(bud, dt) {
     if (d < 0.25) {
       bud.state = 'idle'; bud.timer = rand(1.5, 5); bud.hopPhase = 0;
       if (bud.greetOnArrive && bud.greetOnArrive.state !== 'drop') { startGreeting(bud, bud.greetOnArrive); bud.greetOnArrive = null; }
+      if (bud.onArrive) { const done = bud.onArrive; bud.onArrive = null; bud.rush = false; done(); }
     } else {
       // steer toward the target, around trees, and away from other buds
       let mx = dx / d, mz = dz / d;
@@ -755,7 +756,7 @@ function updateBud(bud, dt) {
         }
       }
       const m = Math.hypot(mx, mz) || 1;
-      const sp = bud.pose ? bud.speed * 1.7 : bud.speed;
+      const sp = bud.pose || bud.rush ? bud.speed * 1.8 : bud.speed;
       bud.x += mx / m * sp * dt; bud.z += mz / m * sp * dt;
       const want = Math.atan2(mx, mz);
       bud.heading += angleTo(bud.heading, want) * Math.min(1, dt * 6);
@@ -1197,6 +1198,60 @@ function becameFriends(bud, viaNote) {
   if (cardBud === bud) renderCardBody();
 }
 
+/* ---------------- coming back to the island ---------------- */
+// Your bud was busy with its own life. Then it notices you're here, and comes running.
+function greetingFor(lastVisit) {
+  if (!lastVisit) return pick(['oh! hi! welcome to the island!', 'you found the island!']);
+  const away = Date.now() - lastVisit, min = 60e3, hr = 60 * min, day = 24 * hr;
+  if (away < 10 * min) return pick(['oh, hi again!', 'back already? hehe']);
+  if (away < 6 * hr) return pick(['you’re back!', 'hiii, you’re back!', 'there you are!']);
+  if (away < 3 * day) return pick(['you’re back!! I missed you', 'hi!! where were you?']);
+  return pick(['YOU’RE BACK!! it’s been forever', 'is that really you?! I missed you so much']);
+}
+function welcomeBack(mine, lastVisit) {
+  if (photo || composing || mine.state === 'drop') return;
+  // 1. it notices you
+  mine.state = 'idle'; mine.target = null; mine.partner = null; mine.held = true;
+  mine.lookCameraUntil = T + 30; mine.syv -= 0.12;
+  say(mine, '!', 900);
+  setTimeout(() => { mine.syv -= 0.16; }, 280);
+  setTimeout(() => { mine.syv -= 0.16; mine.happyUntil = T + 1.5; }, 620);
+  // 2. it runs to the front of the island, toward you
+  setTimeout(() => {
+    if (photo || composing) { mine.held = false; return; }
+    const yaw = cam.yaw, f = { x: Math.sin(yaw), z: Math.cos(yaw) };
+    // a few steps toward you, staying on the island
+    let spot = { x: mine.x + f.x * 4.5, z: mine.z + f.z * 4.5 };
+    const sr = Math.hypot(spot.x, spot.z);
+    if (sr > WALK_R) { spot.x *= WALK_R / sr; spot.z *= WALK_R / sr; }
+    if (obstacles.some((o) => Math.hypot(o.x - spot.x, o.z - spot.z) < o.r + 1.2)) spot = freeSpot(1.6, spot, 2.5);
+    Object.assign(mine, { state: 'walk', target: spot, rush: true, greetOnArrive: null });
+    cam.follow = mine; cam.followUntil = T + 9; camGoal.dist = Math.max(9, R * 0.8);
+    cam.lastInput = T;
+    mine.onArrive = () => {
+      // 3. it says hi, the way you'd expect after however long you've been gone
+      mine.lookCameraUntil = T + 6; mine.happyUntil = T + 2.4; mine.syv -= 0.18; mine.timer = 4; mine.held = false;
+      say(mine, greetingFor(lastVisit), 2800);
+      if (OPEN_NOTES) setTimeout(showMyNotes, 900);
+      else if (inbox.length) setTimeout(() => say(mine, inbox.length === 1 ? 'psst, someone left us a note' : `psst, we have ${inbox.length} notes`, 2600), 3000);
+      // friends' buds notice too, and wander over to say hi
+      const friends = buds.filter((b) => b.data.friend && b.placed && b.state !== 'drop' && !b.held)
+        .sort((a, b) => Math.hypot(a.x - mine.x, a.z - mine.z) - Math.hypot(b.x - mine.x, b.z - mine.z)).slice(0, 2);
+      friends.forEach((fb, i) => setTimeout(() => {
+        if (photo || fb.held) return;
+        const a = Math.atan2(fb.z - mine.z, fb.x - mine.x);
+        fb.look = mine; fb.lookUntil = T + 2; fb.syv -= 0.1;
+        say(fb, pick(['oh, they’re here!', 'hey!!', 'hi hi!']), 1400);
+        fb.target = { x: mine.x + Math.cos(a) * 2, z: mine.z + Math.sin(a) * 2 };
+        fb.state = 'walk'; fb.greetCooldown = 0; fb.greetOnArrive = mine; fb.rush = true;
+        fb.onArrive = () => { fb.lookCameraUntil = T + 2; };
+      }, 1200 + i * 900));
+    };
+    // if it gets stuck behind something, it still says hi
+    setTimeout(() => { if (mine.onArrive && mine.rush) { mine.state = 'idle'; const done = mine.onArrive; mine.onArrive = null; mine.rush = false; done(); } }, 6000);
+  }, 1000);
+}
+
 const notesPill = document.getElementById('notesPill');
 function updateNotesPill() {
   notesPill.hidden = !inbox.length;
@@ -1594,8 +1649,7 @@ function showCenter(title, text, linkText, href = '/') {
     document.getElementById('titleSub').textContent = 'Your bud just moved in.';
     setTimeout(() => { mine.heading = Math.atan2(camera.position.x - mine.x, camera.position.z - mine.z); say(mine, 'wheeeee!', 1500); }, 200);
   }
-  if (OPEN_NOTES && mine && !DROP) setTimeout(showMyNotes, 600);
-  else if (inbox.length && mine && !DROP) setTimeout(() => say(mine, inbox.length === 1 ? 'psst, someone left us a note' : `psst, we have ${inbox.length} notes`, 2600), 1800);
+  if (mine && !DROP) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
   setTimeout(() => document.getElementById('title').classList.add('fade'), DROP ? 9000 : 6000);
   requestAnimationFrame(frame);
 })();

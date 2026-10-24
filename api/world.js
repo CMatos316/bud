@@ -1,6 +1,6 @@
 // Everyone's buds in this server, for the floating island, with the sticky notes on them. Members only.
 import { readSession } from '../lib/session.js';
-import { db, refs } from '../lib/firebase.js';
+import { db, refs, Timestamp } from '../lib/firebase.js';
 import { GUILD_ID } from '../lib/discord.js';
 import { budForWorld } from '../lib/bud.js';
 import { RETRY_AFTER_MS } from '../lib/notes.js';
@@ -16,13 +16,17 @@ export async function GET(request) {
   try {
     const me = session.id;
     const buds = db().collection('guilds').doc(GUILD_ID).collection('buds');
-    const [snap, pending, sent, friendships] = await Promise.all([
+    const [snap, pending, sent, friendships, meDoc] = await Promise.all([
       buds.select(...FIELDS).limit(MAX_BUDS).get(),
       // every unanswered note on the island: anyone can see that a bud has notes on it, not what they say
       refs.notes().where('status', '==', 'pending').select('from', 'to', 'color', 'text', 'createdAt').limit(2000).get(),
       refs.notes().where('from', '==', me).select('to', 'color', 'text', 'status', 'answeredAt').get(),
       refs.friends().where('members', 'array-contains', me).get(),
+      refs.user(me).get(),
     ]);
+    // When you were last here, so your bud can greet you to match ("oh hi again!" vs "it's been forever!").
+    const lastVisit = meDoc.exists ? meDoc.get('lastIslandVisit')?.toMillis() ?? null : null;
+    await refs.user(me).set({ lastIslandVisit: Timestamp.now() }, { merge: true });
     const stickies = new Map();   // bud owner -> colors of the notes stuck on it
     const inbox = [];             // notes stuck on my bud, which only I can read
     for (const n of pending.docs) {
@@ -64,7 +68,7 @@ export async function GET(request) {
       ? `https://cdn.discordapp.com/avatars/${session.id}/${session.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(session.id) >> 22n) % 6}.png`;
     return json({
-      me: { id: me, name: session.name, avatarUrl },
+      me: { id: me, name: session.name, avatarUrl, lastVisit },
       buds: list,
       inbox: inbox.map((n) => ({ from: n.from, fromName: names.get(n.from) || 'someone', fromBud: budNames.get(n.from) || null, text: n.text, color: n.color })),
     });
