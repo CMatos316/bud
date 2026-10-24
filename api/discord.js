@@ -1,9 +1,11 @@
 // bud's Discord endpoint. Discord sends every slash command and button click here
 // (Interactions Endpoint URL: https://bud.oqw.one/api/discord).
+import { waitUntil } from '@vercel/functions';
 import {
   isValidRequest, discordApi, InteractionType, ResponseType, EPHEMERAL,
-  SITE_URL, WELCOME_CHANNEL_ID, linkButton, button, row,
+  SITE_URL, WELCOME_CHANNEL_ID, APP_ID, linkButton, button, row,
 } from '../lib/discord.js';
+import { nudgeInterviews } from '../lib/nudge.js';
 
 const json = (data, status = 200) => Response.json(data, { status });
 
@@ -38,6 +40,25 @@ export async function POST(request) {
         `${pick(HELLOS)} Let’s make you a buddy of your own: shape it, paint it, and it’ll pick its own name.`,
         [row(linkButton('Make your bud', SITE_URL))],
       );
+    }
+
+    if (name === 'bud-nudge') {
+      // DMs take a moment each, so answer "thinking…" now and fill in the result when it's done.
+      waitUntil((async () => {
+        let content;
+        try {
+          const r = await nudgeInterviews({ minAgeMs: 30 * 60e3, again: true });
+          content = r.waiting === 0
+            ? 'Everyone with a bud has answered its questions. Nobody to nudge!'
+            : `Nudged ${r.sent} ${r.sent === 1 ? 'person' : 'people'}. `
+              + (r.skipped ? `Skipped ${r.skipped} (nudged in the last week, DMs off, or not in the server anymore).` : '');
+        } catch (err) {
+          console.error(err);
+          content = 'Something went wrong sending the nudges. Check the Vercel logs.';
+        }
+        await discordApi(`/webhooks/${APP_ID}/${interaction.token}/messages/@original`, { method: 'PATCH', body: { content } }).catch(console.error);
+      })());
+      return json({ type: ResponseType.DEFERRED_CHANNEL_MESSAGE, data: { flags: EPHEMERAL } });
     }
 
     if (name === 'bud-setup') {

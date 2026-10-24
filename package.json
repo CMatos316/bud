@@ -4,6 +4,7 @@
   "type": "module",
   "description": "bud: make your own buddy. Maker page, Discord sign-in, and the Discord bot endpoint.",
   "dependencies": {
+    "@vercel/functions": "^2.2.13",
     "firebase-admin": "^13.0.0"
   }
 }
