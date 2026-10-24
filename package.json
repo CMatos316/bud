@@ -1,0 +1,6 @@
+{
+  "name": "bud",
+  "private": true,
+  "type": "module",
+  "description": "bud: make your own buddy. Maker page plus the Discord bot endpoint."
+}
