@@ -102,7 +102,8 @@ body {
 .bubble {
   position: absolute; left: 0; top: 0; transform-origin: 50% 100%;
   background: var(--tag); color: var(--tag-ink); border: 1.5px solid var(--tag-ink);
-  border-radius: 14px; padding: 6px 11px; font-size: 14px; font-weight: 500; white-space: nowrap;
+  border-radius: 14px; padding: 6px 11px; font-size: 14px; font-weight: 500; line-height: 1.3;
+  width: max-content; max-width: 220px; text-align: center;
 }
 .bubble::after {
   content: ""; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; background: inherit;
@@ -192,6 +193,12 @@ body {
 .composer-error { margin: 0; color: #C4385E; font-size: 13.5px; text-align: center; }
 .composer .row { justify-content: flex-end; width: 100%; }
 .flying { position: fixed; z-index: 7; margin: 0; pointer-events: none; }
+.diary h3 { margin: 4px 0 6px; font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
+.diary ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.diary li { display: grid; grid-template-columns: 22px 1fr; gap: 2px 8px; align-items: start; font-size: 14.5px; line-height: 1.35; }
+.diary .ico { grid-row: span 2; width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; background: rgba(127,127,160,.14); }
+.diary .when { color: var(--muted); font-size: 12px; }
+.diary li.fresh .ico { background: #FFE98A; color: #2B2A33; }
 
 /* Photo booth */
 .tag.picked { outline: 2.5px solid #F2B33D; outline-offset: 2px; }
@@ -368,6 +375,7 @@ scene.environment = makeEnv();
 let R = 12;              // island radius, set once we know how many buds live here
 let WALK_R = R * 0.78;   // how far from the middle buds wander
 const obstacles = [];    // trees and rocks buds walk around: { x, z, r }
+const flowers = [];      // where the little flowers are, for buds who like to smell them
 const clouds = [];
 
 const toLinear = (hex) => new THREE.Color(hex).convertSRGBToLinear();
@@ -461,6 +469,7 @@ function buildIsland(nBuds) {
     const st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 4), stem); st.position.y = 0.11; f.add(st);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), petal[i % petal.length]); head.position.y = 0.24; f.add(head);
     f.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); group.add(f);
+    flowers.push({ x: f.position.x, z: f.position.z });
   }
 
   // clouds drifting around the island
@@ -730,15 +739,21 @@ function updateBud(bud, dt) {
       bud.lookUntil = T + rand(1, 2.6);
     }
     if (bud.timer <= 0 && !bud.held) {
-      bud.target = freeSpot(1.6, Math.random() < 0.6 ? bud : null, Math.random() < 0.6 ? rand(3, 7) : WALK_R);
-      bud.state = 'walk'; bud.look = null;
+      if (!(Math.random() < 0.5 && startActivity(bud))) {
+        bud.target = freeSpot(1.6, Math.random() < 0.6 ? bud : null, Math.random() < 0.6 ? rand(3, 7) : WALK_R);
+        bud.state = 'walk'; bud.look = null;
+      }
     }
   } else if (bud.state === 'walk') {
     const dx = bud.target.x - bud.x, dz = bud.target.z - bud.z, d = Math.hypot(dx, dz);
     if (d < 0.25) {
       bud.state = 'idle'; bud.timer = rand(1.5, 5); bud.hopPhase = 0;
       if (bud.greetOnArrive && bud.greetOnArrive.state !== 'drop') { startGreeting(bud, bud.greetOnArrive); bud.greetOnArrive = null; }
-      if (bud.onArrive) { const done = bud.onArrive; bud.onArrive = null; bud.rush = false; done(); }
+      if (bud.onArrive) {
+        const done = bud.onArrive; bud.onArrive = null; bud.rush = false;
+        if (typeof done === 'function') done();
+        else if (done.target === bud.target) done.fn();   // only if it's still headed where it meant to go
+      }
     } else {
       // steer toward the target, around trees, and away from other buds
       let mx = dx / d, mz = dz / d;
@@ -751,7 +766,7 @@ function updateBud(bud, dt) {
         const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz) || 1;
         if (od < 1.5) { mx += ox / od * 1.4; mz += oz / od * 1.4; }
         // bumping into someone: maybe stop and say hi
-        if (od < 2.1 && bud.greetCooldown <= 0 && o.greetCooldown <= 0 && o.state !== 'greet' && !o.held && !bud.held && Math.random() < 0.35) {
+        if (od < 2.1 && bud.greetCooldown <= 0 && o.greetCooldown <= 0 && o.state !== 'greet' && o.state !== 'act' && !o.held && !bud.held && Math.random() < 0.35) {
           startGreeting(bud, o); return;
         }
       }
@@ -765,6 +780,8 @@ function updateBud(bud, dt) {
       bud.hopPhase += dt * 8.5;
       if (Math.sin(bud.hopPhase) * before < 0) bud.syv -= 0.05 * RM;   // landing squish
     }
+  } else if (bud.state === 'act') {
+    updateActivity(bud, dt);
   } else if (bud.state === 'greet') {
     bud.timer -= dt;
     const p = bud.partner;
@@ -780,6 +797,9 @@ function updateBud(bud, dt) {
     bud.heading += angleTo(bud.heading, Math.atan2(camera.position.x - bud.x, camera.position.z - bud.z)) * Math.min(1, dt * 5);
   }
 
+  // anything that interrupts a hop still lets the bud land
+  if (bud.y > 0 && bud.state !== 'drop' && bud.state !== 'act') { bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt); if (bud.y === 0) bud.vy = 0; }
+
   // stay on the island
   const rr = Math.hypot(bud.x, bud.z);
   if (rr > WALK_R + 0.5 && bud.state !== 'drop') { bud.x *= (WALK_R + 0.5) / rr; bud.z *= (WALK_R + 0.5) / rr; }
@@ -788,16 +808,149 @@ function updateBud(bud, dt) {
   if (T > bud.blinkAt) { bud.blinkStart = T; bud.blinkAt = T + (Math.random() < 0.15 ? 0.3 : rand(2.5, 6)); }
 
   // place it
-  const hopY = bud.state === 'walk' ? Math.abs(Math.sin(bud.hopPhase)) * 0.22 * RM : 0;
+  const moving = bud.state === 'walk' || (bud.state === 'act' && bud.act && bud.act.moving);
+  const hopY = moving ? Math.abs(Math.sin(bud.hopPhase)) * 0.22 * RM : 0;
   bud.root.position.set(bud.x, 0, bud.z);
   bud.hop.position.y = bud.y + hopY;
   bud.root.rotation.y = bud.heading;
   const sy = bud.sy;
   bud.squash.scale.set(2 - sy, sy, 2 - sy);
+  // lean back to look at the sky, forward to peek over the edge or smell a flower
+  const wantTilt = bud.state === 'act' && bud.act ? bud.act.tilt || 0 : 0;
+  bud.tilt = (bud.tilt || 0) + (wantTilt - (bud.tilt || 0)) * Math.min(1, dt * 4);
+  bud.squash.rotation.x = bud.tilt;
   const airborne = bud.y + hopY;
   bud.shadow.material.opacity = clamp(1 - airborne / 10, 0.15, 1);
   const sh = clamp(1 - airborne / 14, 0.3, 1);
   bud.shadow.scale.set(bud.width * 1.1 * sh, bud.width * 0.75 * sh, 1);
+}
+
+/* ---------------- what buds do with their time ---------------- */
+// Each bud has a favorite thing (its hobby) and does it more often than the rest.
+const ACTS = ['clouds', 'nap', 'explore', 'flowers', 'hop', 'tag'];
+const HOBBY_ACT = { clouds: 'clouds', stargazing: 'clouds', explore: 'explore', pebbles: 'explore', flowers: 'flowers', hopping: 'hop', naps: 'nap', races: 'tag' };
+const busy = (b) => !b.placed || b.held || b.pose || b.rush || b.state === 'drop' || b.state === 'act' || b.state === 'greet';
+
+function startActivity(bud) {
+  const fav = HOBBY_ACT[bud.data.hobby];
+  const weights = ACTS.map((k) => (k === fav ? 4 : 1) * (k === 'tag' ? 1.2 : 1));
+  let roll = Math.random() * weights.reduce((a, b) => a + b, 0), kind = ACTS[0];
+  for (let i = 0; i < ACTS.length; i++) { roll -= weights[i]; if (roll <= 0) { kind = ACTS[i]; break; } }
+  const h = bud.heading;
+  if (kind === 'nap') {
+    // only a few buds doze at once, so the island never feels asleep
+    const napping = buds.filter((b) => b.state === 'act' && b.act.kind === 'nap').length;
+    if (napping >= Math.max(1, Math.floor(buds.length * 0.15))) return false;
+    setAct(bud, { kind, until: T + rand(7, 12), tilt: 0.06, next: T + 1 });
+  } else if (kind === 'clouds') {
+    setAct(bud, { kind, until: T + rand(5, 9), tilt: -0.24, next: T + rand(1.5, 3) });
+    bud.look = { x: bud.x + Math.sin(h), z: bud.z + Math.cos(h), y: 30 }; bud.lookUntil = bud.act.until;
+  } else if (kind === 'hop') {
+    setAct(bud, { kind, until: T + rand(3, 5), next: T + 0.2, said: false });
+  } else if (kind === 'explore') {
+    // wander to the edge of the island and peek over
+    let spot = null;
+    for (let i = 0; i < 12 && !spot; i++) {
+      const a = Math.atan2(bud.z, bud.x) + rand(-0.8, 0.8), r = WALK_R * 0.97;
+      const p = { x: Math.cos(a) * r, z: Math.sin(a) * r };
+      if (!obstacles.some((o) => Math.hypot(o.x - p.x, o.z - p.z) < o.r + 0.9)) spot = p;
+    }
+    if (!spot) return false;
+    goThenDo(bud, spot, () => {
+      bud.heading = Math.atan2(bud.x, bud.z);   // face outward
+      const pebble = bud.data.hobby === 'pebbles' && Math.random() < 0.6;
+      setAct(bud, { kind: 'peek', until: T + rand(3.5, 5), tilt: pebble ? 0.42 : 0.3 });
+      bud.look = { x: bud.x * 1.6, z: bud.z * 1.6, y: pebble ? -1 : -6 }; bud.lookUntil = bud.act.until;
+      say(bud, pebble ? pick(['found a pebble!', 'ooh, shiny', 'this one’s perfect']) : pick(['woah, it’s high up', 'I can see so far!', 'hello down there!', 'is that the ocean?']), 1800);
+    });
+  } else if (kind === 'flowers') {
+    const near = flowers.filter((f) => Math.hypot(f.x - bud.x, f.z - bud.z) < 7 && Math.hypot(f.x, f.z) < WALK_R)
+      .sort((a, b) => Math.hypot(a.x - bud.x, a.z - bud.z) - Math.hypot(b.x - bud.x, b.z - bud.z))[0];
+    if (!near) return false;
+    const a = Math.atan2(bud.z - near.z, bud.x - near.x);
+    goThenDo(bud, { x: near.x + Math.cos(a) * 0.9, z: near.z + Math.sin(a) * 0.9 }, () => {
+      bud.heading = Math.atan2(near.x - bud.x, near.z - bud.z);
+      setAct(bud, { kind: 'sniff', until: T + 3, tilt: 0.34 });
+      bud.look = { x: near.x, z: near.z, y: -2 }; bud.lookUntil = bud.act.until;
+      say(bud, pick(['sniff sniff', 'smells nice', 'achoo!', 'mmm, flowers']), 1500);
+    });
+  } else if (kind === 'tag') {
+    const mate = buds.filter((o) => o !== bud && !busy(o) && Math.hypot(o.x - bud.x, o.z - bud.z) < 9)
+      .sort((a, b) => Math.hypot(a.x - bud.x, a.z - bud.z) - Math.hypot(b.x - bud.x, b.z - bud.z))[0];
+    if (!mate) return false;
+    const game = { it: bud, until: T + rand(9, 14), startAt: T + 1.3, tagAt: T };
+    for (const b of [bud, mate]) { setAct(b, { kind: 'tag', game, moving: false }); b.look = b === bud ? mate : bud; b.lookUntil = T + 1.3; }
+    bud.heading = Math.atan2(mate.x - bud.x, mate.z - bud.z); mate.heading = Math.atan2(bud.x - mate.x, bud.z - mate.z);
+    say(bud, pick(['wanna play tag?', 'tag? tag!', 'bet you can’t catch me']), 1300);
+    setTimeout(() => { if (mate.act && mate.act.game === game) { say(mate, pick(['ok!', 'you’re on!', 'yes!!']), 1000); mate.happyUntil = T + 1; } }, 600);
+  }
+  return true;
+}
+function setAct(bud, act) { bud.state = 'act'; bud.act = act; bud.target = null; bud.partner = null; }
+function goThenDo(bud, spot, fn) {
+  bud.target = spot; bud.state = 'walk'; bud.look = null;
+  bud.onArrive = { target: spot, fn };
+}
+function endActivity(bud, rest = rand(1.5, 4)) {
+  if (bud.state === 'act') { bud.state = 'idle'; }
+  bud.act = null; bud.look = null; bud.timer = rest; bud.hopPhase = 0;
+}
+
+function updateActivity(bud, dt) {
+  const a = bud.act;
+  if (!a) { endActivity(bud); return; }
+  if (a.kind === 'nap') {
+    // slow breathing, and the odd z
+    bud.syv += Math.sin(T * 2.2) * 0.0016;
+    if (T > a.next) { say(bud, pick(['z', 'zz', 'zzz']), 1200); a.next = T + rand(2, 3.2); }
+  } else if (a.kind === 'clouds') {
+    if (T > a.next) {
+      say(bud, bud.data.hobby === 'stargazing' ? pick(['waiting for stars', 'is that one twinkling?', 'make a wish!']) : pick(['that cloud looks like a fish', 'ooh, a bunny cloud', 'so fluffy…', 'that one looks like me!']), 1800);
+      a.next = Infinity;
+    }
+  } else if (a.kind === 'hop') {
+    bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt);
+    if (bud.y === 0 && bud.vy < 0) { bud.vy = 0; bud.syv -= 0.08 * RM; }
+    if (T > a.next && bud.y === 0) { bud.vy = 5.2 * RM; bud.syv += 0.06; a.next = T + rand(0.55, 0.8); if (!a.said) { a.said = true; say(bud, pick(['hop!', 'hop hop', 'boing!', 'look how high!']), 1200); } }
+    if (T > a.until && bud.y === 0) { bud.y = 0; endActivity(bud); }
+    return;
+  } else if (a.kind === 'tag') {
+    const g = a.game, other = buds.find((o) => o !== bud && o.act && o.act.game === g);
+    if (!other || other.state !== 'act') { endActivity(bud); return; }
+    if (T > g.until) {
+      endActivity(bud); endActivity(other);
+      bud.happyUntil = other.happyUntil = T + 1.5;
+      say(bud, pick(['phew!', 'that was fun!', 'again later?']), 1500);
+      return;
+    }
+    if (T < g.startAt) return;
+    a.moving = true;
+    const it = g.it === bud;
+    let mx, mz;
+    if (it) { mx = other.x - bud.x; mz = other.z - bud.z; }
+    else {
+      mx = bud.x - other.x; mz = bud.z - other.z;
+      const r = Math.hypot(bud.x, bud.z);
+      if (r > WALK_R * 0.75) { mx -= bud.x / r * 2.5; mz -= bud.z / r * 2.5; }   // don't get cornered at the edge
+    }
+    const d = Math.hypot(mx, mz) || 1; mx /= d; mz /= d;
+    for (const o of obstacles) {
+      const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz);
+      if (od < o.r + 1.1) { mx += ox / od * 1.5; mz += oz / od * 1.5; }
+    }
+    const m = Math.hypot(mx, mz) || 1, sp = (it ? 2.5 : 2.2) * bud.speed;
+    bud.x += mx / m * sp * dt; bud.z += mz / m * sp * dt;
+    bud.heading += angleTo(bud.heading, Math.atan2(mx, mz)) * Math.min(1, dt * 8);
+    const before = Math.sin(bud.hopPhase); bud.hopPhase += dt * 11;
+    if (Math.sin(bud.hopPhase) * before < 0) bud.syv -= 0.04 * RM;
+    if (it && Math.hypot(other.x - bud.x, other.z - bud.z) < 1.15 && T - g.tagAt > 1.2) {
+      g.it = other; g.tagAt = T;
+      say(bud, pick(['tag! you’re it!', 'got you!', 'tag!']), 1100);
+      bud.happyUntil = T + 1; other.syv -= 0.12;
+    }
+    return;
+  }
+  if (T > a.until) endActivity(bud);
 }
 
 function nearestBud(bud, within) {
@@ -812,7 +965,7 @@ function nearestBud(bud, within) {
 
 // When a bud arrives, a few buds nearby wander over to say hi.
 function welcome(newcomer) {
-  const near = buds.filter((o) => o !== newcomer && o.placed).sort((a, b) =>
+  const near = buds.filter((o) => o !== newcomer && o.placed && !o.held && !o.pose).sort((a, b) =>
     Math.hypot(a.x - newcomer.x, a.z - newcomer.z) - Math.hypot(b.x - newcomer.x, b.z - newcomer.z)).slice(0, 3);
   near.forEach((o, i) => {
     o.look = newcomer; o.lookUntil = T + 2;
@@ -842,7 +995,9 @@ function drawFace(bud) {
   const r = bud.b.eyeR, sc = FACE_W / (r * 4.4);
   const want = lookVector(bud);
   bud.lx += (want.x - bud.lx) * 0.2; bud.ly += (want.y - bud.ly) * 0.2;
-  const bt = (T - bud.blinkStart) / 0.15, blink = bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0;
+  const bt = (T - bud.blinkStart) / 0.15;
+  const napping = bud.state === 'act' && bud.act && bud.act.kind === 'nap';
+  const blink = napping ? 1 : bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0;
   const happy = T < bud.happyUntil;
   const key = [Math.round(bud.lx * 20), Math.round(bud.ly * 20), Math.round(blink * 8), happy].join('|');
   if (key === bud.faceKey) return;
@@ -958,6 +1113,7 @@ function hoverAt(x, y) {
 const card = document.getElementById('card');
 const cardBody = document.getElementById('cardBody');
 let inbox = [];        // notes stuck on my bud: { from, fromName, fromBud, text, color }
+let diary = [];        // what my bud got up to: { at, kind, text, with?, fresh }
 let cardBud = null;
 const nameOf = (bud) => bud.data.nickname || bud.data.trueName;
 const myBud = () => buds.find((b) => b.data.isMe);
@@ -994,7 +1150,10 @@ function clickAt(x, y) {
   if (!bud) { if (!composing) closeCard(); return; }
   if (composing) return;
   bud.syv -= 0.12; bud.happyUntil = T + 1.1; bud.lookCameraUntil = T + 2.5;
+  const wasNapping = bud.state === 'act' && bud.act && bud.act.kind === 'nap';
+  if (bud.state === 'act') endActivity(bud, 1.6);
   if (bud.state === 'walk') { bud.state = 'idle'; bud.timer = 1.6; }
+  if (wasNapping) { say(bud, pick(['huh?! oh, hi!', 'five more minutes…', '*yawn* hi']), 1600); openCard(bud); return; }
   const notes = bud.data.isMe ? inbox.length : 0;
   say(bud, bud.data.isMe ? (notes ? pick(['look, notes!', 'someone wrote to us!']) : pick(['that’s me!', 'hi, it’s me!', 'hehe, hi']))
     : bud.data.friend ? pick(['hi friend!', 'oh hey, it’s you!']) : pick(POKED), 1500);
@@ -1002,13 +1161,19 @@ function clickAt(x, y) {
 }
 
 function openCard(bud) {
+  if (cardBud && cardBud !== bud) releaseCardBud();
   cardBud = bud;
+  // it stays with you while you read its card
+  if (bud.state === 'act') endActivity(bud);
+  if (bud.state === 'walk' && !bud.rush) { bud.state = 'idle'; bud.target = null; }
+  bud.cardHeld = true; bud.held = true; bud.lookCameraUntil = Infinity;
   const nick = bud.data.nickname, tn = bud.data.trueName;
   document.getElementById('cardName').textContent = nick || tn;
   const owner = bud.data.isMe ? 'Your bud' : bud.data.ownerName ? `${bud.data.ownerName}’s bud` : 'Someone’s bud';
   const sub = document.getElementById('cardSub');
   sub.textContent = '';
   sub.append(owner);
+  if (bud.data.hobbyLabel) sub.append(` \u00b7 loves ${bud.data.hobbyLabel}`);
   if (nick && nick !== tn) {
     sub.append(' · real name ');
     sub.append(el('span', 'tn', tn));
@@ -1016,7 +1181,13 @@ function openCard(bud) {
   renderCardBody();
   card.hidden = false; hideHint();
 }
-function closeCard() { card.hidden = true; cardBud = null; }
+function releaseCardBud() {
+  const b = cardBud;
+  if (!b || !b.cardHeld) return;
+  b.cardHeld = false;
+  if (!b.pose && composing !== b) { b.held = false; b.lookCameraUntil = T + 1; b.timer = rand(1.5, 3); }
+}
+function closeCard() { releaseCardBud(); card.hidden = true; cardBud = null; }
 
 function renderCardBody() {
   const bud = cardBud;
@@ -1025,7 +1196,8 @@ function renderCardBody() {
   const d = bud.data;
   if (d.isMe) {
     if (!inbox.length) {
-      cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
+      if (!diary.length) cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
+      renderDiary(bud);
       return;
     }
     cardBody.append(el('p', 'muted', inbox.length === 1 ? `Someone stuck a note on ${nameOf(bud)}.` : `${inbox.length} notes are stuck on ${nameOf(bud)}.`));
@@ -1040,6 +1212,7 @@ function renderCardBody() {
       r.append(yes, no); note.append(r);
       cardBody.append(note);
     }
+    renderDiary(bud);
     return;
   }
   const others = bud.stickies.filter((st) => !st.dying && st.tag !== 'mine').length;
@@ -1069,6 +1242,33 @@ function renderCardBody() {
   const stick = el('button', 'btn primary', 'Stick a note'); stick.type = 'button';
   stick.addEventListener('click', () => openComposer(bud));
   const r = el('div', 'row'); r.append(stick); cardBody.append(r);
+}
+
+/* ---------------- your bud's diary ---------------- */
+const DIARY_ICON = { play: '✦', solo: '•', note: '✎', friend: '♥', photo: '◉' };
+const firstPerson = (e) => (e.kind === 'play' || e.kind === 'solo' ? `I ${e.text}` : e.text);
+function whenLabel(ms) {
+  const now = new Date(), t = new Date(ms), mins = (now - t) / 60e3;
+  if (mins < 60) return 'just now';
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const h = t.getHours(), part = h < 5 ? 'last night' : h < 12 ? 'this morning' : h < 17 ? 'this afternoon' : 'this evening';
+  if (ms >= dayStart) return part;
+  if (ms >= dayStart - 864e5) return h < 5 || h >= 21 ? 'last night' : 'yesterday';
+  return `${Math.round((dayStart - ms) / 864e5) + 1} days ago`;
+}
+function renderDiary(bud) {
+  if (!diary.length) return;
+  const box = el('section', 'diary');
+  box.append(el('h3', null, diary.some((e) => e.fresh) ? 'While you were away' : `${nameOf(bud)} lately`));
+  const ul = el('ul');
+  for (const e of diary) {
+    const li = el('li', e.fresh ? 'fresh' : null);
+    const ico = el('span', 'ico', DIARY_ICON[e.kind] || '•'); ico.setAttribute('aria-hidden', 'true');
+    li.append(ico, el('span', null, firstPerson(e)), el('span', 'when', whenLabel(e.at)));
+    ul.append(li);
+  }
+  box.append(ul);
+  cardBody.append(box);
 }
 
 /* ---------------- writing a note ---------------- */
@@ -1232,8 +1432,14 @@ function welcomeBack(mine, lastVisit) {
       // 3. it says hi, the way you'd expect after however long you've been gone
       mine.lookCameraUntil = T + 6; mine.happyUntil = T + 2.4; mine.syv -= 0.18; mine.timer = 4; mine.held = false;
       say(mine, greetingFor(lastVisit), 2800);
+      const fresh = diary.filter((e) => e.fresh);
       if (OPEN_NOTES) setTimeout(showMyNotes, 900);
-      else if (inbox.length) setTimeout(() => say(mine, inbox.length === 1 ? 'psst, someone left us a note' : `psst, we have ${inbox.length} notes`, 2600), 3000);
+      else if (fresh.length) {
+        // tell you the best bit, then show the whole diary
+        const best = fresh.find((e) => e.kind === 'friend' || e.kind === 'note' || e.kind === 'photo') || fresh.find((e) => e.kind === 'play') || fresh[0];
+        setTimeout(() => say(mine, `guess what? ${firstPerson(best).replace(/^I /, 'I ')}`, 3200), 3000);
+        setTimeout(() => { if (!photo && !composing && card.hidden) openCard(mine); }, 6600);
+      } else if (inbox.length) setTimeout(() => say(mine, inbox.length === 1 ? 'psst, someone left us a note' : `psst, we have ${inbox.length} notes`, 2600), 3000);
       // friends' buds notice too, and wander over to say hi
       const friends = buds.filter((b) => b.data.friend && b.placed && b.state !== 'drop' && !b.held)
         .sort((a, b) => Math.hypot(a.x - mine.x, a.z - mine.z) - Math.hypot(b.x - mine.x, b.z - mine.z)).slice(0, 2);
@@ -1609,6 +1815,7 @@ function showCenter(title, text, linkText, href = '/') {
   cam.dist = camGoal.dist = fitDist();
 
   inbox = world.inbox || [];
+  diary = world.diary || [];
   for (const d of world.buds) {
     try { buds.push(await makeBud(d)); } catch (e) { console.error('could not build bud', d.id, e); }
   }
