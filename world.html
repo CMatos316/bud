@@ -193,6 +193,47 @@ body {
 .composer .row { justify-content: flex-end; width: 100%; }
 .flying { position: fixed; z-index: 7; margin: 0; pointer-events: none; }
 
+/* Photo booth */
+.tag.picked { outline: 2.5px solid #F2B33D; outline-offset: 2px; }
+.tag.picked::after { content: " \00b7 in the photo"; opacity: .7; font-weight: 400; }
+.photo-bar {
+  position: fixed; z-index: 5; left: 0; right: 0; margin-inline: auto; width: min(420px, calc(100% - 32px));
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box;
+  background: var(--tag); color: var(--tag-ink); border: 1px solid var(--chip-line); border-radius: 22px;
+  padding: 14px 16px; box-shadow: 0 20px 44px -24px var(--shadow); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; animation: rise .35s cubic-bezier(.2, .9, .3, 1.15);
+}
+.photo-bar p { margin: 0; flex: 1 1 180px; font-size: 14px; line-height: 1.35; }
+.photo-bar p b { font-weight: 600; }
+.countdown {
+  position: fixed; inset: 0; z-index: 8; display: grid; place-items: center; pointer-events: none;
+  font: 600 min(30vw, 180px)/1 var(--font-display); color: #fff; text-shadow: 0 6px 30px rgba(30, 20, 60, .45);
+}
+.countdown span { animation: tick .8s ease-out both; }
+@keyframes tick { from { transform: scale(1.5); opacity: 0; } 30% { transform: scale(1); opacity: 1; } to { transform: scale(.85); opacity: 0; } }
+.flash { position: fixed; inset: 0; z-index: 9; background: #fff; pointer-events: none; animation: flash .7s ease-out forwards; }
+@keyframes flash { from { opacity: 1; } to { opacity: 0; } }
+.booth {
+  position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; overflow: auto;
+  background: rgba(20, 18, 40, .45); padding: 16px; box-sizing: border-box;
+}
+.booth-card {
+  width: min(560px, 100%); display: grid; gap: 12px; background: var(--tag); color: var(--tag-ink);
+  border-radius: 22px; padding: 16px; box-sizing: border-box; box-shadow: 0 30px 60px -30px rgba(0,0,0,.6);
+  animation: rise .35s cubic-bezier(.2, .9, .3, 1.15);
+}
+.booth-card img { width: 100%; height: auto; display: block; border-radius: 6px; transform: rotate(-1deg); box-shadow: 0 14px 30px -18px rgba(0,0,0,.6); }
+.booth-card input {
+  font: 500 16px/1.2 var(--font-display); color: var(--tag-ink); background: transparent; width: 100%; box-sizing: border-box;
+  border: 1.5px solid var(--chip-line); border-radius: 12px; padding: 11px 13px;
+}
+.booth-card input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.booth-card .row { justify-content: flex-end; }
+.booth-card .row .spacer { flex: 1; }
+.booth-card .msg { margin: 0; font-size: 14px; color: var(--muted); }
+.booth-card .msg.err { color: #C4385E; }
+@media (prefers-reduced-motion: reduce) { .countdown span, .booth-card, .photo-bar { animation: none; } .flash { animation-duration: .2s; } }
+
 .center {
   position: fixed; inset: 0; display: grid; place-items: center; z-index: 6; text-align: center; pointer-events: none;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -224,6 +265,10 @@ body {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
       <span class="label">Find my bud</span>
     </button>
+    <button class="pill" id="photoBtn" type="button" hidden aria-label="Photo booth">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      <span class="label">Photo</span>
+    </button>
     <button class="pill" id="notesPill" type="button" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v11l-5 5H4z"/><path d="M15 20v-5h5"/></svg>
       <span class="label">Notes</span><span class="badge" id="notesCount"></span>
@@ -253,6 +298,24 @@ body {
   <p class="composer-error" id="noteError" role="alert" hidden></p>
   <div class="row"><button class="btn" type="button" id="noteCancel">Cancel</button><button class="btn primary" type="submit" id="noteSend">Stick it on</button></div>
 </form>
+<div class="photo-bar" id="photoBar" hidden role="region" aria-label="Photo booth">
+  <p id="photoText"></p>
+  <div class="row"><button class="btn" type="button" id="photoCancel">Cancel</button><button class="btn primary" type="button" id="photoGo">Line up</button></div>
+</div>
+<div class="countdown" id="countdown" hidden aria-live="assertive"></div>
+<div class="booth" id="booth" hidden role="dialog" aria-modal="true" aria-label="Your photo">
+  <div class="booth-card">
+    <img id="boothImg" alt="">
+    <input id="boothCaption" maxlength="100" placeholder="Add a caption (optional)" autocomplete="off" aria-label="Caption">
+    <p class="msg" id="boothMsg" hidden></p>
+    <div class="row">
+      <a class="btn" id="boothSave" download="bud-island.jpg">Save</a>
+      <span class="spacer"></span>
+      <button class="btn" type="button" id="boothRetake">Retake</button>
+      <button class="btn primary" type="button" id="boothPost">Post to #photo-booth</button>
+    </div>
+  </div>
+</div>
 <div class="center" id="center" hidden><div><h2 id="centerTitle"></h2><p id="centerText"></p><a class="pill" id="centerLink" href="/"></a></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -619,6 +682,7 @@ function freeSpot(minDistFromOthers = 2.2, near = null, spread = WALK_R) {
     const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * spread;
     const x = (near ? near.x : 0) + Math.cos(a) * r, z = (near ? near.z : 0) + Math.sin(a) * r;
     if (Math.hypot(x, z) > WALK_R) continue;
+    if (inPhotoZone(x, z)) continue;
     if (obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 0.9)) continue;
     if (buds.some((b) => b.placed && Math.hypot(b.x - x, b.z - z) < minDistFromOthers)) continue;
     return { x, z };
@@ -692,7 +756,8 @@ function updateBud(bud, dt) {
         }
       }
       const m = Math.hypot(mx, mz) || 1;
-      bud.x += mx / m * bud.speed * dt; bud.z += mz / m * bud.speed * dt;
+      const sp = bud.pose ? bud.speed * 1.7 : bud.speed;
+      bud.x += mx / m * sp * dt; bud.z += mz / m * sp * dt;
       const want = Math.atan2(mx, mz);
       bud.heading += angleTo(bud.heading, want) * Math.min(1, dt * 6);
       // little hops
@@ -709,7 +774,9 @@ function updateBud(bud, dt) {
   }
 
   // turn around to face whoever is looking at it (after a tap, or while you write it a note)
-  if (bud.lookCameraUntil > T && (bud.state === 'idle' || bud.state === 'greet' && !bud.partner)) {
+  if (bud.pose && photo && photo.stage !== 'pose') {
+    // already snapped to face the lens; don't drift
+  } else if (bud.lookCameraUntil > T && (bud.state === 'idle' || bud.state === 'greet' && !bud.partner)) {
     bud.heading += angleTo(bud.heading, Math.atan2(camera.position.x - bud.x, camera.position.z - bud.z)) * Math.min(1, dt * 5);
   }
 
@@ -811,6 +878,8 @@ function placeCamera(dt) {
   const k = 1 - Math.pow(0.04, dt);
   cam.target.lerp(camGoal.target, k);
   cam.dist += (camGoal.dist - cam.dist) * k;
+  if (camGoal.pitch != null) cam.pitch += (camGoal.pitch - cam.pitch) * k;
+  if (camGoal.yaw != null) cam.yaw += angleTo(cam.yaw, camGoal.yaw) * k;
   if (T - cam.lastInput > 6 && !cam.follow) cam.yaw += dt * 0.035 * RM;
   const cp = Math.cos(cam.pitch);
   camera.position.set(
@@ -850,7 +919,7 @@ canvas.addEventListener('pointermove', (e) => {
     camGoal.dist = clamp(pinch.dist * pinch.d / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), R * 0.7, maxDist());
     return;
   }
-  if (!drag) return;
+  if (!drag || framing()) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   if (Math.hypot(dx, dy) > 4) { drag.moved = true; canvas.classList.add('dragging'); hideHint(); }
   cam.yaw = drag.yaw - dx * 0.006;
@@ -867,6 +936,7 @@ canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
+  if (framing()) return;
   camGoal.dist = clamp(camGoal.dist * Math.exp(e.deltaY * 0.0012), R * 0.7, maxDist());
   cam.lastInput = T; hideHint();
 }, { passive: false });
@@ -920,6 +990,7 @@ function noteEl(text, color, small = false) {
 
 function clickAt(x, y) {
   const bud = budAt(x, y);
+  if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return; }
   if (!bud) { if (!composing) closeCard(); return; }
   if (composing) return;
   bud.syv -= 0.12; bud.happyUntil = T + 1.1; bud.lookCameraUntil = T + 2.5;
@@ -1135,7 +1206,7 @@ function updateNotesPill() {
 }
 function showMyNotes() {
   const mine = myBud();
-  if (!mine) return;
+  if (!mine || photo) return;
   closeComposer();
   cam.follow = mine; cam.followUntil = T + 6; camGoal.dist = Math.max(9, R * 0.8);
   mine.lookCameraUntil = T + 3; mine.happyUntil = T + 1; mine.syv -= 0.1;
@@ -1147,8 +1218,274 @@ notesPill.addEventListener('click', showMyNotes);
 document.getElementById('cardClose').addEventListener('click', closeCard);
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (photo) { if (!document.getElementById('booth').hidden || photo.stage === 'pick') exitPhoto(); return; }
   if (composing) { closeComposer(); } else closeCard();
 });
+
+/* ---------------- photo booth ---------------- */
+const MAX_IN_PHOTO = 6, PHOTO_W = 1600, PHOTO_H = 1200;
+const photoBar = document.getElementById('photoBar'), photoText = document.getElementById('photoText');
+const photoGo = document.getElementById('photoGo'), countdownEl = document.getElementById('countdown');
+const booth = document.getElementById('booth'), boothImg = document.getElementById('boothImg');
+const boothCaption = document.getElementById('boothCaption'), boothMsg = document.getElementById('boothMsg');
+const boothPost = document.getElementById('boothPost');
+let photo = null;   // { stage: 'pick' | 'pose' | 'shoot' | 'review', picked: [bud], shot, savedPitch, savedYaw }
+const framing = () => photo && photo.stage !== 'pick';
+
+function enterPhoto() {
+  if (photo) return;
+  closeComposer(); closeCard(); hideHint();
+  photo = { stage: 'pick', picked: [], savedPitch: cam.pitch };
+  const mine = myBud();
+  if (mine && mine.placed && mine.state !== 'drop') togglePicked(mine, true);
+  photoBar.hidden = false;
+  updatePhotoBar();
+}
+function togglePicked(bud, quiet = false) {
+  if (!bud.placed || bud.state === 'drop') return;
+  const i = photo.picked.indexOf(bud);
+  if (i >= 0) { photo.picked.splice(i, 1); bud.tag.classList.remove('picked'); if (!quiet) say(bud, pick(['aw', 'next time!', 'ok!']), 1000); }
+  else if (photo.picked.length < MAX_IN_PHOTO) {
+    photo.picked.push(bud); bud.tag.classList.add('picked'); bud.syv -= 0.1; bud.happyUntil = T + 1;
+    if (!quiet) say(bud, pick(['ooh, a photo!', 'me too!', 'say cheese!', 'yay!']), 1200);
+  } else say(bud, 'it’s full in there!', 1200);
+  updatePhotoBar();
+}
+function updatePhotoBar() {
+  const n = photo.picked.length;
+  photoText.innerHTML = '';
+  const b = el('b', null, n ? `${n} of ${MAX_IN_PHOTO} buds` : 'Pick who’s in it.');
+  photoText.append(b, ' ', n ? 'Tap buds to add or remove them.' : 'Tap buds on the island to invite them into the photo.');
+  photoGo.disabled = !n;
+  photoGo.textContent = n ? `Line up (${n})` : 'Line up';
+}
+
+// Everyone gets a spot in a row (two rows for 5 or more), facing the camera.
+function lineUp() {
+  if (!photo || !photo.picked.length) return;
+  photo.stage = 'pose';
+  photoBar.hidden = true;
+  const picked = photo.picked;
+  let cx = 0, cz = 0;
+  for (const b of picked) { cx += b.x; cz += b.z; }
+  cx /= picked.length; cz /= picked.length;
+  const lim = WALK_R * 0.5, cr = Math.hypot(cx, cz);
+  if (cr > lim) { cx *= lim / cr; cz *= lim / cr; }
+  // keep the photo spot clear of trees and rocks
+  for (let tries = 0; tries < 30 && obstacles.some((o) => Math.hypot(o.x - cx, o.z - cz) < o.r + 3.2); tries++) {
+    const a = Math.random() * Math.PI * 2, r = Math.random() * lim;
+    cx = Math.cos(a) * r; cz = Math.sin(a) * r;
+  }
+  const yaw = cam.yaw, f = { x: Math.sin(yaw), z: Math.cos(yaw) }, rt = { x: Math.cos(yaw), z: -Math.sin(yaw) };
+  const n = picked.length, rows = n > 4 ? [Math.ceil(n / 2), Math.floor(n / 2)] : [n];
+  const spots = [];
+  rows.forEach((count, ri) => {
+    const back = rows.length > 1 && ri === 0 ? -1.0 : rows.length > 1 ? 0.9 : 0;
+    for (let i = 0; i < count; i++) {
+      const off = (i - (count - 1) / 2) * 2.4 + (rows.length > 1 && ri === 1 ? 1.2 * (count < rows[0] ? 1 : 0) : 0);
+      spots.push({ x: cx + rt.x * off + f.x * back, z: cz + rt.z * off + f.z * back });
+    }
+  });
+  picked.forEach((b, i) => {
+    b.pose = spots[i];
+    b.held = true; b.partner = null; b.greetOnArrive = null; b.look = null;
+    b.state = 'walk'; b.target = spots[i]; b.lookCameraUntil = Infinity;
+  });
+  const width = (Math.max(...rows) - 1) * 2.4 + 2.4;
+  const dist = Math.max(6, width * 1.3);
+  // the strip from just behind the group to the camera stays clear of everyone else
+  photo.zone = { cx, cz, f, rt, back: -3, front: dist + 1.5, half: width / 2 + 2.2 };
+  shooPhotobombers();
+  photo.focus = { x: cx, y: 0, z: cz };
+  cam.follow = photo.focus; cam.followUntil = Infinity;
+  camGoal.dist = dist; camGoal.pitch = 0.22; camGoal.yaw = yaw;
+  photo.readyBy = performance.now() + 6000;   // real time, so a slow device doesn't keep everyone waiting
+  photo.waiting = true;
+}
+
+function inPhotoZone(x, z) {
+  const zn = photo && photo.zone;
+  if (!zn) return false;
+  const dx = x - zn.cx, dz = z - zn.cz, a = dx * zn.f.x + dz * zn.f.z, l = dx * zn.rt.x + dz * zn.rt.z;
+  return a > zn.back && a < zn.front && Math.abs(l) < zn.half;
+}
+function shooPhotobombers() {
+  const zn = photo && photo.zone;
+  if (!zn) return;
+  for (const b of buds) {
+    if (photo.picked.includes(b) || !b.placed || b.state === 'drop') continue;
+    const goingIn = b.state === 'walk' && b.target && inPhotoZone(b.target.x, b.target.z);
+    if (!inPhotoZone(b.x, b.z) && !goingIn) continue;
+    // step out sideways, whichever side is closer
+    const dx = b.x - zn.cx, dz = b.z - zn.cz, l = dx * zn.rt.x + dz * zn.rt.z, side = l >= 0 ? 1 : -1;
+    const out = zn.half + 1.5;
+    b.target = { x: b.x + zn.rt.x * side * (out - Math.abs(l)), z: b.z + zn.rt.z * side * (out - Math.abs(l)) };
+    const rr = Math.hypot(b.target.x, b.target.z);
+    if (rr > WALK_R) { b.target.x *= WALK_R / rr; b.target.z *= WALK_R / rr; }
+    b.state = 'walk'; b.partner = null; b.greetOnArrive = null;
+  }
+}
+
+// called every frame: start the countdown once everyone is in place (or it's taking too long)
+function photoTick() {
+  if (photo && photo.zone && (photo.stage === 'pose' || photo.stage === 'shoot')) shooPhotobombers();
+  if (!photo || photo.stage !== 'pose' || !photo.waiting) return;
+  const arrived = photo.picked.every((b) => b.state === 'idle' && Math.hypot(b.x - b.pose.x, b.z - b.pose.z) < 0.5);
+  if (arrived || performance.now() > photo.readyBy) { photo.waiting = false; setTimeout(countdown, arrived ? 500 : 0); }
+}
+
+function countdown() {
+  if (!photo) return;
+  photo.stage = 'shoot';
+  // anyone still wandering over just hops into place
+  for (const b of photo.picked) {
+    if (Math.hypot(b.x - b.pose.x, b.z - b.pose.z) > 0.5) b.syv -= 0.12;
+    b.x = b.pose.x; b.z = b.pose.z;
+    b.state = 'idle'; b.target = null;
+  }
+  const lookAt = { x: photo.focus.x + photo.zone.f.x * 100, z: photo.focus.z + photo.zone.f.z * 100 };
+  for (const b of photo.picked) b.heading = Math.atan2(lookAt.x - b.x, lookAt.z - b.z);
+  countdownEl.hidden = false;
+  const steps = ['3', '2', '1'];
+  steps.forEach((t, i) => setTimeout(() => {
+    if (!photo) return;
+    countdownEl.innerHTML = ''; countdownEl.append(el('span', null, t));
+    if (t === '1') for (const b of photo.picked) { say(b, 'cheese!', 900); b.happyUntil = T + 2.5; b.syv -= 0.08; }
+  }, i * 800));
+  setTimeout(snap, steps.length * 800);
+}
+
+function snap() {
+  if (!photo) return;
+  countdownEl.hidden = true;
+  for (const b of photo.picked) { b.happyUntil = T + 2; drawFace(b); }
+  const shot = capture();
+  const fl = el('div', 'flash'); document.body.append(fl); setTimeout(() => fl.remove(), 800);
+  photo.shot = shot;
+  photo.stage = 'review';
+  boothCaption.value = '';
+  boothMsg.hidden = true; boothPost.disabled = false; boothPost.textContent = 'Post to #photo-booth';
+  renderPolaroid();
+  booth.hidden = false;
+  setTimeout(() => boothCaption.focus(), 50);
+}
+
+// Render one frame at photo size, then put the sky behind it and name tags on top.
+function capture() {
+  const prevView = camera.view && camera.view.enabled;
+  if (prevView) camera.clearViewOffset();
+  renderer.setPixelRatio(1);
+  renderer.setSize(PHOTO_W, PHOTO_H, false);
+  camera.aspect = PHOTO_W / PHOTO_H; camera.fov = 38; camera.updateProjectionMatrix();
+  renderer.render(scene, camera);
+  const c = document.createElement('canvas'); c.width = PHOTO_W; c.height = PHOTO_H;
+  const g = c.getContext('2d');
+  const css = getComputedStyle(document.documentElement);
+  const sky = g.createLinearGradient(0, 0, 0, PHOTO_H);
+  sky.addColorStop(0, css.getPropertyValue('--sky-top').trim() || '#BFD9FF');
+  sky.addColorStop(1, css.getPropertyValue('--sky-bottom').trim() || '#FBE3EF');
+  g.fillStyle = sky; g.fillRect(0, 0, PHOTO_W, PHOTO_H);
+  g.drawImage(renderer.domElement, 0, 0, PHOTO_W, PHOTO_H);
+  // name tags
+  g.font = '500 30px Fredoka, ui-rounded, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const b of photo.picked) {
+    const v = new THREE.Vector3(b.x, b.hop.position.y + b.height * b.sy + 0.3, b.z).project(camera);
+    if (v.z > 1) continue;
+    const x = (v.x + 1) / 2 * PHOTO_W, y = (1 - v.y) / 2 * PHOTO_H;
+    const name = nameOf(b), w = g.measureText(name).width + 30;
+    g.fillStyle = b.data.isMe ? 'rgba(29,28,43,.92)' : 'rgba(255,255,255,.92)';
+    g.beginPath(); g.roundRect(x - w / 2, y - 44, w, 44, 13); g.fill();
+    g.fillStyle = b.data.isMe ? '#fff' : '#1D1C2B'; g.fillText(name, x, y - 21);
+  }
+  resize();
+  return c;
+}
+
+function wrapLines(g, text, maxW) {
+  const words = text.split(' '), lines = [];
+  let line = '';
+  for (const w of words) {
+    const t = line ? line + ' ' + w : w;
+    if (g.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+  }
+  if (line) lines.push(line);
+  return lines.slice(0, 2);
+}
+// The polaroid: photo on cream paper, the caption underneath in big round letters, and the date.
+function renderPolaroid() {
+  if (!photo || !photo.shot) return;
+  const pad = 56, W = PHOTO_W + pad * 2, H = PHOTO_H + pad + 300;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#FBF8F2'; g.fillRect(0, 0, W, H);
+  g.drawImage(photo.shot, pad, pad);
+  g.strokeStyle = 'rgba(0,0,0,.08)'; g.lineWidth = 2; g.strokeRect(pad, pad, PHOTO_W, PHOTO_H);
+  const cap = boothCaption.value.trim();
+  g.textAlign = 'center'; g.fillStyle = '#2B2A33';
+  const base = PHOTO_H + pad;
+  if (cap) {
+    g.font = '500 58px Fredoka, ui-rounded, system-ui, sans-serif';
+    const lines = wrapLines(g, cap, PHOTO_W - 80);
+    lines.forEach((l, i) => g.fillText(l, W / 2, base + 105 + i * 68 - (lines.length - 1) * 30));
+  }
+  g.font = '400 32px Fredoka, ui-rounded, system-ui, sans-serif'; g.fillStyle = 'rgba(43,42,51,.55)';
+  const date = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  g.fillText(`bud island · ${date}`, W / 2, H - 52);
+  const url = c.toDataURL('image/jpeg', 0.88);
+  photo.jpeg = url;
+  boothImg.src = url;
+  boothImg.alt = `Photo of ${photo.picked.map(nameOf).join(', ')} on bud island${cap ? `: ${cap}` : ''}`;
+  document.getElementById('boothSave').href = url;
+}
+let capTimer = 0;
+boothCaption.addEventListener('input', () => { clearTimeout(capTimer); capTimer = setTimeout(renderPolaroid, 180); });
+boothCaption.addEventListener('keydown', (e) => { if (e.key === 'Enter') boothPost.click(); });
+
+boothPost.addEventListener('click', async () => {
+  if (!photo || boothPost.disabled) return;
+  clearTimeout(capTimer); renderPolaroid();
+  boothPost.disabled = true; boothPost.textContent = 'Posting…'; boothMsg.hidden = true;
+  try {
+    const res = await api('POST', '/api/photos', { image: photo.jpeg, caption: boothCaption.value.trim(), buds: photo.picked.map((b) => b.data.id) });
+    boothMsg.className = 'msg'; boothMsg.textContent = '';
+    const a = el('a', null, 'See it in Discord'); a.href = res.url; a.target = '_blank'; a.rel = 'noopener';
+    boothMsg.append('Posted to #photo-booth. ', a);
+    boothMsg.hidden = false;
+    boothPost.textContent = 'Done';
+    boothPost.disabled = false;
+    boothPost.onclick = () => { boothPost.onclick = null; exitPhoto(); };
+    for (const b of photo.picked) { b.syv -= 0.12; b.happyUntil = T + 1.5; }
+  } catch (err) {
+    boothMsg.className = 'msg err'; boothMsg.textContent = err.message; boothMsg.hidden = false;
+    boothPost.disabled = false; boothPost.textContent = 'Post to #photo-booth';
+  }
+});
+document.getElementById('boothRetake').addEventListener('click', () => {
+  if (!photo) return;
+  booth.hidden = true; boothPost.onclick = null;
+  photo.stage = 'pose'; photo.waiting = false;
+  setTimeout(countdown, 400);
+});
+document.getElementById('photoBtn').addEventListener('click', () => (photo ? exitPhoto() : enterPhoto()));
+document.getElementById('photoCancel').addEventListener('click', exitPhoto);
+photoGo.addEventListener('click', lineUp);
+
+function exitPhoto() {
+  if (!photo) return;
+  for (const b of photo.picked) {
+    b.tag.classList.remove('picked');
+    b.pose = null; b.held = false; b.lookCameraUntil = T + 1; b.timer = rand(1, 3);
+    if (b.state === 'walk') { b.state = 'idle'; b.target = null; }
+  }
+  cam.followUntil = T; camGoal.pitch = null; camGoal.yaw = null;
+  cam.pitch = Math.max(cam.pitch, 0.3);
+  if (photo.savedPitch != null) camGoal.pitch = photo.savedPitch;
+  setTimeout(() => { if (!photo) camGoal.pitch = null; }, 1500);
+  photoBar.hidden = true; booth.hidden = true; countdownEl.hidden = true;
+  boothPost.onclick = null;
+  photo.zone = null;
+  photo = null;
+}
 
 const hint = document.getElementById('hint');
 function hideHint() { hint.classList.add('gone'); }
@@ -1177,6 +1514,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
   setClock(T);
   for (const bud of buds) if (bud.placed) { updateBud(bud, dt); drawFace(bud); animateStickies(bud, dt); }
+  photoTick();
   for (const c of clouds) {
     c.a += c.sp * dt;
     c.g.position.set(Math.cos(c.a) * c.r, c.y + Math.sin(T * 0.2 + c.a) * 0.4, Math.sin(c.a) * c.r);
@@ -1247,6 +1585,7 @@ function showCenter(title, text, linkText, href = '/') {
   }
   const mine = buds.find((b) => b.data.isMe);
   if (mine) document.getElementById('findMe').hidden = false;
+  if (buds.length) document.getElementById('photoBtn').hidden = false;
 
   // the notes already stuck on everyone: yours on your own bud are the ones you can read
   for (const bud of buds) {
