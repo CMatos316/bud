@@ -205,6 +205,46 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
 }
 .bubble.pop { animation: pop .28s cubic-bezier(.3, 1.6, .5, 1); }
 @keyframes pop { from { scale: .6; opacity: 0; } to { scale: 1; opacity: 1; } }
+/* long lines from bud wrap instead of running off the screen */
+.bubble.talk { white-space: normal; width: max-content; max-width: min(340px, calc(100vw - 48px)); text-align: center; line-height: 1.35; }
+.bubble.typing { letter-spacing: .2em; animation: typing 1s ease-in-out infinite; }
+@keyframes typing { 50% { opacity: .35; } }
+
+/* ---------- getting-to-know-you chat ---------- */
+.dock section.chat-step { flex-direction: column; align-items: stretch; width: min(520px, calc(100vw - 64px)); gap: 8px; }
+.chatlog { max-height: min(17vh, 150px); overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 2px 4px; scrollbar-width: thin; }
+.chatlog:empty { display: none; }
+.chatlog .m { margin: 0; max-width: 85%; padding: 7px 12px; border-radius: 16px; font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.chatlog .m.bud { align-self: flex-start; background: var(--chip); border-bottom-left-radius: 5px; }
+.chatlog .m.you { align-self: flex-end; background: var(--ink); color: var(--bg-top); border-bottom-right-radius: 5px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.chips:empty { display: none; }
+.chip {
+  appearance: none; font: 500 14px/1 var(--font-display); color: var(--ink); background: var(--field); cursor: pointer;
+  border: 1.5px solid var(--tray-line); border-radius: 999px; padding: 8px 13px;
+}
+.chip:hover { border-color: var(--ink); }
+.chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.chatbar { display: flex; gap: 8px; align-items: center; }
+.chatbar input {
+  flex: 1; min-width: 0; font: 500 16px var(--font-display); color: var(--ink); background: var(--field);
+  border: 1.5px solid var(--tray-line); border-radius: 16px; padding: 11px 14px; -webkit-user-select: text; user-select: text;
+}
+.chatbar input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.chat-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.linkish { appearance: none; border: 0; background: none; color: var(--muted); font: 500 13px var(--font-display); cursor: pointer; padding: 4px; text-decoration: underline; text-underline-offset: 3px; }
+.linkish:hover { color: var(--ink); }
+.chat-note { margin: 0; font-size: 12px; color: var(--muted); }
+.learned { display: grid; gap: 10px; text-align: left; }
+.learned h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.learned .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.learned .tag { display: inline-flex; align-items: center; gap: 4px; background: var(--chip); border-radius: 999px; padding: 5px 6px 5px 12px; font-size: 14px; }
+.learned .tag button { appearance: none; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; border-radius: 50%; }
+.learned .tag button:hover, .learned .tag button:focus-visible { color: var(--ink); }
+.learned .tag.want { background: transparent; border: 1.5px dashed var(--tray-line); }
+.learned p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.4; }
+.learned .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
 .nametag { position: fixed; left: 0; top: 0; z-index: 2; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .nametag .nick { font-weight: 600; font-size: 18px; background: var(--ink); color: var(--bg-top); padding: 5px 13px; border-radius: 11px; rotate: -2.5deg; box-shadow: 0 8px 18px -10px var(--shadow); }
 .nametag .aka { font: 400 11.5px var(--font-mono); color: var(--muted); letter-spacing: 0.03em; }
@@ -301,8 +341,34 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     <button class="btn primary" id="done" type="button" disabled>Done</button>
   </section>
 
+  <section data-step="chat" class="chat-step" hidden aria-label="Chat with your bud">
+    <div class="chatlog" id="chatLog" aria-live="polite"></div>
+    <div class="chips" id="chatChips"></div>
+    <form class="chatbar" id="chatForm" autocomplete="off">
+      <input id="chatInput" maxlength="300" placeholder="say something…" aria-label="Your answer" enterkeyhint="send">
+      <button class="btn primary" id="chatSend" type="submit">Send</button>
+    </form>
+    <div class="chat-foot">
+      <p class="chat-note">Only you and your bud see this chat. It remembers a short summary, which you can check next.</p>
+      <button class="linkish" id="chatLater" type="button">Maybe later</button>
+    </div>
+  </section>
+
+  <section data-step="learned" class="chat-step" hidden aria-label="What your bud learned">
+    <div class="learned" id="learned">
+      <h2 id="learnedTitle">Here’s what I’ll remember</h2>
+      <div class="tags" id="learnedTags"></div>
+      <p id="learnedQ"></p>
+      <div class="row">
+        <button class="btn" id="matchNo" type="button">Not yet</button>
+        <button class="btn primary" id="matchYes" type="button">Yes, find me friends</button>
+      </div>
+    </div>
+  </section>
+
   <section data-step="meet" hidden>
     <button class="btn" id="edit" type="button">Edit</button>
+    <button class="btn" id="chatAgain" type="button">Chat</button>
     <button class="btn" id="reset" type="button">Start over</button>
     <a class="btn primary" id="toWorld" href="/world">Visit the island</a>
   </section>
@@ -1291,6 +1357,8 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     if (!body) return;
     bubble.textContent = text; bubble.hidden = false;
     bubble.classList.toggle('mono', mono);
+    bubble.classList.toggle('talk', text.length > 26);
+    bubble.classList.toggle('typing', text === '• • •');
     bubble.classList.remove('pop'); void bubble.offsetWidth; bubble.classList.add('pop');
     clearTimeout(bubbleTimer);
     if (ms) bubbleTimer = setTimeout(() => { bubble.hidden = true; }, ms);
@@ -1656,7 +1724,15 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     say(nickname && nickname !== trueName ? `${nickname}? I love it.` : `hi! I’m ${trueName}`, 2600);
     // The end of making a bud: it hops off to the island, where everyone else's buds live.
     const [ok] = await Promise.all([saved, new Promise(r => setTimeout(r, 2700))]);
-    if (ok && step === 'meet') leaveForWorld();
+    if (ok && step === 'meet') {
+      if (hasProfile) leaveForWorld();
+      else {
+        // before it goes, bud wants to get to know you
+        say('wait! before we go… can I ask you some stuff?', 2200);
+        eyes.happyUntil = T + 1.5;
+        setTimeout(() => { if (step === 'meet') startChat(); }, 2300);
+      }
+    }
   });
   nickInput.addEventListener('keydown', e => { if (e.key === 'Enter') doneBtn.click(); });
 
@@ -1691,6 +1767,8 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     shape: ['Draw your buddy', 'Drag a loop around the eyes. Whatever you draw becomes its body.'],
     eyes: ['Pick its eyes', 'Every pair has its own personality. Tap one to try it on.'],
     paint: ['Paint it', 'Grab a brush and paint right on your buddy. Drag the empty space to turn it around.'],
+    chat: ['Getting to know you', 'Your bud wants to know what you’re into, so it can help you find friends.'],
+    learned: ['What your bud learned', 'Take out anything you don’t want it to remember.'],
   };
   const fitSoon = () => requestAnimationFrame(() => { fitStage(); if (ringOpen) layoutRing(true); });
   const stepBtns = document.querySelectorAll('.steps button');
@@ -1709,7 +1787,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     });
     dockEl.querySelectorAll('section').forEach(sec => { sec.hidden = sec.dataset.step !== s; });
     dockEl.hidden = !dockEl.querySelector(`section[data-step="${s}"]`);
-    document.getElementById('stepsNav').hidden = s === 'signin' || s === 'loading';
+    document.getElementById('stepsNav').hidden = s === 'signin' || s === 'loading' || s === 'chat' || s === 'learned';
     if (s !== 'eyes') hideRing();
     if (s !== 'name' && nameTimers.length) { nameTimers.forEach(clearTimeout); nameTimers = []; thinkUntil = 0; bubble.hidden = true; }
     tagEl.hidden = !(s === 'meet');
@@ -1831,7 +1909,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
       return;
     }
     if (onBody) { if (live) startSpin(x, y, false); else poke(x, y); return; }
-    if (step === 'name' || step === 'meet' || step === 'paint' || step === 'signin' || step === 'loading') { eyes.blinkStart = T; return; }
+    if (step === 'name' || step === 'meet' || step === 'paint' || step === 'signin' || step === 'loading' || step === 'chat' || step === 'learned') { eyes.blinkStart = T; return; }
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch (err) {}
     clearTimeout(pending3D);
@@ -1870,6 +1948,154 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   }
   cv.addEventListener('pointerup', endPointer);
   cv.addEventListener('pointercancel', endPointer);
+
+  /* ---------- getting to know you: bud asks, you answer (Claude Haiku on the server) ---------- */
+  let hasProfile = false, chat = null, learnedProfile = null;
+  const chatLog = document.getElementById('chatLog'), chatChips = document.getElementById('chatChips');
+  const chatForm = document.getElementById('chatForm'), chatInput = document.getElementById('chatInput');
+  const chatSend = document.getElementById('chatSend');
+
+  function startChat() {
+    chat = { history: [], busy: false, done: false };
+    chatLog.textContent = ''; chatChips.textContent = ''; chatInput.value = '';
+    goStep('chat');
+    chatInput.placeholder = `say something to ${nickname || trueName}…`;
+    budTurn();
+  }
+  function addLog(role, text) {
+    const m = document.createElement('p');
+    m.className = 'm ' + role; m.textContent = text;
+    chatLog.append(m); chatLog.scrollTop = chatLog.scrollHeight;
+    fitSoon();   // the panel grew: keep the bud in view above it
+  }
+  function setChatBusy(b) { chatSend.disabled = b; chatChips.querySelectorAll('button').forEach((x) => { x.disabled = b; }); }
+  function budReacts(mood) {
+    if (mood === 'happy') { eyes.happyUntil = T + 1.6; body.syv -= 0.08; }
+    else if (mood === 'excited') { eyes.happyUntil = T + 1.8; body.syv -= 0.16; if (gl && gl.active) gl.spinV = 0.12; }
+    else if (mood === 'thinking') thinkUntil = T + 1.4;
+    else body.syv -= 0.05;
+  }
+  async function talk(action) {
+    const res = await fetch('/api/interview', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, history: chat.history }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data };
+  }
+  async function budTurn() {
+    if (!chat) return;
+    chat.busy = true; setChatBusy(true);
+    thinkUntil = T + 30; say('• • •', 0);
+    try {
+      const { ok, status, data } = await talk('turn');
+      thinkUntil = 0;
+      if (!chat) return;
+      if (!ok) {
+        say(data.say || 'hm, I lost my words for a sec. try again?', 3200);
+        if (status === 503 || status === 429 || status === 409) { chat.done = true; setTimeout(() => endChat(), 3400); }
+        else if (chat.history.length && chat.history[chat.history.length - 1].role === 'you') {
+          // let them resend: take their last line back into the box
+          const last = chat.history.pop(); chatLog.lastChild?.remove(); chatInput.value = last.text;
+        }
+        return;
+      }
+      chat.history.push({ role: 'bud', text: data.say });
+      addLog('bud', data.say); say(data.say, 0); budReacts(data.mood);
+      showChips(data.done ? [] : data.chips);
+      if (data.done) { chat.done = true; chatForm.hidden = true; setTimeout(finishChat, 2600); }
+      else if (!matchMedia('(pointer: coarse)').matches) chatInput.focus();
+    } catch (e) {
+      thinkUntil = 0; say('hm, I lost my words for a sec. try again?', 3000);
+    } finally {
+      if (chat) { chat.busy = false; setChatBusy(false); }
+    }
+  }
+  function showChips(list) {
+    chatChips.textContent = '';
+    for (const c of list || []) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.textContent = c;
+      b.addEventListener('click', () => answer(c));
+      chatChips.append(b);
+    }
+    fitSoon();
+  }
+  function answer(text) {
+    text = String(text || '').trim();
+    if (!chat || chat.busy || chat.done || !text) return;
+    chat.history.push({ role: 'you', text });
+    addLog('you', text);
+    chatInput.value = ''; chatChips.textContent = '';
+    budTurn();
+  }
+  chatForm.addEventListener('submit', (e) => { e.preventDefault(); answer(chatInput.value); });
+
+  async function finishChat() {
+    if (!chat) return;
+    goStep('learned');
+    document.getElementById('learnedTags').textContent = '';
+    document.getElementById('learnedQ').textContent = '';
+    document.getElementById('matchYes').disabled = document.getElementById('matchNo').disabled = true;
+    thinkUntil = T + 30; say('let me write that down…', 0);
+    let data = {};
+    try { const r = await talk('finish'); data = r.ok ? r.data : {}; } catch (e) {}
+    thinkUntil = 0;
+    if (!data.profile) { say('oops, my notes got smudged. let’s chat again another time!', 3000); setTimeout(() => endChat(), 3200); return; }
+    learnedProfile = data.profile; hasProfile = true;
+    say(data.profile.summary || 'got it! I’ll remember.', 0);
+    eyes.happyUntil = T + 2; body.syv -= 0.12;
+    renderLearned();
+  }
+  function renderLearned() {
+    const p = learnedProfile, box = document.getElementById('learnedTags');
+    box.textContent = '';
+    const addTag = (text, listName, want) => {
+      const t = document.createElement('span'); t.className = 'tag' + (want ? ' want' : '');
+      t.append(want ? `looking for: ${text}` : text);
+      const x = document.createElement('button'); x.type = 'button'; x.textContent = '×';
+      x.setAttribute('aria-label', `Forget “${text}”`);
+      x.addEventListener('click', () => { p[listName] = p[listName].filter((v) => v !== text); renderLearned(); });
+      t.append(x); box.append(t);
+    };
+    p.interests.forEach((t) => addTag(t, 'interests', false));
+    p.lookingFor.forEach((t) => addTag(t, 'lookingFor', true));
+    if (!p.interests.length && !p.lookingFor.length) box.append('Nothing to remember. That’s okay too.');
+    const nm = nickname || trueName;
+    document.getElementById('learnedQ').textContent = `Want ${nm} to suggest people here who are into the same stuff? You can change this later.`;
+    document.getElementById('matchYes').disabled = document.getElementById('matchNo').disabled = false;
+  }
+  async function saveLearned(matchable) {
+    const yes = document.getElementById('matchYes'), no = document.getElementById('matchNo');
+    yes.disabled = no.disabled = true;
+    try {
+      await fetch('/api/profile', {
+        method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interests: learnedProfile.interests, lookingFor: learnedProfile.lookingFor, matchable }),
+      });
+    } catch (e) {}
+    say(matchable ? 'yay! I’ll keep an eye out for you.' : 'okay! just us for now.', 2000);
+    eyes.happyUntil = T + 2; body.syv -= 0.1;
+    chat = null;
+    setTimeout(() => { goStep('meet'); leaveForWorld(); }, 1800);
+  }
+  document.getElementById('matchYes').addEventListener('click', () => saveLearned(true));
+  document.getElementById('matchNo').addEventListener('click', () => saveLearned(false));
+  function endChat() {
+    chat = null; chatForm.hidden = false; thinkUntil = 0;
+    goStep('meet');
+    leaveForWorld();
+  }
+  document.getElementById('chatLater').addEventListener('click', () => {
+    if (!chat) return;
+    say('okay! another time then.', 1500);
+    chat = null; chatForm.hidden = false; thinkUntil = 0;
+    setTimeout(() => { goStep('meet'); leaveForWorld(); }, 1200);
+  });
+  document.getElementById('chatAgain').addEventListener('click', () => {
+    say(hasProfile ? 'ooh, catch-up time!' : 'yay, let’s chat!', 1200);
+    setTimeout(startChat, 900);
+  });
 
   /* ---------- persistence: saved to the signed-in person's account ---------- */
   // Edits after the bud is finished (eyes, paint) save on their own, a moment after you stop.
@@ -1974,6 +2200,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
       return;
     }
 
+    hasProfile = !!me.hasProfile;
     const who = document.getElementById('who');
     document.getElementById('whoName').textContent = me.user.name;
     document.getElementById('whoAvatar').src = me.user.avatarUrl;

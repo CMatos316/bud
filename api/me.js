@@ -12,11 +12,12 @@ export async function GET(request) {
     ? `https://cdn.discordapp.com/avatars/${session.id}/${session.avatar}.png?size=64`
     : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(session.id) >> 22n) % 6}.png`;
   try {
-    const snap = await refs.bud(session.id).get();
+    const [snap, profile] = await Promise.all([refs.bud(session.id).get(), refs.profile(session.id).get()]);
     return json({
       signedIn: true,
       user: { id: session.id, name: session.name, avatarUrl },
       bud: snap.exists ? budForClient(snap.data()) : null,
+      hasProfile: profile.exists,
     });
   } catch (err) {
     console.error('loading bud failed:', err);
