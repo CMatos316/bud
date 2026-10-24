@@ -3,6 +3,8 @@
 import { readSession, sameOrigin } from '../lib/session.js';
 import { refs, Timestamp } from '../lib/firebase.js';
 import { validateBud } from '../lib/bud.js';
+import { announceArrival } from '../lib/arrivals.js';
+import { waitUntil } from '@vercel/functions';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 
@@ -25,6 +27,15 @@ export async function PUT(request) {
     const now = Timestamp.now();
     const existing = await ref.get();
     await ref.set({ ...v.doc, owner: session.id, updatedAt: now, ...(existing.exists ? {} : { createdAt: now }) }, { merge: true });
+    if (!existing.exists) {
+      // a new bud on the island: tell #buds (after answering, so saving stays quick)
+      waitUntil((async () => {
+        const user = refs.user(session.id), u = await user.get();
+        const again = u.exists && !!u.get('arrivalAnnouncedAt');
+        await announceArrival(session.id, v.doc.nickname || v.doc.trueName, again);
+        await user.set({ arrivalAnnouncedAt: Timestamp.now() }, { merge: true });
+      })().catch((err) => console.error('arrival announcement failed:', err)));
+    }
     return json({ saved: true });
   } catch (err) {
     console.error('saving bud failed:', err);
