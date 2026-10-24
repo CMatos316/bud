@@ -73,7 +73,8 @@ body {
 .who img { width: 24px; height: 24px; border-radius: 50%; }
 .who a { color: var(--muted); text-decoration: none; font-size: 12.5px; }
 .who a:hover, .who a:focus-visible { color: var(--ink); text-decoration: underline; }
-.pill:focus-visible, .card button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.pill:focus-visible, .card button:focus-visible, .composer button:focus-visible, .composer textarea:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.badge { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #E2557A; color: #fff; font-size: 11.5px; font-weight: 600; display: inline-grid; place-items: center; }
 
 .title {
   position: fixed; z-index: 2; left: 0; right: 0; top: calc(64px + env(safe-area-inset-top, 0px));
@@ -114,6 +115,7 @@ body {
 .hint.gone { opacity: 0; }
 
 .card {
+  max-height: min(64vh, 560px); overflow: auto;
   position: fixed; z-index: 5; left: 0; right: 0; margin-inline: auto; width: min(320px, calc(100% - 32px));
   bottom: calc(18px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box;
   background: var(--tag); color: var(--tag-ink); border: 1px solid var(--chip-line); border-radius: 22px;
@@ -126,7 +128,64 @@ body {
 .card h2 { margin: 0; font-size: 22px; font-weight: 600; }
 .card p { margin: 0; grid-column: 1 / -1; color: var(--muted); font-size: 13.5px; line-height: 1.4; }
 .card .tn { font-family: var(--font-mono); color: var(--tag-ink); background: rgba(127,127,160,.16); padding: 1px 6px; border-radius: 6px; }
-.card button { appearance: none; border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.card .x { appearance: none; border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.card-body { grid-column: 1 / -1; display: grid; gap: 10px; margin-top: 8px; }
+.card-body:empty { display: none; }
+.card-body .muted { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.4; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.btn {
+  appearance: none; border: 1px solid var(--chip-line); background: var(--chip); color: var(--ink); cursor: pointer;
+  font: 500 14px/1 var(--font-display); padding: 10px 15px; border-radius: 999px; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.btn.primary { background: var(--me); color: var(--me-ink); border-color: transparent; }
+.btn:hover { transform: translateY(-1px); }
+.btn:disabled { opacity: .5; cursor: default; transform: none; }
+.friends { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; font-size: 14.5px; }
+.friends::before, .tag.friend::before { content: "\2665"; color: #E2557A; }
+.tag.friend::before { margin-right: 4px; }
+
+/* Sticky notes: paper colors stay paper-colored in dark mode too. */
+:root { --n-lemon: #FFE98A; --n-peach: #FFC6A5; --n-mint: #BDEFCF; --n-sky: #BFDFFF; --n-lilac: #DCCBFF; --paper-ink: #2B2A33; }
+.note {
+  position: relative; background: var(--n-lemon); color: var(--paper-ink); border-radius: 3px 3px 3px 14px;
+  padding: 14px 14px 12px; box-shadow: 0 10px 18px -12px rgba(30, 25, 60, .45); transform: rotate(-1.2deg);
+}
+.note:nth-child(even) { transform: rotate(1deg); }
+.note::before {
+  content: ""; position: absolute; top: -7px; left: 50%; width: 46px; height: 14px; transform: translateX(-50%) rotate(-3deg);
+  background: rgba(255, 255, 255, .55); border-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,.08);
+}
+.note .text { margin: 0; font-size: 17px; line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note .from { margin: 8px 0 0; font-size: 12.5px; opacity: .7; }
+.note .row { margin-top: 10px; }
+.note .btn { background: rgba(255,255,255,.6); color: var(--paper-ink); border-color: rgba(43,42,51,.12); padding: 8px 13px; font-size: 13.5px; }
+.note .btn.primary { background: var(--paper-ink); color: #fff; }
+.note.small .text { font-size: 15px; }
+
+.composer {
+  position: fixed; z-index: 6; left: 0; right: 0; margin-inline: auto; width: min(320px, calc(100% - 32px));
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box;
+  background: var(--tag); color: var(--tag-ink); border: 1px solid var(--chip-line); border-radius: 22px;
+  padding: 16px 18px 18px; box-shadow: 0 20px 44px -24px var(--shadow);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  display: grid; gap: 12px; justify-items: center; animation: rise .35s cubic-bezier(.2, .9, .3, 1.15);
+}
+.composer-title { margin: 0; font-weight: 600; font-size: 17px; justify-self: start; }
+.composer .note { width: 220px; height: 200px; box-sizing: border-box; display: grid; padding: 18px 16px 10px; transform: rotate(-2deg); }
+.composer textarea {
+  appearance: none; border: 0; background: transparent; resize: none; color: var(--paper-ink); width: 100%; height: 100%;
+  font: 500 19px/1.3 var(--font-display); padding: 0; border-radius: 4px;
+}
+.composer textarea::placeholder { color: rgba(43, 42, 51, .45); }
+.composer .count { justify-self: end; font: 11.5px var(--font-mono); opacity: .55; }
+.swatches { display: flex; gap: 10px; }
+.swatch { appearance: none; width: 28px; height: 28px; border-radius: 8px; border: 2px solid transparent; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.swatch[aria-checked="true"] { border-color: var(--ink); }
+.swatch:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.composer-error { margin: 0; color: #C4385E; font-size: 13.5px; text-align: center; }
+.composer .row { justify-content: flex-end; width: 100%; }
+.flying { position: fixed; z-index: 7; margin: 0; pointer-events: none; }
 
 .center {
   position: fixed; inset: 0; display: grid; place-items: center; z-index: 6; text-align: center; pointer-events: none;
@@ -143,7 +202,7 @@ body {
   .brand span:last-child { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .bubble.pop, .card { animation: none; }
+  .bubble.pop, .card, .composer { animation: none; }
 }
 </style>
 </head>
@@ -159,6 +218,10 @@ body {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
       <span class="label">Find my bud</span>
     </button>
+    <button class="pill" id="notesPill" type="button" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v11l-5 5H4z"/><path d="M15 20v-5h5"/></svg>
+      <span class="label">Notes</span><span class="badge" id="notesCount"></span>
+    </button>
     <a class="pill" href="/" id="editLink">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
       <span class="label">My bud</span>
@@ -169,23 +232,35 @@ body {
 
 <div class="title" id="title"><h1 id="titleText">Bud island</h1><p id="titleSub">Everyone&rsquo;s buds live here.</p></div>
 <div class="hint" id="hint">Drag to look around &middot; scroll to zoom &middot; tap a bud to say hi</div>
-<div class="card" id="card" hidden role="dialog" aria-live="polite">
-  <h2 id="cardName"></h2><button type="button" id="cardClose" aria-label="Close">&times;</button>
+<div class="card" id="card" hidden role="dialog" aria-labelledby="cardName">
+  <h2 id="cardName"></h2><button type="button" class="x" id="cardClose" aria-label="Close">&times;</button>
   <p id="cardSub"></p>
+  <div class="card-body" id="cardBody" aria-live="polite"></div>
 </div>
+<form class="composer" id="composer" hidden role="dialog" aria-labelledby="composerTitle">
+  <p class="composer-title" id="composerTitle"></p>
+  <div class="note" id="noteDraft">
+    <textarea id="noteText" maxlength="120" placeholder="wanna be friends?" aria-label="Your note"></textarea>
+    <span class="count" id="noteCount">0 / 120</span>
+  </div>
+  <div class="swatches" id="swatches" role="radiogroup" aria-label="Note color"></div>
+  <p class="composer-error" id="noteError" role="alert" hidden></p>
+  <div class="row"><button class="btn" type="button" id="noteCancel">Cancel</button><button class="btn primary" type="submit" id="noteSend">Stick it on</button></div>
+</form>
 <div class="center" id="center" hidden><div><h2 id="centerTitle"></h2><p id="centerText"></p><a class="pill" id="centerLink" href="/"></a></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
 <script type="module">
-import { setExtents, buildMesh, drawEyeStyle, setClock, clamp } from '/js/bud-core.js';
+import { setExtents, buildMesh, drawEyeStyle, setClock, clamp, inPoly, distToPoly } from '/js/bud-core.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
 const canvas = document.getElementById('world');
 const labels = document.getElementById('labels');
 const params = new URLSearchParams(location.search);
 const DROP = params.get('drop') === '1';
-if (DROP) history.replaceState(null, '', location.pathname);
+const OPEN_NOTES = params.get('notes') === '1';
+if (DROP || OPEN_NOTES) history.replaceState(null, '', location.pathname);
 
 const HELLOS = ['hi!', 'hey!', 'oh hi', 'hello!', 'yo', 'hiii'];
 const POKED = ['hehe', 'hi there!', 'boop', 'oh! hello', 'that tickles'];
@@ -400,12 +475,12 @@ async function makeBud(data) {
   scene.add(root);
 
   const tag = document.createElement('div');
-  tag.className = 'tag' + (data.isMe ? ' me' : '');
+  tag.className = 'tag' + (data.isMe ? ' me' : '') + (data.friend ? ' friend' : '');
   tag.textContent = data.nickname || data.trueName;
   labels.appendChild(tag);
 
   const bud = {
-    data, b, s, root, hop, squash, bodyMesh, faceMesh, shadow, faceTex, fctx: fc.getContext('2d'), faceKey: '',
+    data, b, s, root, hop, squash, inner, stickies: [], spots: null, bodyMesh, faceMesh, shadow, faceTex, fctx: fc.getContext('2d'), faceKey: '',
     eyeCol: eyeColorFor(img, b), height: b.h * s, width: b.w * s,
     x: 0, z: 0, y: 0, vy: 0, heading: Math.random() * Math.PI * 2, state: 'idle', timer: rand(0.5, 3),
     target: null, speed: rand(0.9, 1.4), hopPhase: 0, sy: 1, syv: 0,
@@ -414,6 +489,123 @@ async function makeBud(data) {
   };
   bodyMesh.userData.bud = bud; faceMesh.userData.bud = bud;
   return bud;
+}
+
+/* ---------------- sticky notes on buds ---------------- */
+const NOTE_HEX = { lemon: '#FFE98A', peach: '#FFC6A5', mint: '#BDEFCF', sky: '#BFDFFF', lilac: '#DCCBFF' };
+const NOTE_COLORS = Object.keys(NOTE_HEX);
+const Z = new THREE.Vector3(0, 0, 1);
+const noteTextures = {};
+function noteTexture(color) {
+  if (noteTextures[color]) return noteTextures[color];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = NOTE_HEX[color] || NOTE_HEX.lemon; g.fillRect(0, 0, 128, 128);
+  const gr = g.createLinearGradient(0, 0, 0, 128);
+  gr.addColorStop(0, 'rgba(255,255,255,.22)'); gr.addColorStop(1, 'rgba(60,40,0,.08)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  // squiggles: there's writing on it, but you can't read it from out here
+  g.strokeStyle = 'rgba(43,42,51,.42)'; g.lineWidth = 5; g.lineCap = 'round';
+  for (const [y, w] of [[42, 84], [64, 72], [86, 50]]) {
+    g.beginPath(); g.moveTo(24, y);
+    for (let i = 0; i <= w; i += 6) g.lineTo(24 + i, y + Math.sin(i * 0.45 + y) * 2.6);
+    g.stroke();
+  }
+  // a strip of tape across the top
+  g.fillStyle = 'rgba(255,255,255,.6)'; g.fillRect(40, 0, 48, 14);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4;
+  return (noteTextures[color] = t);
+}
+
+// Same bud, same spots, every visit.
+function seeded(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; };
+}
+
+// Places on the front of the body where a note can go: inside the outline, off the face, not too close together.
+const probeRay = new THREE.Raycaster();
+const probeMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+function stickySpots(bud) {
+  const { b } = bud, rnd = seeded(String(bud.data.id || bud.data.trueName)), spots = [];
+  const probe = new THREE.Mesh(bud.bodyMesh.geometry, probeMat);
+  const size = Math.min(b.w, b.h), er = b.eyeR;
+  const onFace = (x, y) => Math.abs(x - b.eyeRel.x) < er * 2.5 && Math.abs(y - b.eyeRel.y) < er * 1.8;
+  for (let tries = 0; tries < 400 && spots.length < 8; tries++) {
+    const loose = tries > 250;
+    const x = b.minX + rnd() * b.w, y = b.minY + rnd() * b.h;
+    if (!inPoly(b.r, x, y) || distToPoly(b.r, x, y) < size * (loose ? 0.1 : 0.15) || onFace(x, y)) continue;
+    if (spots.some((p) => Math.hypot(p.x - x, p.y - y) < size * (loose ? 0.12 : 0.22))) continue;
+    probeRay.set(new THREE.Vector3(x, -y, 1e4), new THREE.Vector3(0, 0, -1));
+    const hit = probeRay.intersectObject(probe, false)[0];
+    if (!hit) continue;
+    const normal = hit.face.normal.clone(); if (normal.z < 0) normal.negate();
+    spots.push({ x, y, point: hit.point.clone(), normal, spin: (rnd() - 0.5) * 0.8 });
+  }
+  return { probe, list: spots };
+}
+
+// A small square that hugs the curve of the body, so it looks stuck on rather than floating.
+function stickyGeometry(bud, sp, size) {
+  const g = new THREE.PlaneGeometry(1, 1, 4, 4);
+  const q = new THREE.Quaternion().setFromUnitVectors(Z, sp.normal).multiply(new THREE.Quaternion().setFromAxisAngle(Z, sp.spin));
+  const pos = g.attributes.position, v = new THREE.Vector3(), down = sp.normal.clone().negate();
+  for (let i = 0; i < pos.count; i++) {
+    v.set(pos.getX(i) * size, pos.getY(i) * size, 0).applyQuaternion(q).add(sp.point).addScaledVector(sp.normal, size);
+    probeRay.set(v, down);
+    const hit = probeRay.intersectObject(bud.spots.probe, false)[0];
+    const p = hit ? hit.point.addScaledVector(sp.normal, size * 0.035) : v.addScaledVector(sp.normal, -size * 0.965);
+    pos.setXYZ(i, p.x - sp.point.x, p.y - sp.point.y, p.z - sp.point.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+function addSticky(bud, color, tag = null, delay = -1) {
+  if (!bud.spots) bud.spots = stickySpots(bud);
+  const used = new Set(bud.stickies.map((st) => st.slot));
+  const slot = bud.spots.list.findIndex((_, i) => !used.has(i));
+  if (slot < 0) return null;   // no room left; the count on the card still tells the truth
+  const sp = bud.spots.list[slot], size = 0.3 / bud.s;
+  const mesh = new THREE.Mesh(stickyGeometry(bud, sp, size), new THREE.MeshStandardMaterial({
+    map: noteTexture(color), roughness: 0.85, envMapIntensity: 0.3, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  }));
+  mesh.position.copy(sp.point);
+  mesh.renderOrder = 1;
+  const st = { mesh, slot, color, tag, grow: delay < 0 ? 1 : 0, wait: Math.max(0, delay), dying: false };
+  mesh.scale.setScalar(st.grow || 0.001);
+  bud.inner.add(mesh); bud.stickies.push(st);
+  return st;
+}
+function removeSticky(bud, test) {
+  const st = bud.stickies.find((x) => !x.dying && test(x));
+  if (st) st.dying = true;
+}
+function animateStickies(bud, dt) {
+  for (let i = bud.stickies.length - 1; i >= 0; i--) {
+    const st = bud.stickies[i];
+    if (st.wait > 0) { st.wait -= dt; continue; }
+    if (st.dying) {
+      st.grow -= dt * 4;
+      if (st.grow <= 0) { bud.inner.remove(st.mesh); st.mesh.geometry.dispose(); st.mesh.material.dispose(); bud.stickies.splice(i, 1); continue; }
+      st.mesh.scale.setScalar(st.grow);
+    } else if (st.grow < 1) {
+      st.grow = Math.min(1, st.grow + dt * 3.5);
+      const t = st.grow, k = 2.2;   // ease out with a little overshoot, like slapping it on
+      st.mesh.scale.setScalar(Math.max(0.001, 1 + (k + 1) * Math.pow(t - 1, 3) + k * Math.pow(t - 1, 2)));
+    }
+  }
+}
+// Where a sticky slot sits on screen, for the note flying onto it.
+function slotOnScreen(bud) {
+  if (!bud.spots) bud.spots = stickySpots(bud);
+  const used = new Set(bud.stickies.map((st) => st.slot));
+  const sp = bud.spots.list.find((_, i) => !used.has(i));
+  const v = sp ? bud.inner.localToWorld(sp.point.clone()) : new THREE.Vector3(bud.x, bud.height * 0.5, bud.z);
+  v.project(camera);
+  return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight };
 }
 
 function freeSpot(minDistFromOthers = 2.2, near = null, spread = WALK_R) {
@@ -462,7 +654,7 @@ function updateBud(bud, dt) {
       welcome(bud);
     }
   } else if (bud.state === 'idle') {
-    bud.timer -= dt;
+    if (!bud.held) bud.timer -= dt;
     if (T > bud.lookUntil && Math.random() < dt * 0.5) {
       const other = nearestBud(bud, 6);
       bud.look = other && Math.random() < 0.6 ? other : { x: bud.x + rand(-4, 4), z: bud.z + rand(-4, 4), y: rand(0, 2) };
@@ -489,7 +681,7 @@ function updateBud(bud, dt) {
         const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz) || 1;
         if (od < 1.5) { mx += ox / od * 1.4; mz += oz / od * 1.4; }
         // bumping into someone: maybe stop and say hi
-        if (od < 2.1 && bud.greetCooldown <= 0 && o.greetCooldown <= 0 && o.state !== 'greet' && Math.random() < 0.35) {
+        if (od < 2.1 && bud.greetCooldown <= 0 && o.greetCooldown <= 0 && o.state !== 'greet' && !o.held && !bud.held && Math.random() < 0.35) {
           startGreeting(bud, o); return;
         }
       }
@@ -508,6 +700,11 @@ function updateBud(bud, dt) {
     if (p) bud.heading += angleTo(bud.heading, Math.atan2(p.x - bud.x, p.z - bud.z)) * Math.min(1, dt * 5);
     bud.look = p;
     if (bud.timer <= 0) { bud.state = 'idle'; bud.timer = rand(1, 3); bud.partner = null; bud.look = null; }
+  }
+
+  // turn around to face whoever is looking at it (after a tap, or while you write it a note)
+  if (bud.lookCameraUntil > T && (bud.state === 'idle' || bud.state === 'greet' && !bud.partner)) {
+    bud.heading += angleTo(bud.heading, Math.atan2(camera.position.x - bud.x, camera.position.z - bud.z)) * Math.min(1, dt * 5);
   }
 
   // stay on the island
@@ -616,6 +813,12 @@ function placeCamera(dt) {
     cam.target.z + Math.cos(cam.yaw) * cp * cam.dist,
   );
   camera.lookAt(cam.target);
+  // With a card or note pad open at the bottom, slide the picture up so the bud you're looking at sits above it.
+  const panel = [document.getElementById('card'), document.getElementById('composer')].find((e) => !e.hidden);
+  const want = panel && cam.follow ? Math.min(panel.getBoundingClientRect().height * 0.5, innerHeight * 0.3) : 0;
+  cam.shift = (cam.shift || 0) + (want - (cam.shift || 0)) * (1 - Math.pow(0.02, dt));
+  if (Math.abs(cam.shift) > 0.5) camera.setViewOffset(innerWidth, innerHeight, 0, cam.shift, innerWidth, innerHeight);
+  else if (camera.view && camera.view.enabled) camera.clearViewOffset();
 }
 
 const pointers = new Map();
@@ -677,12 +880,52 @@ function hoverAt(x, y) {
   canvas.classList.toggle('over-bud', !!budAt(x, y));
 }
 const card = document.getElementById('card');
+const cardBody = document.getElementById('cardBody');
+let inbox = [];        // notes stuck on my bud: { from, fromName, fromBud, text, color }
+let cardBud = null;
+const nameOf = (bud) => bud.data.nickname || bud.data.trueName;
+const myBud = () => buds.find((b) => b.data.isMe);
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method, credentials: 'same-origin', cache: 'no-store',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (res.status === 401) { location.replace('/'); throw new Error('signed out'); }
+  if (!res.ok) throw new Error(data.error || 'something went wrong');
+  return data;
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function noteEl(text, color, small = false) {
+  const n = el('div', 'note' + (small ? ' small' : ''));
+  n.style.background = `var(--n-${NOTE_COLORS.includes(color) ? color : 'lemon'})`;
+  n.append(el('p', 'text', text));
+  return n;
+}
+
 function clickAt(x, y) {
   const bud = budAt(x, y);
-  if (!bud) { card.hidden = true; return; }
+  if (!bud) { if (!composing) closeCard(); return; }
+  if (composing) return;
   bud.syv -= 0.12; bud.happyUntil = T + 1.1; bud.lookCameraUntil = T + 2.5;
   if (bud.state === 'walk') { bud.state = 'idle'; bud.timer = 1.6; }
-  say(bud, bud.data.isMe ? pick(['that’s me!', 'hi, it’s me!', 'hehe, hi']) : pick(POKED), 1500);
+  const notes = bud.data.isMe ? inbox.length : 0;
+  say(bud, bud.data.isMe ? (notes ? pick(['look, notes!', 'someone wrote to us!']) : pick(['that’s me!', 'hi, it’s me!', 'hehe, hi']))
+    : bud.data.friend ? pick(['hi friend!', 'oh hey, it’s you!']) : pick(POKED), 1500);
+  openCard(bud);
+}
+
+function openCard(bud) {
+  cardBud = bud;
   const nick = bud.data.nickname, tn = bud.data.trueName;
   document.getElementById('cardName').textContent = nick || tn;
   const owner = bud.data.isMe ? 'Your bud' : bud.data.ownerName ? `${bud.data.ownerName}’s bud` : 'Someone’s bud';
@@ -691,11 +934,215 @@ function clickAt(x, y) {
   sub.append(owner);
   if (nick && nick !== tn) {
     sub.append(' · real name ');
-    const span = document.createElement('span'); span.className = 'tn'; span.textContent = tn; sub.append(span);
+    sub.append(el('span', 'tn', tn));
   }
+  renderCardBody();
   card.hidden = false; hideHint();
 }
-document.getElementById('cardClose').addEventListener('click', () => { card.hidden = true; });
+function closeCard() { card.hidden = true; cardBud = null; }
+
+function renderCardBody() {
+  const bud = cardBud;
+  cardBody.textContent = '';
+  if (!bud) return;
+  const d = bud.data;
+  if (d.isMe) {
+    if (!inbox.length) {
+      cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
+      return;
+    }
+    cardBody.append(el('p', 'muted', inbox.length === 1 ? `Someone stuck a note on ${nameOf(bud)}.` : `${inbox.length} notes are stuck on ${nameOf(bud)}.`));
+    for (const n of inbox) {
+      const note = noteEl(n.text, n.color);
+      note.append(el('p', 'from', `from ${n.fromName}${n.fromBud ? ` (${n.fromBud}’s owner)` : ''}`));
+      const r = el('div', 'row');
+      const yes = el('button', 'btn primary', 'Be friends'); yes.type = 'button';
+      const no = el('button', 'btn', 'Not now'); no.type = 'button';
+      yes.addEventListener('click', () => answer(n, 'yes', [yes, no]));
+      no.addEventListener('click', () => answer(n, 'no', [yes, no]));
+      r.append(yes, no); note.append(r);
+      cardBody.append(note);
+    }
+    return;
+  }
+  const others = bud.stickies.filter((st) => !st.dying && st.tag !== 'mine').length;
+  if (d.friend) {
+    cardBody.append(el('span', 'friends', `You and ${d.ownerName || 'them'} are friends`));
+    return;
+  }
+  if (d.myNote && d.myNote.status === 'pending') {
+    cardBody.append(el('p', 'muted', `Your note is stuck on ${nameOf(bud)}. ${d.ownerName || 'They'} will see it next time they visit.`));
+    cardBody.append(noteEl(d.myNote.text, d.myNote.color, true));
+    const r = el('div', 'row');
+    const back = el('button', 'btn', 'Take it back'); back.type = 'button';
+    back.addEventListener('click', () => takeBack(bud, back));
+    r.append(back); cardBody.append(r);
+    return;
+  }
+  if (d.myNote && d.myNote.status === 'declined' && d.myNote.retryAt > Date.now()) {
+    cardBody.append(el('p', 'muted', `${d.ownerName || 'They'} said not now. Maybe later.`));
+    return;
+  }
+  if (others) cardBody.append(el('p', 'muted', others === 1 ? 'Someone already stuck a note here.' : `${others} notes are stuck here already.`));
+  if (!myBud()) {
+    const a = el('a', 'btn primary', 'Make your bud to stick notes'); a.href = '/';
+    cardBody.append(a);
+    return;
+  }
+  const stick = el('button', 'btn primary', 'Stick a note'); stick.type = 'button';
+  stick.addEventListener('click', () => openComposer(bud));
+  const r = el('div', 'row'); r.append(stick); cardBody.append(r);
+}
+
+/* ---------------- writing a note ---------------- */
+const composer = document.getElementById('composer');
+const noteText = document.getElementById('noteText'), noteDraft = document.getElementById('noteDraft');
+const noteError = document.getElementById('noteError'), noteSend = document.getElementById('noteSend');
+const swatches = document.getElementById('swatches');
+let composing = null, noteColor = 'lemon';
+for (const c of NOTE_COLORS) {
+  const b = el('button', 'swatch'); b.type = 'button';
+  b.setAttribute('role', 'radio'); b.setAttribute('aria-label', c); b.dataset.color = c;
+  b.style.background = `var(--n-${c})`;
+  b.addEventListener('click', () => setNoteColor(c));
+  swatches.append(b);
+}
+function setNoteColor(c) {
+  noteColor = c;
+  noteDraft.style.background = `var(--n-${c})`;
+  swatches.querySelectorAll('.swatch').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.color === c)));
+}
+noteText.addEventListener('input', () => { document.getElementById('noteCount').textContent = `${[...noteText.value].length} / 120`; });
+
+function openComposer(bud) {
+  composing = bud;
+  closeCard();
+  document.getElementById('composerTitle').textContent = `A note for ${nameOf(bud)}`;
+  noteText.value = ''; noteText.dispatchEvent(new Event('input'));
+  setNoteColor(NOTE_COLORS[Math.floor(Math.random() * NOTE_COLORS.length)]);
+  noteError.hidden = true; noteSend.disabled = false;
+  composer.hidden = false;
+  // the bud waits patiently, facing you, while you write
+  bud.held = true; bud.state = 'idle'; bud.target = null; bud.lookCameraUntil = T + 9999; bud.happyUntil = T + 1;
+  cam.follow = bud; cam.followUntil = T + 9999; camGoal.dist = Math.max(8, R * 0.7); cam.lastInput = T;
+  setTimeout(() => noteText.focus(), 60);
+}
+function closeComposer() {
+  if (!composing) return;
+  const bud = composing;
+  composing = null; composer.hidden = true;
+  bud.held = false; bud.timer = rand(1.5, 3); bud.lookCameraUntil = T + 1;
+  cam.followUntil = T + 1.5;
+}
+document.getElementById('noteCancel').addEventListener('click', () => { const b = composing; closeComposer(); if (b) openCard(b); });
+
+composer.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const bud = composing;
+  if (!bud) return;
+  noteSend.disabled = true; noteError.hidden = true;
+  const text = noteText.value.trim() || noteText.placeholder;
+  try {
+    const res = await api('POST', '/api/notes', { to: bud.data.id, text, color: noteColor });
+    // the note flies off the pad and slaps onto the bud
+    const from = noteDraft.getBoundingClientRect(), to = slotOnScreen(bud);
+    const flyer = noteEl(text, noteColor);
+    flyer.classList.add('flying');
+    Object.assign(flyer.style, { left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px', boxSizing: 'border-box' });
+    document.body.append(flyer);
+    const color = noteColor;
+    closeComposer();
+    cam.followUntil = T + 3;
+    const dx = to.x - (from.left + from.width / 2), dy = to.y - (from.top + from.height / 2);
+    const anim = flyer.animate([
+      { transform: 'rotate(-2deg) scale(1)', opacity: 1 },
+      { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 60}px) rotate(8deg) scale(.5)`, opacity: 1, offset: 0.55 },
+      { transform: `translate(${dx}px, ${dy}px) rotate(-6deg) scale(.08)`, opacity: 0.4 },
+    ], { duration: 640 * Math.max(RM, 0.5), easing: 'cubic-bezier(.45, 0, .8, .6)' });
+    anim.onfinish = () => flyer.remove();
+    addSticky(bud, color, 'mine', 0.6 * Math.max(RM, 0.5));
+    setTimeout(() => {
+      bud.syv -= 0.14; bud.happyUntil = T + 1.6;
+      if (res.friends) becameFriends(bud, true);
+      else say(bud, pick(['ooh, a note!', 'for me?', 'hehe, it’s sticky']), 1800);
+    }, 640);
+    bud.data.myNote = res.note;
+    if (res.friends) bud.data.myNote = null;
+  } catch (err) {
+    noteError.textContent = err.message; noteError.hidden = false; noteSend.disabled = false;
+  }
+});
+
+async function takeBack(bud, btn) {
+  btn.disabled = true;
+  try {
+    await api('DELETE', `/api/notes?to=${encodeURIComponent(bud.data.id)}`);
+    removeSticky(bud, (st) => st.tag === 'mine');
+    bud.data.myNote = null;
+    renderCardBody();
+  } catch (err) { btn.disabled = false; say(bud, 'it’s stuck! try again?', 1600); }
+}
+
+async function answer(n, ans, btns) {
+  btns.forEach((b) => { b.disabled = true; });
+  const mine = myBud();
+  try {
+    await api('PATCH', '/api/notes', { from: n.from, answer: ans });
+    inbox = inbox.filter((x) => x !== n);
+    updateNotesPill();
+    if (mine) removeSticky(mine, (st) => st.tag === n.from);
+    if (ans === 'yes') {
+      const theirs = buds.find((b) => b.data.id === n.from);
+      if (theirs) becameFriends(theirs, false);
+      if (mine) { mine.happyUntil = T + 2; mine.syv -= 0.14; say(mine, 'a new friend!', 2000); }
+    } else if (mine) say(mine, 'maybe another time', 1600);
+    renderCardBody();
+  } catch (err) {
+    btns.forEach((b) => { b.disabled = false; });
+    if (mine) say(mine, 'hmm, that didn’t work. try again?', 1800);
+  }
+}
+
+// Friends now: hearts on the name tag, and their bud comes over to say hi.
+function becameFriends(bud, viaNote) {
+  bud.data.friend = true; bud.data.myNote = null;
+  bud.tag.classList.add('friend');
+  removeSticky(bud, (st) => st.tag === 'mine');
+  bud.happyUntil = T + 2.4; bud.syv -= 0.12;
+  say(bud, viaNote ? 'we’re friends now!' : 'yay, friends!', 2200);
+  const mine = myBud();
+  if (mine && mine.placed && bud.placed && bud.state !== 'drop') {
+    setTimeout(() => {
+      const a = Math.atan2(bud.z - mine.z, bud.x - mine.x);
+      bud.target = { x: mine.x + Math.cos(a) * 1.9, z: mine.z + Math.sin(a) * 1.9 };
+      bud.state = 'walk'; bud.greetCooldown = 0; bud.greetOnArrive = mine;
+    }, 900);
+  }
+  if (cardBud === bud) renderCardBody();
+}
+
+const notesPill = document.getElementById('notesPill');
+function updateNotesPill() {
+  notesPill.hidden = !inbox.length;
+  document.getElementById('notesCount').textContent = inbox.length;
+  notesPill.setAttribute('aria-label', `${inbox.length} ${inbox.length === 1 ? 'note' : 'notes'} on your bud`);
+}
+function showMyNotes() {
+  const mine = myBud();
+  if (!mine) return;
+  closeComposer();
+  cam.follow = mine; cam.followUntil = T + 6; camGoal.dist = Math.max(9, R * 0.8);
+  mine.lookCameraUntil = T + 3; mine.happyUntil = T + 1; mine.syv -= 0.1;
+  if (mine.state === 'walk') { mine.state = 'idle'; mine.timer = 3; }
+  openCard(mine);
+}
+notesPill.addEventListener('click', showMyNotes);
+
+document.getElementById('cardClose').addEventListener('click', closeCard);
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (composing) { closeComposer(); } else closeCard();
+});
 
 const hint = document.getElementById('hint');
 function hideHint() { hint.classList.add('gone'); }
@@ -723,7 +1170,7 @@ let T = 0, last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
   setClock(T);
-  for (const bud of buds) if (bud.placed) { updateBud(bud, dt); drawFace(bud); }
+  for (const bud of buds) if (bud.placed) { updateBud(bud, dt); drawFace(bud); animateStickies(bud, dt); }
   for (const c of clouds) {
     c.a += c.sp * dt;
     c.g.position.set(Math.cos(c.a) * c.r, c.y + Math.sin(T * 0.2 + c.a) * 0.4, Math.sin(c.a) * c.r);
@@ -788,11 +1235,25 @@ function showCenter(title, text, linkText, href = '/') {
   document.getElementById('titleSub').textContent = n === 1 ? 'Just one bud here so far.' : `${n} buds live here.`;
   cam.dist = camGoal.dist = fitDist();
 
+  inbox = world.inbox || [];
   for (const d of world.buds) {
     try { buds.push(await makeBud(d)); } catch (e) { console.error('could not build bud', d.id, e); }
   }
   const mine = buds.find((b) => b.data.isMe);
   if (mine) document.getElementById('findMe').hidden = false;
+
+  // the notes already stuck on everyone: yours on your own bud are the ones you can read
+  for (const bud of buds) {
+    try {
+      if (bud.data.isMe) { for (const n of inbox) addSticky(bud, n.color, n.from); continue; }
+      const colors = [...(bud.data.stickies || [])];
+      const my = bud.data.myNote;
+      if (my && my.status === 'pending') { const i = colors.indexOf(my.color); if (i >= 0) colors.splice(i, 1); }
+      for (const c of colors) addSticky(bud, c);
+      if (my && my.status === 'pending') addSticky(bud, my.color, 'mine');
+    } catch (e) { console.error('could not stick notes on', bud.data.id, e); }
+  }
+  updateNotesPill();
 
   // everyone else starts somewhere on the island
   for (const bud of buds) {
@@ -814,6 +1275,8 @@ function showCenter(title, text, linkText, href = '/') {
     document.getElementById('titleSub').textContent = 'Your bud just moved in.';
     setTimeout(() => { mine.heading = Math.atan2(camera.position.x - mine.x, camera.position.z - mine.z); say(mine, 'wheeeee!', 1500); }, 200);
   }
+  if (OPEN_NOTES && mine && !DROP) setTimeout(showMyNotes, 600);
+  else if (inbox.length && mine && !DROP) setTimeout(() => say(mine, inbox.length === 1 ? 'psst, someone left us a note' : `psst, we have ${inbox.length} notes`, 2600), 1800);
   setTimeout(() => document.getElementById('title').classList.add('fade'), DROP ? 9000 : 6000);
   requestAnimationFrame(frame);
 })();
