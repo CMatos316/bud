@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>bud world</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the whole screen is sky with the floating island in the middle; a slim top bar, name tags and
+   speech bubbles float over the 3D scene, and a small hint pill sits at the bottom. */
+:root {
+  --sky-top: #BFD9FF;
+  --sky-bottom: #FBE3EF;
+  --ink: #1D1C2B;
+  --muted: #5E5D75;
+  --chip: rgba(255, 255, 255, 0.62);
+  --chip-line: rgba(29, 28, 43, 0.08);
+  --tag: rgba(255, 255, 255, 0.88);
+  --tag-ink: #1D1C2B;
+  --me: #1D1C2B;
+  --me-ink: #FFFFFF;
+  --shadow: rgba(46, 40, 90, 0.2);
+  --font-display: "Fredoka", "Nunito", ui-rounded, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sky-top: #0F1430; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4;
+    --chip: rgba(30, 32, 52, 0.66); --chip-line: rgba(255, 255, 255, 0.1);
+    --tag: rgba(30, 32, 52, 0.85); --tag-ink: #EDECF6; --me: #EDECF6; --me-ink: #15161F;
+    --shadow: rgba(0, 0, 0, 0.5); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --sky-top: #0F1430; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4;
+  --chip: rgba(30, 32, 52, 0.66); --chip-line: rgba(255, 255, 255, 0.1);
+  --tag: rgba(30, 32, 52, 0.85); --tag-ink: #EDECF6; --me: #EDECF6; --me-ink: #15161F;
+  --shadow: rgba(0, 0, 0, 0.5); color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; overflow: hidden; color: var(--ink); font-family: var(--font-display);
+  background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-user-select: none; user-select: none;
+}
+#world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#world.dragging { cursor: grabbing; }
+#world.over-bud { cursor: pointer; }
+
+.topbar {
+  position: fixed; z-index: 4; top: calc(14px + env(safe-area-inset-top, 0px));
+  left: max(18px, env(safe-area-inset-left, 0px)); right: max(18px, env(safe-area-inset-right, 0px));
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; pointer-events: none;
+}
+.topbar > * { pointer-events: auto; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 17px; white-space: nowrap; color: var(--ink); text-decoration: none; }
+.brand .mark { width: 18px; height: 14px; border-radius: 50% 50% 44% 44%; background: #F6F2EC; box-shadow: inset 0 -3px 0 rgba(0,0,0,.13), 0 0 0 1.5px var(--chip-line); }
+.right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pill {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 999px;
+  background: var(--chip); border: 1px solid var(--chip-line); color: var(--ink); text-decoration: none;
+  font: 500 14px/1 var(--font-display); white-space: nowrap; cursor: pointer;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.pill:hover { transform: translateY(-1px); }
+.pill svg { width: 15px; height: 15px; }
+.who { padding: 4px 12px 4px 4px; font-size: 13.5px; cursor: default; }
+.who:hover { transform: none; }
+.who img { width: 24px; height: 24px; border-radius: 50%; }
+.who a { color: var(--muted); text-decoration: none; font-size: 12.5px; }
+.who a:hover, .who a:focus-visible { color: var(--ink); text-decoration: underline; }
+.pill:focus-visible, .card button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.title {
+  position: fixed; z-index: 2; left: 0; right: 0; top: calc(64px + env(safe-area-inset-top, 0px));
+  text-align: center; pointer-events: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.title h1 { margin: 0; font-size: clamp(24px, 3.6vw, 34px); font-weight: 600; letter-spacing: -0.015em; }
+.title p { margin: 6px auto 0; max-width: 44ch; color: var(--muted); font-size: 15px; line-height: 1.45; }
+.title.fade { transition: opacity 1.2s ease; opacity: 0; }
+
+#labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.tag {
+  position: absolute; left: 0; top: 0; transform-origin: 50% 100%;
+  font: 500 12.5px/1 var(--font-display); white-space: nowrap; color: var(--tag-ink);
+  background: var(--tag); padding: 5px 9px; border-radius: 9px; box-shadow: 0 6px 14px -10px var(--shadow);
+}
+.tag.me { background: var(--me); color: var(--me-ink); }
+.tag.me::after { content: " \00b7 you"; opacity: .7; font-weight: 400; }
+.bubble {
+  position: absolute; left: 0; top: 0; transform-origin: 50% 100%;
+  background: var(--tag); color: var(--tag-ink); border: 1.5px solid var(--tag-ink);
+  border-radius: 14px; padding: 6px 11px; font-size: 14px; font-weight: 500; white-space: nowrap;
+}
+.bubble::after {
+  content: ""; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; background: inherit;
+  border-right: 1.5px solid var(--tag-ink); border-bottom: 1.5px solid var(--tag-ink); transform: translateX(-50%) rotate(45deg);
+}
+.bubble.pop { animation: pop .28s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes pop { from { scale: .6; opacity: 0; } to { scale: 1; opacity: 1; } }
+
+.hint {
+  position: fixed; z-index: 4; left: 0; right: 0; margin-inline: auto; width: max-content; max-width: calc(100% - 32px);
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; text-align: center;
+  font-size: 13.5px; color: var(--muted); background: var(--chip); border: 1px solid var(--chip-line);
+  padding: 9px 16px; border-radius: 999px; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  transition: opacity .8s ease;
+}
+.hint.gone { opacity: 0; }
+
+.card {
+  position: fixed; z-index: 5; left: 0; right: 0; margin-inline: auto; width: min(320px, calc(100% - 32px));
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box;
+  background: var(--tag); color: var(--tag-ink); border: 1px solid var(--chip-line); border-radius: 22px;
+  padding: 16px 18px; box-shadow: 0 20px 44px -24px var(--shadow);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 4px 12px;
+  animation: rise .35s cubic-bezier(.2, .9, .3, 1.15);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.card h2 { margin: 0; font-size: 22px; font-weight: 600; }
+.card p { margin: 0; grid-column: 1 / -1; color: var(--muted); font-size: 13.5px; line-height: 1.4; }
+.card .tn { font-family: var(--font-mono); color: var(--tag-ink); background: rgba(127,127,160,.16); padding: 1px 6px; border-radius: 6px; }
+.card button { appearance: none; border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 2px; }
+
+.center {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 6; text-align: center; pointer-events: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.center > div { pointer-events: auto; display: grid; gap: 12px; justify-items: center; }
+.center h2 { margin: 0; font-size: 26px; font-weight: 600; }
+.center p { margin: 0; color: var(--muted); max-width: 36ch; line-height: 1.45; }
+
+@media (max-width: 560px) {
+  .who span, .who a { display: none; }
+  .who { padding-right: 4px; }
+  .pill .label { display: none; }
+  .brand span:last-child { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bubble.pop, .card { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<canvas id="world" aria-label="The bud world: a floating island where everyone's buds wander around. Drag to look around, tap a bud to say hi."></canvas>
+<div id="labels" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="/"><span class="mark" aria-hidden="true"></span><span>ai buddie</span></a>
+  <div class="right">
+    <button class="pill" id="findMe" type="button" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+      <span class="label">Find my bud</span>
+    </button>
+    <a class="pill" href="/" id="editLink">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+      <span class="label">My bud</span>
+    </a>
+    <div class="pill who" id="who" hidden><img id="whoAvatar" alt="" width="24" height="24"><span id="whoName"></span><a href="/api/auth/logout">Sign out</a></div>
+  </div>
+</header>
+
+<div class="title" id="title"><h1 id="titleText">Bud island</h1><p id="titleSub">Everyone&rsquo;s buds live here.</p></div>
+<div class="hint" id="hint">Drag to look around &middot; scroll to zoom &middot; tap a bud to say hi</div>
+<div class="card" id="card" hidden role="dialog" aria-live="polite">
+  <h2 id="cardName"></h2><button type="button" id="cardClose" aria-label="Close">&times;</button>
+  <p id="cardSub"></p>
+</div>
+<div class="center" id="center" hidden><div><h2 id="centerTitle"></h2><p id="centerText"></p><a class="pill" id="centerLink" href="/"></a></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
+<script type="module">
+import { setExtents, buildMesh, drawEyeStyle, setClock, clamp } from '/js/bud-core.js';
+
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
+const canvas = document.getElementById('world');
+const labels = document.getElementById('labels');
+const params = new URLSearchParams(location.search);
+const DROP = params.get('drop') === '1';
+if (DROP) history.replaceState(null, '', location.pathname);
+
+const HELLOS = ['hi!', 'hey!', 'oh hi', 'hello!', 'yo', 'hiii'];
+const POKED = ['hehe', 'hi there!', 'boop', 'oh! hello', 'that tickles'];
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const rand = (a, b) => a + Math.random() * (b - a);
+const angleTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+
+/* ---------------- renderer, camera, lights ---------------- */
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setClearColor(0x000000, 0);
+renderer.outputEncoding = THREE.sRGBEncoding;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 600);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8d96b8, 0.45));
+const sun = new THREE.DirectionalLight(0xfff6ea, 0.8); sun.position.set(-8, 16, 10); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.22); fill.position.set(10, 4, -6); scene.add(fill);
+
+function makeEnv() {
+  const s = new THREE.Scene();
+  const g = new THREE.SphereGeometry(10, 32, 16), pos = g.attributes.position, cols = [];
+  for (let i = 0; i < pos.count; i++) { const t = (pos.getY(i) / 10 + 1) / 2; cols.push(0.32 + 0.68 * t, 0.35 + 0.65 * t, 0.42 + 0.58 * t); }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  s.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const panel = (x, y, z, w, h, k) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(k, k, k), side: THREE.DoubleSide }));
+    m.position.set(x, y, z); m.lookAt(0, 0, 0); s.add(m);
+  };
+  panel(-5, 6, 6, 6, 3, 4); panel(7, 1, 3, 2, 6, 2.2); panel(0, -3, -8, 8, 2, 1.2);
+  const pm = new THREE.PMREMGenerator(renderer);
+  const tex = pm.fromScene(s, 0.03).texture; pm.dispose();
+  return tex;
+}
+scene.environment = makeEnv();
+
+/* ---------------- the island ---------------- */
+let R = 12;              // island radius, set once we know how many buds live here
+let WALK_R = R * 0.78;   // how far from the middle buds wander
+const obstacles = [];    // trees and rocks buds walk around: { x, z, r }
+const clouds = [];
+
+const toLinear = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+
+function islandEdge(a, seed) {
+  return 1 + 0.05 * Math.sin(3 * a + seed) + 0.035 * Math.sin(5 * a + seed * 2.3) + 0.02 * Math.sin(9 * a + seed * 0.7);
+}
+
+function buildIsland(nBuds) {
+  R = clamp(9 + Math.sqrt(nBuds) * 2.2, 11, 30);
+  WALK_R = R * 0.78;
+  const seed = 2.1;
+  const group = new THREE.Group();
+
+  // grassy top with a soft rounded rim
+  const shape = new THREE.Shape();
+  const N = 96;
+  for (let i = 0; i <= N; i++) {
+    const a = i / N * Math.PI * 2, r = R * islandEdge(a, seed);
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    i ? shape.lineTo(x, y) : shape.moveTo(x, y);
+  }
+  const depth = 0.9, bevel = 0.5;
+  const topGeo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: 0.55, bevelSegments: 5, curveSegments: 64 });
+  topGeo.rotateX(-Math.PI / 2);
+  topGeo.translate(0, -(depth + bevel), 0);
+  const grass = new THREE.MeshStandardMaterial({ color: toLinear('#86CF86'), roughness: 0.95, envMapIntensity: 0.35 });
+  const grassSide = new THREE.MeshStandardMaterial({ color: toLinear('#6DB774'), roughness: 0.95, envMapIntensity: 0.35 });
+  group.add(new THREE.Mesh(topGeo, [grass, grassSide]));
+
+  // rocky underside, a lumpy upside-down cone
+  const h = R * 0.85;
+  const cone = new THREE.ConeGeometry(R * 1.0, h, 30, 7, true);
+  cone.rotateX(Math.PI);
+  const pos = cone.attributes.position, colors = [];
+  const soilTop = new THREE.Color('#C9A27A'), soilTip = new THREE.Color('#7F6250');
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const t = (h / 2 - y) / h;   // 0 at the top ring, 1 at the tip
+    const a = Math.atan2(z, x), rr = Math.hypot(x, z);
+    const edge = islandEdge(a, seed);
+    const jitter = t > 0.02 ? 1 + 0.12 * Math.sin(a * 7 + t * 9) + (Math.random() - 0.5) * 0.12 : 1;
+    pos.setXYZ(i, Math.cos(a) * rr * edge * jitter, y + (t > 0.05 && t < 0.98 ? (Math.random() - 0.5) * 0.5 : 0), Math.sin(a) * rr * edge * jitter);
+    const c = soilTop.clone().lerp(soilTip, t);
+    colors.push(c.r, c.g, c.b);
+  }
+  cone.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const rock = cone.toNonIndexed(); rock.computeVertexNormals();
+  const under = new THREE.Mesh(rock, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
+  under.position.y = -(depth + bevel) - h / 2 + 0.05;
+  group.add(under);
+
+  // trees and rocks near the rim
+  const trunkMat = new THREE.MeshStandardMaterial({ color: toLinear('#A47551'), roughness: 1 });
+  const leafCols = ['#7FCB8A', '#A6E3A1', '#6BBF7A', '#B9E8B0'].map((c) => new THREE.MeshStandardMaterial({ color: toLinear(c), roughness: 0.9, flatShading: true }));
+  const rockMat = new THREE.MeshStandardMaterial({ color: toLinear('#B7B5C6'), roughness: 1, flatShading: true });
+  const place = (minR, maxR, clear) => {
+    for (let tries = 0; tries < 40; tries++) {
+      const a = Math.random() * Math.PI * 2, r = R * islandEdge(a, seed) * rand(minR, maxR);
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (obstacles.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + clear)) return { x, z };
+    }
+    return null;
+  };
+  const trees = Math.round(R * 0.55);
+  for (let i = 0; i < trees; i++) {
+    const p = place(0.74, 0.92, 2.2); if (!p) continue;
+    const s = rand(0.8, 1.35), t = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * s, 0.2 * s, 1.1 * s, 7), trunkMat); trunk.position.y = 0.55 * s; t.add(trunk);
+    const m = leafCols[i % leafCols.length];
+    for (let k = 0; k < 3; k++) {
+      const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry((0.85 - k * 0.2) * s, 0), m);
+      leaf.position.set(rand(-0.15, 0.15) * s, (1.25 + k * 0.5) * s, rand(-0.15, 0.15) * s); leaf.rotation.y = Math.random() * 3;
+      t.add(leaf);
+    }
+    t.position.set(p.x, 0, p.z); group.add(t);
+    obstacles.push({ x: p.x, z: p.z, r: 0.9 * s });
+  }
+  for (let i = 0; i < Math.round(R * 0.4); i++) {
+    const p = place(0.35, 0.9, 1.2); if (!p) continue;
+    const s = rand(0.25, 0.55), rk = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMat);
+    rk.position.set(p.x, s * 0.45, p.z); rk.rotation.set(Math.random(), Math.random(), Math.random()); group.add(rk);
+    obstacles.push({ x: p.x, z: p.z, r: s + 0.2 });
+  }
+  // little flowers, just for looks
+  const petal = ['#FFB3C7', '#FFE08A', '#FFFFFF', '#C9B8FF'].map((c) => new THREE.MeshStandardMaterial({ color: toLinear(c), roughness: 0.8 }));
+  const stem = new THREE.MeshStandardMaterial({ color: toLinear('#5FA868') });
+  for (let i = 0; i < Math.round(R * 2.5); i++) {
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R * 0.92;
+    const f = new THREE.Group();
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 4), stem); st.position.y = 0.11; f.add(st);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), petal[i % petal.length]); head.position.y = 0.24; f.add(head);
+    f.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); group.add(f);
+  }
+
+  // clouds drifting around the island
+  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: 0.92, emissive: 0xffffff, emissiveIntensity: 0.15 });
+  for (let i = 0; i < 7; i++) {
+    const c = new THREE.Group();
+    for (let k = 0; k < 4; k++) {
+      const s = rand(0.9, 1.8);
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(s, 14, 10), cloudMat);
+      puff.position.set(k * 1.3 - 2, rand(-0.3, 0.3), rand(-0.6, 0.6)); c.add(puff);
+    }
+    const d = { g: c, a: Math.random() * Math.PI * 2, r: R * rand(1.5, 2.3), y: rand(-R * 0.6, R * 0.3), sp: rand(0.015, 0.04) * (Math.random() < 0.5 ? -1 : 1) };
+    c.scale.setScalar(rand(0.7, 1.2));
+    scene.add(c); clouds.push(d);
+  }
+
+  scene.add(group);
+}
+
+/* ---------------- buds ---------------- */
+const buds = [];
+const FACE_W = 256, FACE_H = 175, BUD_SIZE = 1.9;
+
+const shadowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(20,20,40,0.35)'); gr.addColorStop(1, 'rgba(20,20,40,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+
+function loadImage(src) {
+  return new Promise((resolve) => {
+    if (!src) return resolve(null);
+    const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = src;
+  });
+}
+
+// Pick an eye color that stands out from the paint under the eyes, the same way the maker does.
+function eyeColorFor(img, b) {
+  if (!img) return '#15161F';
+  const c = document.createElement('canvas'); c.width = c.height = 8;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const W = img.width, H = img.height, er = b.eyeR;
+  const sx = (b.eyeRel.x - er * 1.2 - b.minX) / b.w * W, sy = (b.eyeRel.y - er * 0.7 - b.minY) / b.h * H;
+  g.drawImage(img, clamp(sx, 0, W - 1), clamp(sy, 0, H - 1), Math.max(1, er * 2.4 / b.w * W), Math.max(1, er * 1.4 / b.h * H), 0, 0, 8, 8);
+  const d = g.getImageData(0, 0, 8, 8).data; let r = 0, gg = 0, bb = 0;
+  for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; bb += d[i + 2]; }
+  const n = d.length / 4, lum = (0.2126 * r + 0.7152 * gg + 0.0722 * bb) / n / 255;
+  return lum < 0.42 ? '#F3F4F8' : '#15161F';
+}
+
+async function makeBud(data) {
+  const b = setExtents({ r: data.r.map(([x, y]) => ({ x, y })), eyeRel: data.eyeRel, eyeR: data.eyeR });
+  const { geom, face } = buildMesh(b);
+  const img = await loadImage(data.paint);
+  const s = BUD_SIZE / Math.max(b.w, b.h);
+
+  const paintTex = img ? new THREE.Texture(img) : null;
+  if (paintTex) { paintTex.encoding = THREE.sRGBEncoding; paintTex.anisotropy = 4; paintTex.needsUpdate = true; }
+  const bodyMat = new THREE.MeshPhysicalMaterial({
+    color: paintTex ? 0xffffff : toLinear('#EEE8DF'), map: paintTex,
+    roughness: 0.58, clearcoat: 0.3, clearcoatRoughness: 0.42, envMapIntensity: 0.55,
+  });
+  const fc = document.createElement('canvas'); fc.width = FACE_W; fc.height = FACE_H;
+  const faceTex = new THREE.CanvasTexture(fc); faceTex.encoding = THREE.sRGBEncoding;
+  const faceMat = new THREE.MeshStandardMaterial({
+    map: faceTex, transparent: true, depthWrite: false, roughness: 0.55, envMapIntensity: 0.12,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+  });
+
+  const root = new THREE.Group(), hop = new THREE.Group(), squash = new THREE.Group(), inner = new THREE.Group();
+  root.add(hop); hop.add(squash); squash.add(inner);
+  inner.scale.setScalar(s); inner.position.y = b.maxY * s;
+  const bodyMesh = new THREE.Mesh(geom, bodyMat);
+  const faceMesh = new THREE.Mesh(face, faceMat); faceMesh.renderOrder = 2;
+  inner.add(bodyMesh, faceMesh);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.02; shadow.scale.set(b.w * s * 1.1, b.w * s * 0.75, 1);
+  root.add(shadow);
+  scene.add(root);
+
+  const tag = document.createElement('div');
+  tag.className = 'tag' + (data.isMe ? ' me' : '');
+  tag.textContent = data.nickname || data.trueName;
+  labels.appendChild(tag);
+
+  const bud = {
+    data, b, s, root, hop, squash, bodyMesh, faceMesh, shadow, faceTex, fctx: fc.getContext('2d'), faceKey: '',
+    eyeCol: eyeColorFor(img, b), height: b.h * s, width: b.w * s,
+    x: 0, z: 0, y: 0, vy: 0, heading: Math.random() * Math.PI * 2, state: 'idle', timer: rand(0.5, 3),
+    target: null, speed: rand(0.9, 1.4), hopPhase: 0, sy: 1, syv: 0,
+    blinkAt: rand(0.5, 4), blinkStart: -9, happyUntil: 0, look: null, lookUntil: 0, lx: 0, ly: 0,
+    greetCooldown: rand(2, 8), partner: null, tag, bubble: null, bubbleUntil: 0,
+  };
+  bodyMesh.userData.bud = bud; faceMesh.userData.bud = bud;
+  return bud;
+}
+
+function freeSpot(minDistFromOthers = 2.2, near = null, spread = WALK_R) {
+  for (let tries = 0; tries < 60; tries++) {
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * spread;
+    const x = (near ? near.x : 0) + Math.cos(a) * r, z = (near ? near.z : 0) + Math.sin(a) * r;
+    if (Math.hypot(x, z) > WALK_R) continue;
+    if (obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 0.9)) continue;
+    if (buds.some((b) => b.placed && Math.hypot(b.x - x, b.z - z) < minDistFromOthers)) continue;
+    return { x, z };
+  }
+  return { x: 0, z: 0 };
+}
+
+function say(bud, text, ms = 1800) {
+  if (!bud.bubble) { bud.bubble = document.createElement('div'); bud.bubble.className = 'bubble'; labels.appendChild(bud.bubble); }
+  bud.bubble.textContent = text; bud.bubble.hidden = false;
+  bud.bubble.classList.remove('pop'); void bud.bubble.offsetWidth; bud.bubble.classList.add('pop');
+  bud.bubbleUntil = T + ms / 1000;
+}
+
+/* ---------------- behaviour ---------------- */
+const tmp = new THREE.Vector3();
+
+function startGreeting(a, b) {
+  for (const [me, other] of [[a, b], [b, a]]) {
+    me.state = 'greet'; me.partner = other; me.timer = 2.4; me.greetCooldown = rand(14, 24);
+    me.happyUntil = T + 1.2; me.syv -= 0.09; me.target = null;
+  }
+  say(a, pick(HELLOS), 1600);
+  setTimeout(() => { if (b.state === 'greet') say(b, pick(HELLOS), 1500); }, 500);
+}
+
+function updateBud(bud, dt) {
+  // spring for squash and stretch (tuned at 60fps, scaled to frame time)
+  const f = dt * 60;
+  bud.syv = (bud.syv + (1 - bud.sy) * 0.13 * f) * Math.pow(0.8, f); bud.sy += bud.syv * f;
+  bud.greetCooldown -= dt;
+
+  if (bud.state === 'drop') {
+    bud.vy -= 22 * dt; bud.y += bud.vy * dt;
+    if (bud.y <= 0) {
+      bud.y = 0; bud.vy = 0; bud.sy = 0.5; bud.syv = 0.04; bud.state = 'idle'; bud.timer = 2.5;
+      bud.happyUntil = T + 1.6; puff(bud.x, bud.z);
+      say(bud, 'hi everyone!', 2600);
+      welcome(bud);
+    }
+  } else if (bud.state === 'idle') {
+    bud.timer -= dt;
+    if (T > bud.lookUntil && Math.random() < dt * 0.5) {
+      const other = nearestBud(bud, 6);
+      bud.look = other && Math.random() < 0.6 ? other : { x: bud.x + rand(-4, 4), z: bud.z + rand(-4, 4), y: rand(0, 2) };
+      bud.lookUntil = T + rand(1, 2.6);
+    }
+    if (bud.timer <= 0) {
+      bud.target = freeSpot(1.6, Math.random() < 0.6 ? bud : null, Math.random() < 0.6 ? rand(3, 7) : WALK_R);
+      bud.state = 'walk'; bud.look = null;
+    }
+  } else if (bud.state === 'walk') {
+    const dx = bud.target.x - bud.x, dz = bud.target.z - bud.z, d = Math.hypot(dx, dz);
+    if (d < 0.25) {
+      bud.state = 'idle'; bud.timer = rand(1.5, 5); bud.hopPhase = 0;
+      if (bud.greetOnArrive && bud.greetOnArrive.state !== 'drop') { startGreeting(bud, bud.greetOnArrive); bud.greetOnArrive = null; }
+    } else {
+      // steer toward the target, around trees, and away from other buds
+      let mx = dx / d, mz = dz / d;
+      for (const o of obstacles) {
+        const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz);
+        if (od < o.r + 1.3) { mx += ox / od * 1.2; mz += oz / od * 1.2; }
+      }
+      for (const o of buds) {
+        if (o === bud || !o.placed || o.state === 'drop') continue;
+        const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz) || 1;
+        if (od < 1.5) { mx += ox / od * 1.4; mz += oz / od * 1.4; }
+        // bumping into someone: maybe stop and say hi
+        if (od < 2.1 && bud.greetCooldown <= 0 && o.greetCooldown <= 0 && o.state !== 'greet' && Math.random() < 0.35) {
+          startGreeting(bud, o); return;
+        }
+      }
+      const m = Math.hypot(mx, mz) || 1;
+      bud.x += mx / m * bud.speed * dt; bud.z += mz / m * bud.speed * dt;
+      const want = Math.atan2(mx, mz);
+      bud.heading += angleTo(bud.heading, want) * Math.min(1, dt * 6);
+      // little hops
+      const before = Math.sin(bud.hopPhase);
+      bud.hopPhase += dt * 8.5;
+      if (Math.sin(bud.hopPhase) * before < 0) bud.syv -= 0.05 * RM;   // landing squish
+    }
+  } else if (bud.state === 'greet') {
+    bud.timer -= dt;
+    const p = bud.partner;
+    if (p) bud.heading += angleTo(bud.heading, Math.atan2(p.x - bud.x, p.z - bud.z)) * Math.min(1, dt * 5);
+    bud.look = p;
+    if (bud.timer <= 0) { bud.state = 'idle'; bud.timer = rand(1, 3); bud.partner = null; bud.look = null; }
+  }
+
+  // stay on the island
+  const rr = Math.hypot(bud.x, bud.z);
+  if (rr > WALK_R + 0.5 && bud.state !== 'drop') { bud.x *= (WALK_R + 0.5) / rr; bud.z *= (WALK_R + 0.5) / rr; }
+
+  // blinking
+  if (T > bud.blinkAt) { bud.blinkStart = T; bud.blinkAt = T + (Math.random() < 0.15 ? 0.3 : rand(2.5, 6)); }
+
+  // place it
+  const hopY = bud.state === 'walk' ? Math.abs(Math.sin(bud.hopPhase)) * 0.22 * RM : 0;
+  bud.root.position.set(bud.x, 0, bud.z);
+  bud.hop.position.y = bud.y + hopY;
+  bud.root.rotation.y = bud.heading;
+  const sy = bud.sy;
+  bud.squash.scale.set(2 - sy, sy, 2 - sy);
+  const airborne = bud.y + hopY;
+  bud.shadow.material.opacity = clamp(1 - airborne / 10, 0.15, 1);
+  const sh = clamp(1 - airborne / 14, 0.3, 1);
+  bud.shadow.scale.set(bud.width * 1.1 * sh, bud.width * 0.75 * sh, 1);
+}
+
+function nearestBud(bud, within) {
+  let best = null, bd = within;
+  for (const o of buds) {
+    if (o === bud || !o.placed || o.state === 'drop') continue;
+    const d = Math.hypot(o.x - bud.x, o.z - bud.z);
+    if (d < bd) { bd = d; best = o; }
+  }
+  return best;
+}
+
+// When a bud arrives, a few buds nearby wander over to say hi.
+function welcome(newcomer) {
+  const near = buds.filter((o) => o !== newcomer && o.placed).sort((a, b) =>
+    Math.hypot(a.x - newcomer.x, a.z - newcomer.z) - Math.hypot(b.x - newcomer.x, b.z - newcomer.z)).slice(0, 3);
+  near.forEach((o, i) => {
+    o.look = newcomer; o.lookUntil = T + 2;
+    setTimeout(() => {
+      const a = Math.atan2(o.z - newcomer.z, o.x - newcomer.x);
+      o.target = { x: newcomer.x + Math.cos(a) * 1.9, z: newcomer.z + Math.sin(a) * 1.9 };
+      o.state = 'walk'; o.greetCooldown = 0; o.greetOnArrive = newcomer;
+    }, 900 + i * 700);
+  });
+}
+
+// eyes: where they look, in the bud's own left/right and up/down
+function lookVector(bud) {
+  let tx, ty, tz;
+  if (bud.look === 'camera' || (bud.lookCameraUntil && T < bud.lookCameraUntil)) { tx = camera.position.x; ty = camera.position.y; tz = camera.position.z; }
+  else if (bud.look) { tx = bud.look.x; ty = (bud.look.height ? bud.look.height * 0.6 : bud.look.y || 0.8); tz = bud.look.z; }
+  else return { x: 0, y: 0.1 };
+  const dx = tx - bud.x, dz = tz - bud.z, dy = ty - (bud.y + bud.height * 0.6);
+  // into the bud's own frame: +x is its right as you face it, +z is straight ahead
+  const c = Math.cos(bud.heading), s = Math.sin(bud.heading);
+  const lx = dx * c - dz * s, lz = dx * s + dz * c;
+  const d = Math.hypot(lx, lz) || 1;
+  return { x: clamp(lx / d * 1.3, -1, 1), y: clamp(-dy / Math.max(1.5, Math.hypot(d, dy)) * 1.4, -1, 1) };
+}
+
+function drawFace(bud) {
+  const r = bud.b.eyeR, sc = FACE_W / (r * 4.4);
+  const want = lookVector(bud);
+  bud.lx += (want.x - bud.lx) * 0.2; bud.ly += (want.y - bud.ly) * 0.2;
+  const bt = (T - bud.blinkStart) / 0.15, blink = bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0;
+  const happy = T < bud.happyUntil;
+  const key = [Math.round(bud.lx * 20), Math.round(bud.ly * 20), Math.round(blink * 8), happy].join('|');
+  if (key === bud.faceKey) return;
+  bud.faceKey = key;
+  const g = bud.fctx;
+  g.clearRect(0, 0, FACE_W, FACE_H);
+  drawEyeStyle(g, bud.data.eyes, FACE_W / 2, FACE_H / 2, r * sc, blink, happy, bud.eyeCol, { x: bud.lx, y: bud.ly });
+  bud.faceTex.needsUpdate = true;
+}
+
+/* landing dust */
+const puffs = [];
+const puffMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true });
+function puff(x, z) {
+  for (let i = 0; i < 12; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(rand(0.12, 0.25), 8, 6), puffMat.clone());
+    const a = i / 12 * Math.PI * 2 + rand(-0.2, 0.2);
+    m.position.set(x, 0.15, z);
+    scene.add(m);
+    puffs.push({ m, vx: Math.cos(a) * rand(1.5, 3), vz: Math.sin(a) * rand(1.5, 3), vy: rand(0.6, 1.6), life: 0 });
+  }
+}
+
+/* ---------------- camera: drag to orbit, scroll or pinch to zoom ---------------- */
+const cam = { yaw: 0.6, pitch: 0.55, dist: 30, target: new THREE.Vector3(0, 0.8, 0), lastInput: -99, follow: null, followUntil: 0 };
+const camGoal = { target: new THREE.Vector3(0, 0.8, 0), dist: 30 };
+function placeCamera(dt) {
+  if (cam.follow && T < cam.followUntil) {
+    camGoal.target.set(cam.follow.x, cam.follow.y * 0.5 + 0.9, cam.follow.z);
+  } else if (cam.follow) {
+    cam.follow = null; camGoal.target.set(0, 0.8, 0); camGoal.dist = Math.max(camGoal.dist, fitDist() * 0.9);
+  }
+  const k = 1 - Math.pow(0.04, dt);
+  cam.target.lerp(camGoal.target, k);
+  cam.dist += (camGoal.dist - cam.dist) * k;
+  if (T - cam.lastInput > 6 && !cam.follow) cam.yaw += dt * 0.035 * RM;
+  const cp = Math.cos(cam.pitch);
+  camera.position.set(
+    cam.target.x + Math.sin(cam.yaw) * cp * cam.dist,
+    cam.target.y + Math.sin(cam.pitch) * cam.dist,
+    cam.target.z + Math.cos(cam.yaw) * cp * cam.dist,
+  );
+  camera.lookAt(cam.target);
+}
+
+const pointers = new Map();
+let drag = null, pinch = null;
+canvas.addEventListener('pointerdown', (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), dist: camGoal.dist }; drag = null;
+  } else {
+    drag = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch, moved: false };
+  }
+  cam.lastInput = T;
+});
+canvas.addEventListener('pointermove', (e) => {
+  hoverAt(e.clientX, e.clientY);
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  cam.lastInput = T;
+  if (pinch && pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    camGoal.dist = clamp(pinch.dist * pinch.d / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), R * 0.7, maxDist());
+    return;
+  }
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.hypot(dx, dy) > 4) { drag.moved = true; canvas.classList.add('dragging'); hideHint(); }
+  cam.yaw = drag.yaw - dx * 0.006;
+  cam.pitch = clamp(drag.pitch + dy * 0.004, 0.18, 1.25);
+});
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (drag && !drag.moved && pointers.size === 0) clickAt(e.clientX, e.clientY);
+  if (pointers.size === 0) drag = null;
+  canvas.classList.remove('dragging');
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  camGoal.dist = clamp(camGoal.dist * Math.exp(e.deltaY * 0.0012), R * 0.7, maxDist());
+  cam.lastInput = T; hideHint();
+}, { passive: false });
+
+/* ---------------- clicking a bud ---------------- */
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function budAt(x, y) {
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(buds.map((b) => b.bodyMesh), false)[0];
+  return hit ? hit.object.userData.bud : null;
+}
+let hoverT = 0;
+function hoverAt(x, y) {
+  if (drag && drag.moved) return;
+  if (T - hoverT < 0.06) return; hoverT = T;
+  canvas.classList.toggle('over-bud', !!budAt(x, y));
+}
+const card = document.getElementById('card');
+function clickAt(x, y) {
+  const bud = budAt(x, y);
+  if (!bud) { card.hidden = true; return; }
+  bud.syv -= 0.12; bud.happyUntil = T + 1.1; bud.lookCameraUntil = T + 2.5;
+  if (bud.state === 'walk') { bud.state = 'idle'; bud.timer = 1.6; }
+  say(bud, bud.data.isMe ? pick(['that’s me!', 'hi, it’s me!', 'hehe, hi']) : pick(POKED), 1500);
+  const nick = bud.data.nickname, tn = bud.data.trueName;
+  document.getElementById('cardName').textContent = nick || tn;
+  const owner = bud.data.isMe ? 'Your bud' : bud.data.ownerName ? `${bud.data.ownerName}’s bud` : 'Someone’s bud';
+  const sub = document.getElementById('cardSub');
+  sub.textContent = '';
+  sub.append(owner);
+  if (nick && nick !== tn) {
+    sub.append(' · real name ');
+    const span = document.createElement('span'); span.className = 'tn'; span.textContent = tn; sub.append(span);
+  }
+  card.hidden = false; hideHint();
+}
+document.getElementById('cardClose').addEventListener('click', () => { card.hidden = true; });
+
+const hint = document.getElementById('hint');
+function hideHint() { hint.classList.add('gone'); }
+setTimeout(hideHint, 9000);
+
+/* ---------------- labels and bubbles follow the buds on screen ---------------- */
+function placeLabels() {
+  for (const bud of buds) {
+    tmp.set(bud.x, bud.y + bud.hop.position.y - bud.y + bud.height * bud.sy + 0.35, bud.z).project(camera);
+    const visible = tmp.z < 1 && bud.placed;
+    const sx = (tmp.x + 1) / 2 * innerWidth, sy = (1 - tmp.y) / 2 * innerHeight;
+    const dist = camera.position.distanceTo(bud.root.position);
+    const scale = clamp(22 / dist, 0.55, 1.15);
+    bud.tag.hidden = !visible;
+    if (visible) bud.tag.style.transform = `translate(${sx - bud.tag.offsetWidth / 2}px, ${sy - bud.tag.offsetHeight}px) scale(${scale.toFixed(3)})`;
+    if (bud.bubble && !bud.bubble.hidden) {
+      if (T > bud.bubbleUntil || !visible) bud.bubble.hidden = true;
+      else bud.bubble.style.transform = `translate(${sx - bud.bubble.offsetWidth / 2}px, ${sy - bud.tag.offsetHeight * scale - bud.bubble.offsetHeight - 12}px) scale(${scale.toFixed(3)})`;
+    }
+  }
+}
+
+/* ---------------- loop ---------------- */
+let T = 0, last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
+  setClock(T);
+  for (const bud of buds) if (bud.placed) { updateBud(bud, dt); drawFace(bud); }
+  for (const c of clouds) {
+    c.a += c.sp * dt;
+    c.g.position.set(Math.cos(c.a) * c.r, c.y + Math.sin(T * 0.2 + c.a) * 0.4, Math.sin(c.a) * c.r);
+  }
+  for (let i = puffs.length - 1; i >= 0; i--) {
+    const p = puffs[i]; p.life += dt;
+    p.m.position.x += p.vx * dt; p.m.position.z += p.vz * dt; p.m.position.y += p.vy * dt;
+    p.vx *= 0.92; p.vz *= 0.92; p.vy *= 0.9;
+    p.m.material.opacity = Math.max(0, 1 - p.life / 0.9); p.m.scale.setScalar(1 + p.life * 1.5);
+    if (p.life > 0.9) { scene.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose(); puffs.splice(i, 1); }
+  }
+  placeCamera(dt);
+  renderer.render(scene, camera);
+  placeLabels();
+  requestAnimationFrame(frame);
+}
+
+function resize() {
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  // pull back on narrow screens so the whole island fits
+  camera.fov = innerWidth < innerHeight ? 50 : 38;
+  camera.updateProjectionMatrix();
+}
+// how far back the camera sits to see the whole island, wide or narrow screen
+function fitDist() {
+  const half = Math.min(camera.fov / 2, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect) * 180 / Math.PI);
+  return Math.max(R * 2.3, R * 1.12 / Math.tan(half * Math.PI / 180));
+}
+const maxDist = () => Math.max(R * 3.4, fitDist() * 1.3);
+addEventListener('resize', resize);
+
+/* ---------------- start ---------------- */
+function showCenter(title, text, linkText, href = '/') {
+  document.getElementById('centerTitle').textContent = title;
+  document.getElementById('centerText').textContent = text;
+  const a = document.getElementById('centerLink'); a.textContent = linkText; a.href = href;
+  document.getElementById('center').hidden = false;
+}
+
+(async () => {
+  resize();
+  let world;
+  try {
+    const res = await fetch('/api/world', { credentials: 'same-origin', cache: 'no-store' });
+    if (res.status === 401) { location.replace('/'); return; }
+    if (!res.ok) throw new Error(String(res.status));
+    world = await res.json();
+  } catch (e) {
+    buildIsland(0); requestAnimationFrame(frame);
+    showCenter('The island is hiding', 'I couldn’t load the buds just now. Try again in a moment.', 'Back to my bud');
+    return;
+  }
+
+  document.getElementById('whoName').textContent = world.me.name;
+  document.getElementById('whoAvatar').src = world.me.avatarUrl;
+  document.getElementById('who').hidden = false;
+
+  buildIsland(world.buds.length);
+  const n = world.buds.length;
+  document.getElementById('titleSub').textContent = n === 1 ? 'Just one bud here so far.' : `${n} buds live here.`;
+  cam.dist = camGoal.dist = fitDist();
+
+  for (const d of world.buds) {
+    try { buds.push(await makeBud(d)); } catch (e) { console.error('could not build bud', d.id, e); }
+  }
+  const mine = buds.find((b) => b.data.isMe);
+  if (mine) document.getElementById('findMe').hidden = false;
+
+  // everyone else starts somewhere on the island
+  for (const bud of buds) {
+    if (DROP && bud === mine) continue;
+    const p = freeSpot(2.4); bud.x = p.x; bud.z = p.z; bud.placed = true;
+  }
+
+  if (!buds.length) {
+    showCenter('No buds here yet', 'Make the first one and it’ll be waiting here when your friends arrive.', 'Make my bud');
+  } else if (DROP && mine) {
+    // your bud falls in from the sky
+    const p = freeSpot(3, null, WALK_R * 0.45);
+    Object.assign(mine, { x: p.x, z: p.z, y: 18, vy: 0, state: 'drop', placed: true, heading: Math.atan2(camera.position.x - p.x, camera.position.z - p.z) });
+    cam.yaw = Math.atan2(p.x, p.z) + 0.5;
+    cam.follow = mine; cam.followUntil = T + 7;
+    camGoal.target.set(p.x, 1, p.z); cam.target.set(p.x, 6, p.z);
+    camGoal.dist = Math.max(10, R * 1.1); cam.dist = camGoal.dist + 6;
+    document.getElementById('titleText').textContent = `Welcome, ${mine.data.nickname || mine.data.trueName}`;
+    document.getElementById('titleSub').textContent = 'Your bud just moved in.';
+    setTimeout(() => { mine.heading = Math.atan2(camera.position.x - mine.x, camera.position.z - mine.z); say(mine, 'wheeeee!', 1500); }, 200);
+  }
+  setTimeout(() => document.getElementById('title').classList.add('fade'), DROP ? 9000 : 6000);
+  requestAnimationFrame(frame);
+})();
+
+document.getElementById('findMe').addEventListener('click', () => {
+  const mine = buds.find((b) => b.data.isMe);
+  if (!mine) return;
+  cam.follow = mine; cam.followUntil = T + 6;
+  camGoal.dist = Math.max(9, R * 0.9);
+  mine.lookCameraUntil = T + 3; mine.happyUntil = T + 1; mine.syv -= 0.1;
+  say(mine, 'over here!', 1600);
+});
+</script>
+</body>
+</html>

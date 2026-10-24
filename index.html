@@ -113,6 +113,18 @@ body {
 .who a { color: var(--muted); text-decoration: none; font-size: 12.5px; }
 .who a:hover, .who a:focus-visible { color: var(--ink); text-decoration: underline; }
 a.btn { text-decoration: none; }
+/* Leaving for the island: the bud crouches, then leaps up and off the screen. */
+body.leaving #gl, body.leaving #stage, body.leaving #fx { transform-origin: 50% 72%; animation: leap 1.05s cubic-bezier(.5, -0.2, .7, .4) forwards; }
+body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .steps { transition: opacity .4s ease; opacity: 0; pointer-events: none; }
+@keyframes leap {
+  0% { transform: none; }
+  30% { transform: translateY(2%) scale(1.06, .86); }
+  45% { transform: translateY(-4%) scale(.94, 1.1); }
+  100% { transform: translateY(-115vh) scale(.9, 1.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.leaving #gl, body.leaving #stage, body.leaving #fx { animation: none; transition: opacity .4s ease; opacity: 0; }
+}
 .btn {
   font: 500 15px/1 var(--font-display); padding: 11px 17px; border-radius: 999px; cursor: pointer; white-space: nowrap;
   border: 1.5px solid transparent; background: var(--chip); color: var(--ink);
@@ -289,6 +301,7 @@ a.btn { text-decoration: none; }
   <section data-step="meet" hidden>
     <button class="btn" id="edit" type="button">Edit</button>
     <button class="btn" id="reset" type="button">Start over</button>
+    <a class="btn primary" id="toWorld" href="/world">Visit the island</a>
   </section>
 </div>
 
@@ -1629,16 +1642,37 @@ a.btn { text-decoration: none; }
   }
   const esc = (s) => s.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-  doneBtn.addEventListener('click', () => {
+  doneBtn.addEventListener('click', async () => {
     if (!trueName) return;
     nickname = nickInput.value.trim();
     goStep('meet');
-    save();
+    const saved = save();
     eyes.happyUntil = T + 1.2; body.syv -= 0.12;
     if (gl && gl.active) gl.spinV = 0.22;
     say(nickname && nickname !== trueName ? `${nickname}? I love it.` : `hi! I’m ${trueName}`, 2600);
+    // The end of making a bud: it hops off to the island, where everyone else's buds live.
+    const [ok] = await Promise.all([saved, new Promise(r => setTimeout(r, 2700))]);
+    if (ok && step === 'meet') leaveForWorld();
   });
   nickInput.addEventListener('keydown', e => { if (e.key === 'Enter') doneBtn.click(); });
+
+  let leaving = false;
+  function leaveForWorld() {
+    if (leaving) return;
+    leaving = true;
+    say('see you on the island!', 1800);
+    eyes.happyUntil = T + 2; body.syv -= 0.1;
+    setTimeout(() => document.body.classList.add('leaving'), 1100);
+    setTimeout(() => { location.href = '/world?drop=1'; }, 2200);
+  }
+  document.getElementById('toWorld').addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (leaving) return;
+    if (!(await save())) return;
+    leaveForWorld();
+  });
+  // Coming back with the browser's back button: the bud is home again.
+  addEventListener('pageshow', (e) => { if (e.persisted) { leaving = false; document.body.classList.remove('leaving'); } });
 
   /* ---------- steps ---------- */
   const titleEl = document.getElementById('promptTitle'), textEl = document.getElementById('promptText');
@@ -1847,7 +1881,7 @@ a.btn { text-decoration: none; }
     const payload = {
       r: body.r.map(p => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10]),
       fx: body.fx, fy: body.fy, eyeRel: body.eyeRel, eyeR: body.eyeR, eyes: eyeStyle,
-      trueName, nickname, paint: pcv.toDataURL('image/jpeg', 0.86),
+      trueName, nickname, paint: pcv.toDataURL('image/jpeg', 0.86), paintSmall: smallPaint(),
     };
     const run = async () => {
       try {
@@ -1865,6 +1899,12 @@ a.btn { text-decoration: none; }
     };
     saving = (saving || Promise.resolve()).then(run);
     return saving;
+  }
+  // 256px copy of the paint for the world page, where many buds load at once.
+  function smallPaint() {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    c.getContext('2d').drawImage(pcv, 0, 0, 256, 256);
+    return c.toDataURL('image/jpeg', 0.82);
   }
   async function removeSaved() {
     clearTimeout(saveTimer);
