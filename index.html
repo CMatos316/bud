@@ -1,0 +1,1870 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>bud</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a soft studio. The buddy stands in a floor spotlight in the middle; a slim top bar carries the steps,
+   a big prompt says what to do, and a floating tool tray at the bottom holds whatever the current step needs. */
+:root {
+  --bg-top: #F2F1F8;
+  --bg-bottom: #E2E0EC;
+  --glow: rgba(255, 255, 255, 0.75);
+  --ink: #1D1C2B;
+  --muted: #64637B;
+  --tray: rgba(255, 255, 255, 0.74);
+  --tray-line: rgba(29, 28, 43, 0.08);
+  --tray-hi: rgba(255, 255, 255, 0.9);
+  --chip: rgba(29, 28, 43, 0.06);
+  --field: rgba(255, 255, 255, 0.9);
+  --shadow: rgba(46, 40, 90, 0.18);
+  --blob-alpha: 0.22;
+  --brand-fill: #F6F2EC;
+  --font-display: "Fredoka", "Nunito", ui-rounded, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-top: #1A1B28; --bg-bottom: #0E0F17; --glow: rgba(150, 150, 230, 0.14);
+    --ink: #EDECF6; --muted: #A09EB8; --tray: rgba(32, 33, 48, 0.74); --tray-line: rgba(255, 255, 255, 0.08);
+    --tray-hi: rgba(255, 255, 255, 0.05); --chip: rgba(255, 255, 255, 0.08); --field: rgba(255, 255, 255, 0.06);
+    --shadow: rgba(0, 0, 0, 0.5); --blob-alpha: 0.12; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg-top: #1A1B28; --bg-bottom: #0E0F17; --glow: rgba(150, 150, 230, 0.14);
+  --ink: #EDECF6; --muted: #A09EB8; --tray: rgba(32, 33, 48, 0.74); --tray-line: rgba(255, 255, 255, 0.08);
+  --tray-hi: rgba(255, 255, 255, 0.05); --chip: rgba(255, 255, 255, 0.08); --field: rgba(255, 255, 255, 0.06);
+  --shadow: rgba(0, 0, 0, 0.5); --blob-alpha: 0.12; color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--bg-bottom); color: var(--ink);
+  font-family: var(--font-display); overflow: hidden;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0;
+  -webkit-user-select: none; user-select: none;
+}
+#stage, #gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#gl, #fx { pointer-events: none; }
+#stage { touch-action: none; cursor: crosshair; }
+
+/* ---------- top bar ---------- */
+.topbar {
+  position: fixed; z-index: 4;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  left: max(18px, env(safe-area-inset-left, 0px)); right: max(18px, env(safe-area-inset-right, 0px));
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 17px; letter-spacing: -0.01em; white-space: nowrap; }
+.brand .mark {
+  width: 18px; height: 14px; border-radius: 50% 50% 44% 44%; background: var(--brand-fill);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.13), 0 0 0 1.5px var(--tray-line); transition: background .4s;
+}
+.steps { display: flex; gap: 2px; list-style: none; margin: 0; padding: 4px; border-radius: 999px; background: var(--chip); }
+.steps button {
+  font: 500 12px/1 var(--font-mono); letter-spacing: 0.02em; padding: 7px 11px; border-radius: 999px;
+  border: 0; background: transparent; color: var(--muted); opacity: 0.55; cursor: default;
+  transition: background .25s, color .25s, opacity .25s;
+}
+.steps button.done { opacity: 1; cursor: pointer; }
+.steps button.done:hover { color: var(--ink); }
+.steps button.current { opacity: 1; background: var(--ink); color: var(--bg-top); }
+
+/* ---------- prompt ---------- */
+.prompt {
+  position: fixed; z-index: 2; left: 0; right: 0; pointer-events: none; text-align: center;
+  top: calc(66px + env(safe-area-inset-top, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.prompt h1 { margin: 0; font-weight: 600; font-size: clamp(27px, 4.2vw, 40px); line-height: 1.05; letter-spacing: -0.015em; text-wrap: balance; }
+.prompt p { margin: 8px auto 0; max-width: 44ch; font-size: 15.5px; line-height: 1.45; color: var(--muted); text-wrap: balance; }
+.tn { font-family: var(--font-mono); font-weight: 500; color: var(--ink); background: var(--chip); padding: 1px 7px; border-radius: 7px; letter-spacing: 0.02em; }
+.prompt.swap { animation: rise .5s cubic-bezier(.2, .9, .3, 1.15); }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ---------- tool tray ---------- */
+.dock {
+  position: fixed; z-index: 4; left: 0; right: 0; margin-inline: auto; width: max-content;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  max-width: calc(100% - 32px); box-sizing: border-box;
+  padding: 10px 10px 10px 14px; border-radius: 26px;
+  background: var(--tray); border: 1px solid var(--tray-line);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  box-shadow: 0 20px 44px -24px var(--shadow), inset 0 1px 0 var(--tray-hi);
+}
+.dock section { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.dock .label { font-size: 15px; color: var(--muted); white-space: nowrap; padding: 0 4px; }
+.dock .label b { color: var(--ink); font-weight: 500; }
+.sep { width: 1px; height: 30px; background: var(--tray-line); }
+
+.btn {
+  font: 500 15px/1 var(--font-display); padding: 11px 17px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  border: 1.5px solid transparent; background: var(--chip); color: var(--ink);
+  display: inline-flex; align-items: center; gap: 7px; transition: transform .12s ease, opacity .2s;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(1px) scale(.98); }
+.btn.primary { background: var(--ink); color: var(--bg-top); }
+.btn:disabled { opacity: .4; cursor: default; transform: none; }
+.btn svg { width: 16px; height: 16px; }
+.btn:focus-visible, .tool:focus-visible, .brush:focus-visible, .size:focus-visible, .steps button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* brushes sit in the tray; the chosen one lifts out */
+.brushes { display: flex; align-items: flex-end; gap: 1px; height: 58px; overflow: hidden; padding: 0 2px; }
+.brush {
+  --tilt: 0deg; appearance: none; border: 0; background: none; padding: 0; cursor: pointer;
+  width: 26px; height: 68px; flex: none;
+  transform: translateY(18px) rotate(var(--tilt)); transform-origin: 50% 100%;
+  transition: transform .3s cubic-bezier(.3, 1.6, .5, 1);
+}
+.brush:hover { transform: translateY(10px) rotate(var(--tilt)); }
+.brush[aria-checked="true"] { transform: translateY(-1px) rotate(0deg); }
+.brush canvas { width: 26px; height: 68px; display: block; }
+.sizes { display: flex; gap: 4px; }
+.size, .tool {
+  appearance: none; border: 1.5px solid transparent; background: var(--chip); color: var(--ink); cursor: pointer;
+  width: 38px; height: 38px; border-radius: 13px; display: grid; place-items: center; padding: 0;
+}
+.size span { display: block; border-radius: 50%; background: var(--ink); }
+.size[aria-checked="true"] { border-color: var(--ink); }
+.tool svg { width: 20px; height: 20px; }
+.tool:disabled { opacity: .35; cursor: default; }
+
+.tagfield {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  background: var(--field); border: 1.5px solid var(--tray-line); border-radius: 16px; padding: 4px 4px 4px 14px;
+}
+.tagfield label { font: 500 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.tagfield input {
+  font: 500 17px var(--font-display); color: var(--ink); background: transparent; border: 0; outline: none;
+  width: 11ch; min-width: 0; padding: 8px 2px; -webkit-user-select: text; user-select: text;
+}
+.tagfield input::placeholder { color: var(--muted); opacity: .6; }
+
+/* ---------- eye ring ---------- */
+.ring { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+.ring-btn {
+  --x: 0px; --y: 0px; --s: 1;
+  position: absolute; left: 0; top: 0; width: var(--btn, 52px); height: var(--btn, 52px);
+  margin: calc(var(--btn, 52px) / -2) 0 0 calc(var(--btn, 52px) / -2);
+  padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; pointer-events: auto;
+  transform: translate(var(--x), var(--y)) scale(var(--s));
+  transition: transform .5s cubic-bezier(.3, 1.35, .5, 1), opacity .3s ease;
+}
+.ring.snap .ring-btn { transition: none; }
+.ring-btn .float { display: block; width: 100%; height: 100%; will-change: transform; }
+.ring-btn canvas { width: 100%; height: 100%; display: block; border-radius: 50%; box-shadow: 0 6px 14px -8px var(--shadow); transition: transform .15s ease; }
+.ring-btn:hover canvas { transform: scale(1.1); }
+.ring-btn[aria-checked="true"] canvas { box-shadow: 0 0 0 3px var(--bg-top), 0 0 0 5px var(--ink); }
+.ring-btn:focus-visible { outline: none; }
+.ring-btn:focus-visible canvas { box-shadow: 0 0 0 3px var(--bg-top), 0 0 0 5px var(--ink); transform: scale(1.1); }
+
+/* ---------- bubble + name tag ---------- */
+.bubble {
+  z-index: 5; position: fixed; left: 0; top: 0; pointer-events: none;
+  background: var(--field); color: var(--ink); border: 1.5px solid var(--ink);
+  border-radius: 16px; padding: 8px 14px; font-size: 16px; font-weight: 500; white-space: nowrap;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.bubble.mono { font-family: var(--font-mono); letter-spacing: 0.03em; }
+.bubble::after {
+  content: ""; position: absolute; left: 50%; bottom: -7px; width: 12px; height: 12px;
+  background: inherit; border-right: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink);
+  transform: translateX(-50%) rotate(45deg);
+}
+.bubble.pop { animation: pop .28s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes pop { from { scale: .6; opacity: 0; } to { scale: 1; opacity: 1; } }
+.nametag { position: fixed; left: 0; top: 0; z-index: 2; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.nametag .nick { font-weight: 600; font-size: 18px; background: var(--ink); color: var(--bg-top); padding: 5px 13px; border-radius: 11px; rotate: -2.5deg; box-shadow: 0 8px 18px -10px var(--shadow); }
+.nametag .aka { font: 400 11.5px var(--font-mono); color: var(--muted); letter-spacing: 0.03em; }
+.nametag.pop { animation: pop .4s cubic-bezier(.3, 1.6, .5, 1); }
+
+@media (max-width: 560px) {
+  .steps button { padding: 7px 8px; font-size: 11px; }
+  .brand span:last-child { display: none; }
+  .prompt { top: calc(62px + env(safe-area-inset-top, 0px)); }
+  .prompt p { font-size: 14.5px; }
+  .dock { padding: 10px; border-radius: 22px; width: auto; left: 16px; right: 16px; max-width: none; }
+  .brush { width: 23px; }
+  .brush canvas { width: 23px; }
+  .tagfield input { width: 8ch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bubble.pop, .nametag.pop, .prompt.swap { animation: none; }
+  .btn, .ring-btn, .ring-btn canvas, .brush { transition: none; }
+}
+</style>
+</head>
+<body>
+
+
+<canvas id="stage" aria-label="Buddy studio. Click and drag a loop around the eyes to shape a body."></canvas>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-hidden="true"></canvas>
+
+<header class="topbar">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><span>ai buddie</span></div>
+  <nav class="steps" aria-label="Steps">
+    <button type="button" data-go="shape">Shape</button>
+    <button type="button" data-go="eyes">Eyes</button>
+    <button type="button" data-go="paint">Paint</button>
+    <button type="button" data-go="name">Name</button>
+  </nav>
+</header>
+
+<div class="prompt" id="prompt" aria-live="polite">
+  <h1 id="promptTitle">Draw your buddy</h1>
+  <p id="promptText">Drag a loop around the eyes. Whatever you draw becomes its body.</p>
+</div>
+
+<div class="ring" id="eyeRing" role="radiogroup" aria-label="Eyes" hidden></div>
+
+<div class="dock" id="dock">
+  <section data-step="shape">
+    <button class="btn" id="surprise" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2"/></svg>
+      Make one for me
+    </button>
+  </section>
+
+  <section data-step="eyes" hidden>
+    <button class="btn" id="redraw" type="button">Redraw</button>
+    <span class="label">Eyes: <b id="eyesName">Classic</b></span>
+    <button class="btn primary" id="toPaint" type="button">Next: Paint</button>
+  </section>
+
+  <section data-step="paint" hidden>
+    <div class="brushes" id="brushes" role="radiogroup" aria-label="Brush color"></div>
+    <span class="sep" aria-hidden="true"></span>
+    <div class="sizes" id="sizes" role="radiogroup" aria-label="Brush size"></div>
+    <button class="tool" id="dip" type="button" title="Dip the whole buddy" aria-label="Dip the whole buddy in this color">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h12l-1.4 10.2a2 2 0 0 1-2 1.8H8.4a2 2 0 0 1-2-1.8z"/><path d="M5 9c0-2.8 2.7-5 6-5s6 2.2 6 5"/><path d="M19.5 12.5c.9 1.2 1.5 2.2 1.5 3a1.5 1.5 0 0 1-3 0c0-.8.6-1.8 1.5-3z"/></svg>
+    </button>
+    <button class="tool" id="undo" type="button" title="Undo" aria-label="Undo last paint" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+    </button>
+    <button class="btn primary" id="toName" type="button">Next: Name</button>
+  </section>
+
+  <section data-step="name" hidden>
+    <div class="tagfield">
+      <label for="nickname">Call it</label>
+      <input type="text" id="nickname" maxlength="16" autocomplete="off" spellcheck="false" disabled>
+    </div>
+    <button class="btn primary" id="done" type="button" disabled>Done</button>
+  </section>
+
+  <section data-step="meet" hidden>
+    <button class="btn" id="edit" type="button">Edit</button>
+    <button class="btn" id="reset" type="button">Start over</button>
+  </section>
+</div>
+
+<div class="nametag" id="nametag" hidden><span class="nick" id="tagNick"></span><span class="aka" id="tagAka"></span></div>
+<div class="bubble" id="bubble" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
+<script>
+(() => {
+  const cv = document.getElementById('stage');
+  const glCanvas = document.getElementById('gl');
+  const fx = document.getElementById('fx'), fxc = fx.getContext('2d');
+  const ctx = cv.getContext('2d');
+  const rootStyle = getComputedStyle(document.documentElement);
+  const RM = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.25 : 1;
+  const HAS3D = !!(window.THREE && window.Delaunator);
+  const KEY = 'aibuddie.buddy.v2';
+  const N = 64;
+  const STEPS = ['shape', 'eyes', 'paint', 'name', 'meet'];
+  const BASE = '#EEE8DF'; // unpainted soft vinyl
+
+  // Paint pots. Each is a brush in the tray.
+  const PALETTE = [
+    ['#FF6B5B', 'Tomato'], ['#FF9F43', 'Tangerine'], ['#FFD23F', 'Sunny'], ['#5ED6A0', 'Mint'], ['#4FB3FF', 'Sky'],
+    ['#7C6CFF', 'Iris'], ['#FF7EB6', 'Bubblegum'], ['#F6F2EC', 'Cream'], ['#2B2B3A', 'Ink'],
+  ];
+  const SIZES = [[8, 'Small'], [18, 'Medium'], [36, 'Large']];
+
+  // Personalities, not moods: each is a neutral resting design. Emotions get layered on later.
+  const EYES = [
+    ['classic', 'Classic'], ['button', 'Button'], ['bean', 'Bean'], ['bright', 'Bright'], ['pebble', 'Pebble'],
+    ['mellow', 'Mellow'], ['closeset', 'Close-set'], ['wideset', 'Wide-set'], ['boxy', 'Boxy'], ['donut', 'Donut'],
+    ['googly', 'Googly'], ['lashes', 'Lashes'], ['slim', 'Slim'], ['oddpair', 'Odd pair'],
+  ];
+  const SPACING = { closeset: 0.42, wideset: 1.12, bean: 0.6, bright: 0.82, googly: 0.84, slim: 0.58, pebble: 0.8 };
+
+  const LINES = ['hehe', 'that tickles', 'boop received', "careful, I'm squishy", 'hi again!', 'wheee'];
+  const ANNOYED = ['hey.', 'okay, that’s enough', 'hmm.', 'please don’t'];
+  const ANGRY = ['stop poking me!', 'seriously, stop.', 'quit it!', 'HEY.'];
+  const SULKING = ['hmph.', 'not talking to you', '…', 'I said stop.'];
+  const WHEE = ['wheee!', 'again!', 'woo!'];
+  const DIZZY = ['whoaaa…', 'the room is spinning', 'which way is up?', 'oh no… oh no…'];
+  const RECOVER = ['ugh… I need a minute.', 'never doing that again', 'okay. I’m okay.'];
+  const PAINTED = ['ooh, cold!', 'that tickles', 'fancy', 'am I pretty?', 'ooh'];
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+
+  // Poke patience: a few pokes are fun, a flurry is not.
+  const pokes = [];
+  let mood = null, moodUntil = 0, sulkUntil = 0, shakeUntil = 0;
+  // Spinning: a quick twirl is fun, too much and it gets dizzy.
+  let dizzyUntil = 0, wasDizzy = false, wheeAt = -9, turnAcc = 0, frameDt = 1 / 60;
+  const curMood = () => (T < dizzyUntil ? 'dizzy' : T < sulkUntil || T < moodUntil ? mood : null);
+
+  let W = 0, H = 0, DPR = 1;
+  let step = 'shape', reached = 0;
+  let body = null;
+  let stroke = null;
+  let eyeStyle = 'classic';
+  let brushIdx = 3, brushSize = 18;
+  let trueName = '', nickname = '';
+  let T = 0, last = performance.now(), acc = 0;
+  let blink = 0, thinkUntil = 0;
+  const mouse = { x: 0, y: 0, last: -10 };
+  const wander = { x: 0, y: 0, next: 0 };
+  let look = mouse;
+  const eyes = { x: 0, y: 0, r: 30, lx: 0, ly: 0, nextBlink: 1.2, blinkStart: -9, happyUntil: 0, follow: 0.2 };
+  // the buddy's overall look, derived from its paint: average color, outline, and an eye color that contrasts
+  const tone = { fill: BASE, line: '#6E6559', eye: '#15161F' };
+
+  const tok = (n) => rootStyle.getPropertyValue(n).trim();
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  function mix(a, b, t) {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const ch = (s) => Math.round(((pa >> s) & 255) * (1 - t) + ((pb >> s) & 255) * t);
+    return '#' + ((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1);
+  }
+  const hex = (r, g, b) => '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+
+  /* ---------- geometry ---------- */
+  function area(p) { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i].x * q.y - q.x * p[i].y; } return a / 2; }
+  function centroid(p) {
+    const A = area(p);
+    if (Math.abs(A) < 1) { let x = 0, y = 0; p.forEach(q => { x += q.x; y += q.y; }); return { x: x / p.length, y: y / p.length }; }
+    let cx = 0, cy = 0;
+    for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length], f = a.x * b.y - b.x * a.y; cx += (a.x + b.x) * f; cy += (a.y + b.y) * f; }
+    return { x: cx / (6 * A), y: cy / (6 * A) };
+  }
+  function bbox(p) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    p.forEach(q => { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); });
+    return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+  }
+  function inPoly(p, x, y) {
+    let inside = false;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+      const a = p[i], b = p[j];
+      if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+  }
+  function distToPoly(p, x, y) {
+    let best = Infinity;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+      const a = p[j], b = p[i], vx = b.x - a.x, vy = b.y - a.y;
+      const t = clamp(((x - a.x) * vx + (y - a.y) * vy) / (vx * vx + vy * vy || 1), 0, 1);
+      const dx = a.x + vx * t - x, dy = a.y + vy * t - y, d = dx * dx + dy * dy;
+      if (d < best) best = d;
+    }
+    return Math.sqrt(best);
+  }
+  function pathLen(p) { let L = 0; for (let i = 1; i < p.length; i++) L += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return L; }
+  function resample(pts, n) {
+    const P = pts.concat([pts[0]]);
+    const L = [0];
+    for (let i = 1; i < P.length; i++) L.push(L[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+    const total = L[L.length - 1] || 1, out = [];
+    let j = 0;
+    for (let k = 0; k < n; k++) {
+      const d = k * total / n;
+      while (j < L.length - 2 && L[j + 1] < d) j++;
+      const seg = (L[j + 1] - L[j]) || 1, u = (d - L[j]) / seg;
+      out.push({ x: P[j].x + (P[j + 1].x - P[j].x) * u, y: P[j].y + (P[j + 1].y - P[j].y) * u });
+    }
+    return out;
+  }
+
+  /* ---------- stage layout ---------- */
+  const promptEl = document.getElementById('prompt');
+  const dockEl = document.getElementById('dock');
+  // the open space between the prompt and the tool tray
+  function freeRect() {
+    const p = promptEl.getBoundingClientRect(), d = dockEl.getBoundingClientRect();
+    return { x0: 0, x1: W, y0: p.bottom + 14, y1: d.top - 14 };
+  }
+  function home() {
+    const f = freeRect();
+    return { x: W / 2, y: clamp((f.y0 + f.y1) / 2 + 20, f.y0 + 60, Math.max(f.y0 + 60, f.y1 - 70)) };
+  }
+
+  /* ---------- body ---------- */
+  function shapeFromStroke(raw) {
+    let pts = resample(raw, N);
+    const start = pts.map(p => ({ x: p.x, y: p.y }));
+    const a0 = Math.abs(area(pts));
+    if (a0 < 2500) {
+      const bb = bbox(raw), cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2;
+      const rx = Math.max(70, bb.w / 2 + 20), ry = Math.max(60, bb.h / 2 + 20);
+      pts = Array.from({ length: N }, (_, i) => { const a = i / N * Math.PI * 2; return { x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry }; });
+    } else {
+      for (let k = 0; k < 6; k++) pts = pts.map((p, i) => { const a = pts[(i + N - 1) % N], b = pts[(i + 1) % N]; return { x: (a.x + 2 * p.x + b.x) / 4, y: (a.y + 2 * p.y + b.y) / 4 }; });
+      const c0 = centroid(pts), k = Math.sqrt(a0 / (Math.abs(area(pts)) || 1));
+      pts = pts.map(p => ({ x: c0.x + (p.x - c0.x) * k, y: c0.y + (p.y - c0.y) * k }));
+    }
+    const c = centroid(pts);
+    let r = pts.map(p => ({ x: p.x - c.x, y: p.y - c.y }));
+    const bb = bbox(r);
+    const grow = Math.max(1, 100 / Math.min(bb.w, bb.h));
+    const shrink = Math.min(1, (W * 0.9) / (bb.w * grow), (H * 0.62) / (bb.h * grow));
+    const k = Math.min(grow * shrink, 2.2);
+    if (k !== 1) r = r.map(p => ({ x: p.x * k, y: p.y * k }));
+    return { r, c, start };
+  }
+
+  function setExtents(b) {
+    const bb = bbox(b.r);
+    b.minX = bb.x0; b.maxX = bb.x1; b.minY = bb.y0; b.maxY = bb.y1; b.w = bb.w; b.h = bb.h;
+  }
+
+  function makeBody(r, c, opts = {}) {
+    const b = {
+      r, c: { x: c.x, y: c.y }, cT: { x: c.x, y: c.y }, fx: 0, fy: 0,
+      s: opts.spawn ? 0.25 : 0.94, sv: 0, sy: 1, syv: 0, alpha: 1, alphaT: 1, ox: 0, oy: 0, oxv: 0, oyv: 0,
+      p: [], eyeRel: { x: 0, y: 0 }, eyeR: 18,
+    };
+    setExtents(b);
+    clampBody(b);
+    b.c.x = b.cT.x; b.c.y = b.cT.y;
+    if (opts.start) b.p = opts.start.map(q => ({ x: q.x, y: q.y, vx: 0, vy: 0 }));
+    else if (opts.spawn) b.p = r.map(() => ({ x: opts.spawn.x, y: opts.spawn.y, vx: 0, vy: 0 }));
+    else b.p = r.map(q => ({ x: b.c.x + q.x, y: b.c.y + q.y, vx: 0, vy: 0 }));
+    if (opts.eyeRel) { b.eyeRel = opts.eyeRel; b.eyeR = opts.eyeR; }
+    else placeEyes(b, opts.prefer);
+    return b;
+  }
+
+  function clampBody(b) {
+    const lo = 16 - b.minX, hi = W - 16 - b.maxX;
+    b.cT.x = lo > hi ? W / 2 : clamp(b.cT.x, lo, hi);
+    const tlo = 16 - b.minY, thi = H - 40 - b.maxY;
+    b.cT.y = tlo > thi ? H / 2 : clamp(b.cT.y, tlo, thi);
+    b.fx = b.cT.x / W; b.fy = b.cT.y / H;
+  }
+
+  function scaleBody(b, k) {
+    b.r = b.r.map(p => ({ x: p.x * k, y: p.y * k }));
+    b.eyeRel = { x: b.eyeRel.x * k, y: b.eyeRel.y * k };
+    b.eyeR *= k;
+    setExtents(b);
+  }
+
+  // Eye footprint: two eyes, brows, plus the room they slide around in.
+  function fits(poly, c, r) {
+    const sx = r * 1.6, sy = r * 1.15;
+    return [[-sx, 0], [sx, 0], [0, -sy], [0, sy], [-sx, -sy * .8], [sx, -sy * .8], [-sx, sy * .8], [sx, sy * .8]]
+      .every(([dx, dy]) => inPoly(poly, c.x + dx, c.y + dy));
+  }
+
+  function placeEyes(b, prefer) {
+    let r = clamp(Math.min(b.w, b.h) * 0.15, 12, 36);
+    const cands = [];
+    if (prefer) cands.push({ x: prefer.x - b.c.x, y: prefer.y - b.c.y });
+    cands.push({ x: 0, y: -b.h * 0.16 }, { x: 0, y: -b.h * 0.06 }, { x: 0, y: 0 }, { x: 0, y: b.h * 0.1 });
+    for (let t = 0; t < 7; t++) {
+      for (const c of cands) if (fits(b.r, c, r)) { b.eyeRel = c; b.eyeR = r; return; }
+      r *= 0.84;
+    }
+    b.eyeRel = { x: 0, y: 0 }; b.eyeR = r;
+  }
+
+  function bodyTarget(b, q, bob) {
+    const breath = 1 + Math.sin(T * 1.7 + 1.2) * 0.014 * RM;
+    return {
+      x: b.c.x + b.ox + q.x * b.s * (2 - b.sy) * breath,
+      y: b.c.y + b.oy + bob + b.maxY * b.s + (q.y - b.maxY) * b.s * b.sy * breath,
+    };
+  }
+
+  function physics(bob) {
+    if (gl) {
+      gl.iv = (gl.iv + (gl.inflateT - gl.inflate) * 0.07) * 0.84; gl.inflate += gl.iv;
+      gl.rollV = (gl.rollV + (0 - gl.roll) * 0.08) * 0.86; gl.roll += gl.rollV;
+    }
+    if (!body) return;
+    const b = body;
+    b.c.x += (b.cT.x - b.c.x) * 0.1; b.c.y += (b.cT.y - b.c.y) * 0.1;
+    b.oxv = (b.oxv + (0 - b.ox) * 0.06) * 0.86; b.ox += b.oxv;
+    b.oyv = (b.oyv + (0 - b.oy) * 0.06) * 0.86; b.oy += b.oyv;
+    if (T < shakeUntil) b.ox += Math.sin(T * 55) * 2.4;
+    b.sv = (b.sv + (1 - b.s) * 0.09) * 0.8; b.s += b.sv;
+    b.syv = (b.syv + (1 - b.sy) * 0.13) * 0.8; b.sy += b.syv;
+    b.alpha += (b.alphaT - b.alpha) * 0.15;
+    for (let i = 0; i < N; i++) {
+      const p = b.p[i], tg = bodyTarget(b, b.r[i], bob);
+      p.vx = (p.vx + (tg.x - p.x) * 0.13) * 0.8; p.x += p.vx;
+      p.vy = (p.vy + (tg.y - p.y) * 0.13) * 0.8; p.y += p.vy;
+    }
+  }
+
+  function poke(x, y) {
+    const b = body;
+    for (const p of b.p) {
+      const d = Math.hypot(p.x - x, p.y - y), f = Math.max(0, 1 - d / 130);
+      let dx = b.c.x - p.x, dy = b.c.y - p.y; const m = Math.hypot(dx, dy) || 1;
+      p.vx += dx / m * f * 7; p.vy += dy / m * f * 7;
+    }
+    b.syv -= 0.1;
+    if (gl && gl.active) gl.rollV += (x < b.c.x ? -1 : 1) * 0.05;
+    if (T < thinkUntil) return;
+
+    if (T < dizzyUntil) { say(pick(['not now…', 'still spinning…', 'please hold'])); return; }
+    // Sulking: it has turned its back and only grumbles.
+    if (T < sulkUntil) {
+      sulkUntil = Math.min(sulkUntil + 0.8, T + 6);
+      say(pick(SULKING));
+      return;
+    }
+    pokes.push(T);
+    while (pokes.length && T - pokes[0] > 4) pokes.shift();
+    const count = pokes.length;
+    const ax = b.c.x - x, ay = b.c.y - y, am = Math.hypot(ax, ay) || 1;
+
+    if (count <= 3) {
+      eyes.happyUntil = T + 0.9;
+      say(pick(LINES));
+    } else if (count <= 5) {
+      mood = 'annoyed'; moodUntil = T + 2.5; eyes.happyUntil = 0;
+      say(pick(ANNOYED));
+    } else if (count <= 7) {
+      // angry: shakes and dodges away from the cursor
+      mood = 'angry'; moodUntil = T + 3; eyes.happyUntil = 0; shakeUntil = T + 0.45;
+      b.oxv += ax / am * 9; b.oyv += ay / am * 5;
+      say(pick(ANGRY));
+    } else {
+      // last straw: puffs up, turns its back, and sulks for a bit
+      mood = 'angry'; sulkUntil = T + 4.5; shakeUntil = T + 0.3; eyes.happyUntil = 0;
+      b.sv += 0.12; pokes.length = 0;
+      say('that’s it. I’m not talking to you.', 3200);
+      clearTimeout(sulkTimer);
+      const check = () => {
+        if (T < sulkUntil) { sulkTimer = setTimeout(check, 300); return; }
+        mood = null;
+        if (body) { say('…fine. hi.', 2000); eyes.happyUntil = T + 0.6; }
+      };
+      sulkTimer = setTimeout(check, 4600);
+    }
+  }
+  let sulkTimer = 0;
+
+  /* ---------- eye styles (shared by 2D, 3D face texture, and the ring) ---------- */
+  // lk = where the eyes are looking, normalized to roughly -1..1 on each axis.
+  // mood (optional): 'annoyed' / 'angry' narrow any personality's eyes and add brows; 'dizzy' swaps in spirals.
+  function drawEyeStyle(g, id, cx, cy, r, bl, happy, col, lk = { x: 0, y: 0 }, mood = null) {
+    if (mood) happy = false;
+    // Most styles slide as a pair; googly eyes keep the whites still and roll the pupils instead.
+    const shift = id === 'googly' ? 0.08 : 0.35;
+    cx += lk.x * r * shift; cy += lk.y * r * shift * 0.8;
+    g.save();
+    g.fillStyle = col; g.strokeStyle = col; g.lineCap = 'round'; g.lineJoin = 'round';
+    const open = (1 - bl * 0.9) * (mood === 'angry' ? 0.45 : mood === 'annoyed' ? 0.62 : 1), sp = r * (SPACING[id] || 0.75);
+    const P = [{ x: cx - sp, y: cy, s: -1 }, { x: cx + sp, y: cy, s: 1 }];
+    const oval = (p, rx, ry, dy = 0) => { g.beginPath(); g.ellipse(p.x, p.y + dy * r, rx * r, Math.max(r * 0.04, ry * r * open), 0, 0, Math.PI * 2); g.fill(); };
+    const dotAt = (x, y, rr) => { g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.fill(); };
+    const rrect = (x, y, w, h, rad) => {
+      rad = Math.min(rad, w / 2, h / 2);
+      g.beginPath(); g.moveTo(x + rad, y);
+      g.arcTo(x + w, y, x + w, y + h, rad); g.arcTo(x + w, y + h, x, y + h, rad);
+      g.arcTo(x, y + h, x, y, rad); g.arcTo(x, y, x + w, y, rad); g.closePath();
+    };
+    if (mood === 'dizzy') {
+      g.lineWidth = Math.max(1.5, r * 0.09);
+      P.forEach((p, k) => {
+        const dir = k ? 1 : -1, rot = T * 7 * dir;
+        g.beginPath();
+        for (let t = 0; t <= 1; t += 0.02) {
+          const a = rot + dir * t * Math.PI * 5, rr = r * (0.04 + 0.34 * t);
+          const x = p.x + Math.cos(a) * rr, y = p.y + Math.sin(a) * rr;
+          t ? g.lineTo(x, y) : g.moveTo(x, y);
+        }
+        g.stroke();
+      });
+      g.restore(); return;
+    }
+    // A poke still gets a quick ^ ^ so the buddy feels alive; real emotions come later.
+    if (happy) {
+      g.lineWidth = Math.max(1.5, r * 0.15);
+      P.forEach(p => { g.beginPath(); g.arc(p.x, p.y + r * 0.2, r * 0.3, Math.PI * 1.12, Math.PI * 1.88); g.stroke(); });
+      g.restore(); return;
+    }
+    switch (id) {
+      case 'button': P.forEach(p => oval(p, 0.22, 0.22)); break;
+      case 'bean': P.forEach(p => oval(p, 0.19, 0.58)); break;
+      case 'bright':
+        P.forEach(p => oval(p, 0.38, 0.4));
+        if (open > 0.5) { g.fillStyle = '#FFFFFF'; P.forEach(p => { dotAt(p.x - r * 0.12, p.y - r * 0.13, r * 0.12); dotAt(p.x + r * 0.13, p.y + r * 0.13, r * 0.055); }); }
+        break;
+      case 'pebble': P.forEach(p => oval(p, 0.36, 0.21)); break;
+      case 'mellow':
+        P.forEach(p => { g.beginPath(); g.ellipse(p.x, p.y - r * 0.08, r * 0.33, Math.max(r * 0.04, r * 0.36 * open), 0, 0, Math.PI); g.closePath(); g.fill(); });
+        break;
+      case 'closeset': P.forEach(p => oval(p, 0.2, 0.24)); break;
+      case 'wideset': P.forEach(p => oval(p, 0.24, 0.36)); break;
+      case 'boxy':
+        P.forEach(p => { const w = r * 0.5, h = Math.max(r * 0.06, r * 0.6 * open); rrect(p.x - w / 2, p.y - h / 2, w, h, r * 0.14); g.fill(); });
+        break;
+      case 'donut':
+        g.lineWidth = r * 0.14;
+        P.forEach(p => { g.beginPath(); g.ellipse(p.x, p.y, r * 0.27, Math.max(r * 0.04, r * 0.3 * open), 0, 0, Math.PI * 2); g.stroke(); });
+        break;
+      case 'googly':
+        P.forEach(p => {
+          g.fillStyle = '#FFFFFF';
+          g.beginPath(); g.ellipse(p.x, p.y, r * 0.44, Math.max(r * 0.04, r * 0.46 * open), 0, 0, Math.PI * 2); g.fill();
+          g.lineWidth = r * 0.07; g.strokeStyle = col; g.stroke();
+          if (open > 0.4) {
+            const m = Math.hypot(lk.x, lk.y), k = m > 1 ? 1 / m : 1;
+            g.fillStyle = '#141820';
+            dotAt(p.x + lk.x * k * r * 0.22, p.y + lk.y * k * r * 0.22 * open, r * 0.2);
+          }
+        });
+        break;
+      case 'lashes':
+        P.forEach(p => {
+          oval(p, 0.28, 0.44);
+          if (open > 0.5) {
+            g.lineWidth = r * 0.09;
+            for (let k = 0; k < 3; k++) {
+              const a = -Math.PI / 2 + p.s * (0.55 + k * 0.32);
+              const x0 = p.x + Math.cos(a) * r * 0.28, y0 = p.y + Math.sin(a) * r * 0.44;
+              g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + Math.cos(a) * r * 0.2, y0 + Math.sin(a) * r * 0.2); g.stroke();
+            }
+          }
+        });
+        break;
+      case 'slim': P.forEach(p => oval(p, 0.12, 0.5)); break;
+      case 'oddpair': oval(P[0], 0.17, 0.19, 0.1); oval(P[1], 0.3, 0.5); break;
+      default: P.forEach(p => oval(p, 0.3, 0.48));
+    }
+    if (mood) {
+      g.strokeStyle = col; g.lineWidth = Math.max(1.5, r * 0.13);
+      const tilt = mood === 'angry' ? 0.24 : 0.12;
+      P.forEach(p => {
+        const w = r * 0.34, y = p.y - r * 0.52, ix = p.x - p.s * w * 0.9, ox = p.x + p.s * w * 1.1;
+        g.beginPath(); g.moveTo(ox, y - tilt * r); g.lineTo(ix, y + tilt * r); g.stroke();
+      });
+    }
+    g.restore();
+  }
+
+  const lookVec = () => ({ x: eyes.lx / (eyes.r * 0.35), y: eyes.ly / (eyes.r * 0.28) });
+
+  /* ---------- studio backdrop ---------- */
+  // Soft pastel lights drifting slowly behind everything, plus a floor spotlight under the buddy.
+  const BLOBS = [
+    { c: '#7C6CFF', x: 0.15, y: 0.25, r: 0.42, sp: 0.07, ph: 0 },
+    { c: '#FF9F43', x: 0.85, y: 0.3, r: 0.38, sp: 0.05, ph: 2 },
+    { c: '#5ED6A0', x: 0.2, y: 0.85, r: 0.4, sp: 0.06, ph: 4 },
+    { c: '#FF7EB6', x: 0.82, y: 0.82, r: 0.36, sp: 0.045, ph: 1 },
+  ];
+  function drawBackground() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, tok('--bg-top')); g.addColorStop(1, tok('--bg-bottom'));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    const a = parseFloat(tok('--blob-alpha')) || 0.2, M = Math.max(W, H);
+    for (const b of BLOBS) {
+      const x = W * (b.x + 0.05 * Math.sin(T * b.sp + b.ph) * RM), y = H * (b.y + 0.04 * Math.cos(T * b.sp * 1.3 + b.ph) * RM), r = M * b.r;
+      const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+      rg.addColorStop(0, b.c + Math.round(a * 255).toString(16).padStart(2, '0'));
+      rg.addColorStop(1, b.c + '00');
+      ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+    }
+    // floor spotlight
+    let fx0, fy0, fw;
+    if (body) { const bb = bbox(body.p); fx0 = (bb.x0 + bb.x1) / 2; fy0 = body.c.y + body.maxY * body.s + 12; fw = Math.max(160, bb.w * 0.9); }
+    else { const h = home(); fx0 = h.x; fy0 = h.y + 50; fw = 220; }
+    ctx.save();
+    ctx.translate(fx0, fy0); ctx.scale(1, 0.22);
+    const sg = ctx.createRadialGradient(0, 0, 0, 0, 0, fw);
+    sg.addColorStop(0, tok('--glow')); sg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, fw, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  /* ---------- 2D drawing ---------- */
+  function smoothPath(p) {
+    const n = p.length, a = p[n - 1], b = p[0];
+    ctx.beginPath();
+    ctx.moveTo((a.x + b.x) / 2, (a.y + b.y) / 2);
+    for (let i = 0; i < n; i++) { const q = p[i], r = p[(i + 1) % n]; ctx.quadraticCurveTo(q.x, q.y, (q.x + r.x) / 2, (q.y + r.y) / 2); }
+    ctx.closePath();
+  }
+
+  function drawGuide() {
+    const h = home(), R = 96, ink = tok('--ink'), muted = tok('--muted');
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.setLineDash([1, 11]); ctx.lineCap = 'round'; ctx.lineWidth = 3;
+    ctx.lineDashOffset = -T * 14 * RM; ctx.strokeStyle = muted;
+    ctx.beginPath(); ctx.ellipse(h.x, h.y, R * 1.25, R, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    const a = (T * 1.3 * RM) % (Math.PI * 2) - Math.PI / 2;
+    ctx.globalAlpha = 0.35; ctx.strokeStyle = ink; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(h.x, h.y, R * 1.25, R, 0, a - 0.9, a); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.fillStyle = ink;
+    ctx.beginPath(); ctx.arc(h.x + Math.cos(a) * R * 1.25, h.y + Math.sin(a) * R, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBody(b) {
+    const bb = bbox(b.p);
+    ctx.save();
+    const lift = (b.c.y + b.maxY) - bb.y1;
+    ctx.fillStyle = 'rgba(30, 26, 60, 0.14)';
+    ctx.beginPath(); ctx.ellipse((bb.x0 + bb.x1) / 2, b.c.y + b.maxY * b.s + 12, Math.max(10, bb.w * 0.36 - lift), 7, 0, 0, Math.PI * 2); ctx.fill();
+    if (b.alpha > 0.01) {
+      ctx.globalAlpha = b.alpha;
+      smoothPath(b.p);
+      ctx.fillStyle = tone.fill; ctx.fill();
+      ctx.save(); ctx.clip();
+      const hx = bb.x0 + bb.w * 0.32, hy = bb.y0 + bb.h * 0.22;
+      let g = ctx.createRadialGradient(hx, hy, 0, hx, hy, Math.max(bb.w, bb.h) * 0.7);
+      g.addColorStop(0, 'rgba(255,255,255,0.42)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(bb.x0, bb.y0, bb.w, bb.h);
+      g = ctx.createLinearGradient(0, bb.y0 + bb.h * 0.5, 0, bb.y1);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.13)');
+      ctx.fillStyle = g; ctx.fillRect(bb.x0, bb.y0, bb.w, bb.h);
+      ctx.restore();
+      smoothPath(b.p);
+      ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = tone.line; ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawStroke() {
+    if (!stroke || stroke.length < 2) return;
+    const ink = tok('--ink');
+    ctx.save();
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(stroke[0].x, stroke[0].y);
+    for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i].x, stroke[i].y);
+    ctx.globalAlpha = 0.5; ctx.fillStyle = BASE; ctx.fill();
+    ctx.globalAlpha = 1; ctx.lineWidth = 3.5; ctx.strokeStyle = ink; ctx.stroke();
+    const a = stroke[0], z = stroke[stroke.length - 1];
+    const near = Math.hypot(a.x - z.x, a.y - z.y) < 30 && pathLen(stroke) > 140;
+    ctx.fillStyle = ink;
+    ctx.beginPath(); ctx.arc(a.x, a.y, near ? 8 : 4.5, 0, Math.PI * 2); ctx.fill();
+    if (near) { ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(a.x, a.y, 14, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  function drawEyes() {
+    const col = body ? tone.eye : tok('--ink');
+    if (!body) {
+      ctx.fillStyle = 'rgba(30, 26, 60, 0.12)';
+      ctx.beginPath(); ctx.ellipse(eyes.x, home().y + eyes.r * 1.5, eyes.r * 1.1, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // without 3D there's no back to turn, so a sulking buddy just shuts its eyes
+    const bl = T < sulkUntil ? 0.9 : blink;
+    drawEyeStyle(ctx, eyeStyle, eyes.x, eyes.y, eyes.r, bl, T < eyes.happyUntil, col, lookVec(), curMood());
+  }
+
+  /* ---------- paint ---------- */
+  // The paint lives on a square canvas stretched over the body's outline (front and back share it).
+  const PW = 768, PH = 768;
+  const pcv = document.createElement('canvas'); pcv.width = PW; pcv.height = PH;
+  const pctx = pcv.getContext('2d', { willReadFrequently: true });
+  pctx.fillStyle = BASE; pctx.fillRect(0, 0, PW, PH);
+  let paintDirty = true, painting = null, dipAnim = null;
+  const undoStack = [];
+  const undoBtn = document.getElementById('undo');
+  function pushUndo() {
+    try { undoStack.push(pctx.getImageData(0, 0, PW, PH)); } catch (e) { return; }
+    if (undoStack.length > 8) undoStack.shift();
+    undoBtn.disabled = false;
+  }
+  function stamp(px, py, col) {
+    const rx = brushSize * PW / body.w, ry = brushSize * PH / body.h;
+    pctx.save();
+    pctx.translate(px, py); pctx.scale(rx, ry);
+    const g = pctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.addColorStop(0, col); g.addColorStop(0.68, col); g.addColorStop(1, col + '00');
+    pctx.globalAlpha = 0.92; pctx.fillStyle = g;
+    pctx.beginPath(); pctx.arc(0, 0, 1, 0, Math.PI * 2); pctx.fill();
+    pctx.restore();
+  }
+  function paintTo(uv) {
+    const px = uv.x * PW, py = (1 - uv.y) * PH, col = PALETTE[brushIdx][0];
+    const lastP = painting.last;
+    if (lastP && Math.hypot(px - lastP.x, py - lastP.y) < PW * 0.3) {
+      const stepPx = Math.max(1, brushSize * PW / body.w * 0.28);
+      const d = Math.hypot(px - lastP.x, py - lastP.y), n = Math.ceil(d / stepPx);
+      for (let i = 1; i <= n; i++) stamp(lastP.x + (px - lastP.x) * i / n, lastP.y + (py - lastP.y) * i / n, col);
+    } else stamp(px, py, col);
+    painting.last = { x: px, y: py };
+    painting.count++;
+    paintDirty = true;
+  }
+  function stepDip() {
+    if (!dipAnim) return;
+    const t = clamp((T - dipAnim.t0) / 0.45, 0, 1), e = 1 - Math.pow(1 - t, 3);
+    pctx.fillStyle = dipAnim.col;
+    pctx.beginPath(); pctx.arc(PW / 2, PH, e * PW * 1.2, 0, Math.PI * 2); pctx.fill();
+    paintDirty = true;
+    if (t >= 1) { dipAnim = null; updateTone(); maybeSave(); }
+  }
+
+  // Average the paint to get the buddy's overall color, and pick an eye color that stands out from the paint under the eyes.
+  const tiny = document.createElement('canvas'); tiny.width = tiny.height = 8;
+  const tctx = tiny.getContext('2d', { willReadFrequently: true });
+  function avgRegion(x, y, w, h) {
+    tctx.clearRect(0, 0, 8, 8);
+    tctx.drawImage(pcv, clamp(x, 0, PW - 1), clamp(y, 0, PH - 1), Math.max(1, Math.min(w, PW - x)), Math.max(1, Math.min(h, PH - y)), 0, 0, 8, 8);
+    const d = tctx.getImageData(0, 0, 8, 8).data; let r = 0, g = 0, b = 0;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+    const n = d.length / 4;
+    return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+  }
+  function updateTone() {
+    const [r, g, b] = avgRegion(0, 0, PW, PH);
+    tone.fill = hex(r, g, b);
+    tone.line = mix(tone.fill, '#000000', 0.55);
+    if (body) {
+      const er = body.eyeR;
+      const ex = (body.eyeRel.x - er * 1.2 - body.minX) / body.w * PW, ey = (body.eyeRel.y - er * 0.7 - body.minY) / body.h * PH;
+      const [er2, eg, eb] = avgRegion(ex, ey, er * 2.4 / body.w * PW, er * 1.4 / body.h * PH);
+      const lum = (0.2126 * er2 + 0.7152 * eg + 0.0722 * eb) / 255;
+      tone.eye = lum < 0.42 ? '#F3F4F8' : '#15161F';
+    }
+    document.documentElement.style.setProperty('--brand-fill', tone.fill);
+    tintGL(); refreshPickers();
+    if (gl) gl.faceKey = '';
+  }
+
+  function drawBrushCursor() {
+    if (step !== 'paint' || !body || !gl || !gl.active || gl.drag || T - mouse.last > 3) return;
+    if (!inPoly(body.p, mouse.x, mouse.y)) return;
+    const col = PALETTE[brushIdx][0];
+    fxc.save();
+    fxc.beginPath(); fxc.arc(mouse.x, mouse.y, brushSize, 0, Math.PI * 2);
+    fxc.fillStyle = col + '55'; fxc.fill();
+    fxc.lineWidth = 1.5; fxc.strokeStyle = tok('--ink'); fxc.stroke();
+    fxc.restore();
+    fxDirty = true;
+  }
+
+  /* ---------- 3D ---------- */
+  let gl = null;
+  const PUFF = 0.85, BACK = 0.55, FACE_W = 512, FACE_H = 349;
+
+  function makeEnv(renderer) {
+    const s = new THREE.Scene();
+    const g = new THREE.SphereGeometry(10, 32, 16), pos = g.attributes.position, cols = [];
+    for (let i = 0; i < pos.count; i++) {
+      const t = (pos.getY(i) / 10 + 1) / 2;
+      cols.push(0.32 + 0.68 * t, 0.35 + 0.65 * t, 0.42 + 0.58 * t);
+    }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    s.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    const panel = (x, y, z, w, h, k) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(k, k, k), side: THREE.DoubleSide }));
+      m.position.set(x, y, z); m.lookAt(0, 0, 0); s.add(m);
+    };
+    panel(-5, 6, 6, 6, 3, 4); panel(7, 1, 3, 2, 6, 2.2); panel(0, -3, -8, 8, 2, 1.2);
+    const pm = new THREE.PMREMGenerator(renderer);
+    const tex = pm.fromScene(s, 0.03).texture; pm.dispose();
+    return tex;
+  }
+
+  function initGL() {
+    const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, alpha: true, antialias: true });
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    const scene = new THREE.Scene();
+    scene.environment = makeEnv(renderer);
+    const camera = new THREE.PerspectiveCamera(30, 1, 10, 10000);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8f9bb0, 0.4));
+    const key = new THREE.DirectionalLight(0xffffff, 0.7); key.position.set(-0.6, 0.9, 1); scene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.18); fill.position.set(0.9, -0.3, 0.5); scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.2); rim.position.set(0.5, 0.6, -1); scene.add(rim);
+    const root = new THREE.Group(), squash = new THREE.Group(), inner = new THREE.Group();
+    root.add(squash); squash.add(inner); scene.add(root);
+    root.visible = false;
+
+    // The one signature finish: soft-touch vinyl, like a squishy designer toy, wearing whatever you paint on it.
+    const paintTex = new THREE.CanvasTexture(pcv);
+    paintTex.encoding = THREE.sRGBEncoding; paintTex.anisotropy = 4;
+    const bodyMat = new THREE.MeshPhysicalMaterial({
+      map: paintTex, roughness: 0.58, clearcoat: 0.3, clearcoatRoughness: 0.42, envMapIntensity: 0.55,
+    });
+    const faceTexCanvas = document.createElement('canvas'); faceTexCanvas.width = FACE_W; faceTexCanvas.height = FACE_H;
+    const faceTex = new THREE.CanvasTexture(faceTexCanvas);
+    faceTex.encoding = THREE.sRGBEncoding; faceTex.anisotropy = 4;
+    const faceMat = new THREE.MeshStandardMaterial({
+      map: faceTex, transparent: true, depthWrite: false, roughness: 0.55, envMapIntensity: 0.12,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    });
+
+    gl = { renderer, scene, camera, root, squash, inner, bodyMat, faceMat, faceTex, paintTex,
+      fctx: faceTexCanvas.getContext('2d'), faceKey: '', ray: new THREE.Raycaster(), ndc: new THREE.Vector2(),
+      bodyMesh: null, faceMesh: null,
+      inflate: 0, iv: 0, inflateT: 0, yaw: 0, pitch: 0, spin: 0, spinV: 0, roll: 0, rollV: 0, active: false, drag: null };
+    sizeGL(); tintGL();
+  }
+
+  function sizeGL() {
+    if (!gl) return;
+    gl.renderer.setPixelRatio(DPR); gl.renderer.setSize(W, H, false);
+    const d = (H / 2) / Math.tan(15 * Math.PI / 180);
+    gl.camera.aspect = W / H; gl.camera.position.set(0, 0, d);
+    gl.camera.near = d * 0.2; gl.camera.far = d * 3; gl.camera.updateProjectionMatrix();
+  }
+
+  const lin = (h) => new THREE.Color().setStyle(h).convertSRGBToLinear();
+  function tintGL() {
+    if (!gl) return;
+    if ('sheen' in gl.bodyMat) gl.bodyMat.sheen = lin(mix(tone.fill, '#FFFFFF', 0.55));
+    gl.faceKey = '';
+  }
+
+  // which point of the painted surface is under the cursor
+  function hitUV(x, y) {
+    if (!gl || !gl.bodyMesh) return null;
+    gl.ndc.set(x / W * 2 - 1, -(y / H) * 2 + 1);
+    gl.ray.setFromCamera(gl.ndc, gl.camera);
+    gl.root.updateMatrixWorld(true);
+    const hit = gl.ray.intersectObject(gl.bodyMesh, false)[0];
+    return hit && hit.uv ? hit.uv : null;
+  }
+
+  // Inflate the outline like a balloon: height grows with distance from the edge.
+  function buildMesh(b) {
+    // Smooth the outline exactly the way the 2D body draws it (a quadratic B-spline, via Chaikin
+    // corner cutting), then sample it finely so the 3D silhouette has no flat facets.
+    let C = b.r.map(p => ({ x: p.x, y: p.y }));
+    for (let k = 0; k < 3; k++) {
+      const out = [];
+      for (let i = 0; i < C.length; i++) {
+        const p = C[i], q = C[(i + 1) % C.length];
+        out.push({ x: p.x * 0.75 + q.x * 0.25, y: p.y * 0.75 + q.y * 0.25 }, { x: p.x * 0.25 + q.x * 0.75, y: p.y * 0.25 + q.y * 0.75 });
+      }
+      C = out;
+    }
+    const per = pathLen(C.concat([C[0]]));
+    const B = resample(C, clamp(Math.round(per / 4), 140, 260)), M = B.length;
+    const s = per / M;
+
+    // inward normals along the outline
+    const nB = B.map((p, i) => {
+      const a = B[(i + M - 1) % M], c = B[(i + 1) % M];
+      const nx = -(c.y - a.y), ny = c.x - a.x, m = Math.hypot(nx, ny) || 1;
+      return { x: nx / m, y: ny / m };
+    });
+    const sgn = inPoly(B, B[0].x + nB[0].x * 0.5, B[0].y + nB[0].y * 0.5) ? 1 : -1;
+    nB.forEach(q => { q.x *= sgn; q.y *= sgn; });
+
+    // Distance to the outline, plus which way the surface slopes there. The slope direction is blended
+    // between the outline's neighbouring normals, so shading flows smoothly instead of stepping per segment.
+    const near = (x, y) => {
+      let best = Infinity, bi = 0, bj = 0, bt = 0;
+      for (let i = 0, j = M - 1; i < M; j = i++) {
+        const a = B[j], c = B[i], vx = c.x - a.x, vy = c.y - a.y;
+        const t = clamp(((x - a.x) * vx + (y - a.y) * vy) / (vx * vx + vy * vy || 1), 0, 1);
+        const d = (a.x + vx * t - x) ** 2 + (a.y + vy * t - y) ** 2;
+        if (d < best) { best = d; bi = i; bj = j; bt = t; }
+      }
+      const gx = nB[bj].x * (1 - bt) + nB[bi].x * bt, gy = nB[bj].y * (1 - bt) + nB[bi].y * bt, m = Math.hypot(gx, gy) || 1;
+      return { d: Math.sqrt(best), gx: gx / m, gy: gy / m };
+    };
+    const mk = (x, y, q) => ({ x, y, d: q.d, gx: q.gx, gy: q.gy });
+
+    let dmax = 0;
+    const bb = bbox(B), stepD = Math.min(bb.w, bb.h) / 24;
+    for (let y = bb.y0; y < bb.y1; y += stepD) for (let x = bb.x0; x < bb.x1; x += stepD)
+      if (inPoly(B, x, y)) dmax = Math.max(dmax, distToPoly(B, x, y));
+    const cap = Math.max(10, Math.min(dmax, 140));
+    const pts = B.map((p, i) => ({ x: p.x, y: p.y, d: 0, gx: nB[i].x, gy: nB[i].y }));
+
+    // Rings that hug the rim. Each ring climbs the same angle around the rounded edge,
+    // so they bunch up where the surface curves fastest and spread out as it flattens.
+    const K = 10, maxT = Math.PI / 2 * 0.74;
+    let prevD = 0;
+    for (let k = 1; k <= K; k++) {
+      const dk = Math.max(0.4, cap * (1 - Math.cos(k / K * maxT)));
+      const stride = Math.max(1, Math.round((dk - prevD) / (s * 1.3)));
+      prevD = dk;
+      for (let i = 0; i < M; i += stride) {
+        const x = B[i].x + nB[i].x * dk, y = B[i].y + nB[i].y * dk;
+        if (!inPoly(B, x, y)) continue;
+        const q = near(x, y);
+        if (q.d < dk * 0.75) continue;
+        pts.push(mk(x, y, q));
+      }
+    }
+    // A coarser grid fills the flatter middle.
+    const dLast = cap * (1 - Math.cos(maxT));
+    const si = Math.max(s * 2, Math.sqrt(Math.abs(area(B)) / 1500));
+    let row = 0;
+    for (let y = bb.y0 + si * 0.5; y < bb.y1; y += si * 0.866, row++)
+      for (let x = bb.x0 + (row % 2 ? si * 0.5 : 0) + si * 0.25; x < bb.x1; x += si) {
+        if (!inPoly(B, x, y)) continue;
+        const q = near(x, y);
+        if (q.d > dLast + si * 0.45) pts.push(mk(x, y, q));
+      }
+
+    const del = Delaunator.from(pts, p => p.x, p => p.y), tri = [];
+    for (let i = 0; i < del.triangles.length; i += 3) {
+      const a = del.triangles[i], c = del.triangles[i + 1], e = del.triangles[i + 2];
+      if (inPoly(B, (pts[a].x + pts[c].x + pts[e].x) / 3, (pts[a].y + pts[c].y + pts[e].y) / 3)) tri.push(a, c, e);
+    }
+    const nb = pts.map(() => new Set());
+    for (let i = 0; i < tri.length; i += 3) { const a = tri[i], c = tri[i + 1], e = tri[i + 2]; nb[a].add(c).add(e); nb[c].add(a).add(e); nb[e].add(a).add(c); }
+
+    // Heights and normals come straight from the balloon profile, not from the triangles,
+    // so shading stays smooth even where the triangles are uneven.
+    const h = [], fn = [];
+    for (const p of pts) {
+      const v = Math.min(p.d, cap) / cap, u = 1 - v, w = Math.sqrt(Math.max(0, 1 - u * u));
+      h.push(cap * w * PUFF);
+      const nx = -PUFF * u * p.gx, ny = PUFF * u * p.gy, m = Math.hypot(nx, ny, w) || 1;
+      fn.push([nx / m, ny / m, w / m]);
+    }
+    for (let it = 0; it < 2; it++) {
+      const nxt = fn.map((v, i) => {
+        if (i < M || !nb[i].size) return v;
+        let x = v[0] * 2, y = v[1] * 2, z = v[2] * 2;
+        nb[i].forEach(j => { x += fn[j][0]; y += fn[j][1]; z += fn[j][2]; });
+        const m = Math.hypot(x, y, z) || 1;
+        return [x / m, y / m, z / m];
+      });
+      fn.splice(0, fn.length, ...nxt);
+    }
+
+    const n = pts.length, total = n + (n - M);
+    const pos = new Float32Array(total * 3), uv = new Float32Array(total * 2), fuv = new Float32Array(total * 2), nor = new Float32Array(total * 3);
+    const back = (i) => i < M ? i : n + (i - M);
+    const r = b.eyeR, fw = r * 4.4, fh = r * 3.0, fx0 = b.eyeRel.x - fw / 2, fy0 = b.eyeRel.y - fh / 2;
+    // paint coordinates: the outline's bounding box maps onto the whole paint canvas
+    const pu = (x) => (x - b.minX) / b.w, pv = (y) => 1 - (y - b.minY) / b.h;
+    for (let i = 0; i < n; i++) {
+      const p = pts[i], f = fn[i];
+      pos.set([p.x, -p.y, h[i]], i * 3);
+      nor.set(f, i * 3);
+      uv.set([pu(p.x), pv(p.y)], i * 2);
+      fuv.set([(p.x - fx0) / fw, 1 - (p.y - fy0) / fh], i * 2);
+      if (i >= M) {
+        const j = back(i), bx = f[0] * BACK, by = f[1] * BACK, m = Math.hypot(bx, by, f[2]) || 1;
+        pos.set([p.x, -p.y, -h[i] * BACK], j * 3);
+        nor.set([bx / m, by / m, -f[2] / m], j * 3);
+        uv.set([pu(p.x), pv(p.y)], j * 2);
+        fuv.set([-1, -1], j * 2);
+      }
+    }
+    const front = [], idx = [];
+    for (let i = 0; i < tri.length; i += 3) {
+      let a = tri[i], c = tri[i + 1], e = tri[i + 2];
+      const z = (pts[c].x - pts[a].x) * (pts[a].y - pts[e].y) - (pts[a].y - pts[c].y) * (pts[e].x - pts[a].x);
+      if (z < 0) [c, e] = [e, c];
+      front.push(a, c, e); idx.push(a, c, e, back(a), back(e), back(c));
+    }
+    const geom = new THREE.BufferGeometry();
+    const posAttr = new THREE.BufferAttribute(pos, 3);
+    geom.setAttribute('position', posAttr);
+    geom.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geom.setIndex(idx);
+
+    const face = new THREE.BufferGeometry();
+    face.setAttribute('position', posAttr);
+    face.setAttribute('normal', geom.attributes.normal);
+    face.setAttribute('uv', new THREE.BufferAttribute(fuv, 2));
+    face.setIndex(front);
+    return { geom, face };
+  }
+
+  function rebuildMesh() {
+    if (!gl || !body) return;
+    for (const k of ['bodyMesh', 'faceMesh']) if (gl[k]) { gl.inner.remove(gl[k]); gl[k].geometry.dispose(); }
+    const { geom, face } = buildMesh(body);
+    gl.bodyMesh = new THREE.Mesh(geom, gl.bodyMat);
+    gl.faceMesh = new THREE.Mesh(face, gl.faceMat);
+    gl.faceMesh.renderOrder = 2;
+    gl.inner.add(gl.bodyMesh, gl.faceMesh);
+    gl.faceKey = '';
+  }
+
+  function enter3D() {
+    if (!HAS3D || !body) return;
+    try {
+      if (!gl) initGL();
+      rebuildMesh();
+      gl.inflate = 0.03; gl.iv = 0; gl.inflateT = 1; gl.spin = 0; gl.spinV = 0;
+      gl.active = true; gl.root.visible = true;
+      body.alphaT = 0;
+    } catch (err) { if (gl) { gl.active = false; gl.root.visible = false; } body.alphaT = 1; }
+  }
+
+  function leave3D() {
+    if (!gl) return;
+    gl.inflateT = 0; gl.inflate = 0; gl.active = false; gl.root.visible = false; gl.drag = null;
+    dizzyUntil = 0; wasDizzy = false; turnAcc = 0; fxc.clearRect(0, 0, W, H);
+    gl.renderer.clear();
+  }
+
+  function drawFace() {
+    const b = body, r = b.eyeR, sc = FACE_W / (r * 4.4), happy = T < eyes.happyUntil;
+    const lk = lookVec();
+    const md = curMood();
+    const key = [eyeStyle, tone.eye, Math.round(lk.x * 40), Math.round(lk.y * 40), Math.round(blink * 24), happy, md, md === 'dizzy' ? Math.round(T * 30) : 0].join('|');
+    if (key === gl.faceKey) return;
+    gl.faceKey = key;
+    const g = gl.fctx;
+    g.clearRect(0, 0, FACE_W, FACE_H);
+    drawEyeStyle(g, eyeStyle, FACE_W / 2, FACE_H / 2, r * sc, blink, happy, tone.eye, lk, md);
+    gl.faceTex.needsUpdate = true;
+  }
+
+  // Little stars circling the head while dizzy; the ones on the far side of the orbit are smaller and fainter.
+  let fxDirty = false;
+  function drawStars(b, bob, wobX, dz) {
+    if (dz <= 0 && T >= dizzyUntil) return;
+    const top = b.c.y + b.oy + bob + b.minY * b.s * b.sy - 10, cx = b.c.x + b.ox + wobX;
+    const rx = Math.max(26, b.w * 0.26), ry = 9, k = clamp((dizzyUntil - T) / 0.5, 0, 1);
+    for (let i = 0; i < 3; i++) {
+      const a = T * 4.2 + i * Math.PI * 2 / 3, front = Math.sin(a) > 0;
+      const x = cx + Math.cos(a) * rx, y = top + Math.sin(a) * ry, s = (front ? 9 : 6) * k;
+      fxc.save(); fxc.globalAlpha = front ? 1 : 0.55;
+      fxc.translate(x, y); fxc.rotate(T * 3 + i);
+      fxc.beginPath();
+      for (let j = 0; j < 10; j++) { const rr = j % 2 ? s * 0.45 : s, an = j * Math.PI / 5 - Math.PI / 2; fxc.lineTo(Math.cos(an) * rr, Math.sin(an) * rr); }
+      fxc.closePath();
+      fxc.fillStyle = '#FFD24A'; fxc.fill();
+      fxc.lineWidth = 1.5; fxc.strokeStyle = '#8A6400'; fxc.stroke();
+      fxc.restore();
+    }
+    fxDirty = true;
+  }
+
+  function updateGL(bob) {
+    if (!gl || !gl.active || !body || !gl.bodyMesh) return;
+    const b = body;
+    if (paintDirty) { gl.paintTex.needsUpdate = true; paintDirty = false; }
+    // Spin bookkeeping: total turning in the last moment decides between "wheee" and dizzy.
+    if (!gl.drag) turnAcc += Math.abs(gl.spinV) * frameDt * 60;
+    turnAcc *= Math.pow(0.6, frameDt);
+    if (T >= dizzyUntil && T >= sulkUntil && T >= thinkUntil) {
+      if (turnAcc > Math.PI * 2 * 1.6) {
+        dizzyUntil = T + 3.4; wasDizzy = true; turnAcc = 0; eyes.happyUntil = 0;
+        say(pick(DIZZY), 2200);
+      } else if (turnAcc > Math.PI * 2 * 0.7 && T - wheeAt > 2.5 && !gl.drag && Math.abs(gl.spinV) < 0.06) {
+        wheeAt = T; eyes.happyUntil = T + 1; say(pick(WHEE), 1400);
+      }
+    }
+    const dizzy = T < dizzyUntil;
+    if (wasDizzy && !dizzy) { wasDizzy = false; say(pick(RECOVER), 2200); }
+    // dizzy stagger: sways and drifts, strongest right after the spin, easing off at the end
+    const dz = dizzy ? clamp((dizzyUntil - T) / 1.4, 0, 1) * RM : 0;
+    const wobX = Math.sin(T * 2.6) * 9 * dz, wobRoll = Math.sin(T * 2.6 + 1.1) * 0.16 * dz;
+    gl.root.position.set(b.c.x + b.ox + wobX - W / 2, H / 2 - (b.c.y + b.oy + bob), 0);
+    const sulking = T < sulkUntil;
+    const yawT = dizzy ? Math.sin(T * 1.9) * 0.4 * dz : sulking ? 0 : clamp((look.x - b.c.x) / W, -0.5, 0.5) * 1.1;
+    const pitchT = dizzy ? Math.sin(T * 2.3) * 0.15 * dz : sulking ? -0.12 : clamp((look.y - b.c.y) / H, -0.5, 0.5) * 0.8;
+    // hold still while being painted so the brush lands where you aim
+    const still = painting ? 0.02 : 0.08;
+    gl.yaw += (yawT - gl.yaw) * still; gl.pitch += (pitchT - gl.pitch) * still;
+    if (!gl.drag) {
+      const f60 = frameDt * 60;
+      gl.spin += gl.spinV * f60; gl.spinV *= Math.pow(0.95, f60);
+      if (Math.abs(gl.spinV) < 0.004 && !(step === 'paint' && T - gl.lastSpin < 4)) {
+        // facing you normally; back turned while sulking. In the paint step it stays where you turned it for a bit.
+        const goal = sulking ? Math.PI : 0;
+        let diff = Math.atan2(Math.sin(goal - gl.spin), Math.cos(goal - gl.spin));
+        gl.spin += diff * (sulking ? 0.09 : 0.05);
+      }
+    }
+    gl.root.rotation.set(gl.pitch, gl.yaw + gl.spin, gl.roll + wobRoll, 'YXZ');
+    drawStars(b, bob, wobX, dz);
+    gl.squash.position.y = -b.maxY;
+    gl.inner.position.y = b.maxY;
+    gl.squash.scale.set((2 - b.sy) * b.s, b.sy * b.s, (2 - b.sy) * b.s);
+    gl.inner.scale.z = Math.max(0.02, gl.inflate);
+    drawFace();
+    gl.renderer.render(gl.scene, gl.camera);
+  }
+
+  /* ---------- loop ---------- */
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt; acc += dt; frameDt = dt;
+    const bob = Math.sin(T * 1.7) * 4 * RM;
+    while (acc >= 1 / 60) { physics(bob); acc -= 1 / 60; }
+    if (fxDirty) { fxc.clearRect(0, 0, W, H); fxDirty = false; }
+    stepDip();
+
+    let tx, ty, tr;
+    if (body) {
+      const tg = bodyTarget(body, body.eyeRel, bob);
+      tx = tg.x; ty = tg.y; tr = body.eyeR * (0.6 + 0.4 * Math.min(1, body.s));
+    } else { const h = home(); tx = h.x; ty = h.y + bob; tr = stroke ? 33 : 30; }
+    eyes.follow = Math.min(0.25, eyes.follow + 0.004);
+    eyes.x += (tx - eyes.x) * eyes.follow; eyes.y += (ty - eyes.y) * eyes.follow; eyes.r += (tr - eyes.r) * 0.15;
+
+    look = mouse;
+    if (T < thinkUntil && body) {
+      // thinking: gaze drifts up and to the side
+      look = { x: body.c.x + Math.sin(T * 1.3) * 160, y: body.c.y - 400 };
+    } else if (T - mouse.last > 3.5 && !stroke && !(gl && gl.drag)) {
+      if (T > wander.next) { wander.x = eyes.x + (Math.random() - .5) * 400; wander.y = eyes.y + (Math.random() - .7) * 260; wander.next = T + 1.2 + Math.random() * 1.6; }
+      look = wander;
+    }
+    const dx = look.x - eyes.x, dy = look.y - eyes.y, d = Math.hypot(dx, dy) || 1;
+    const mx = eyes.r * 0.35, f = Math.min(1, d / (eyes.r * 6));
+    eyes.lx += (dx / d * mx * f - eyes.lx) * 0.25; eyes.ly += (dy / d * mx * 0.8 * f - eyes.ly) * 0.25;
+    if (T > eyes.nextBlink) { eyes.blinkStart = T; eyes.nextBlink = T + 2.2 + Math.random() * 4; }
+    const bt = (T - eyes.blinkStart) / 0.16;
+    blink = bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0;
+
+    drawBackground();
+    if (!body && !stroke && step === 'shape') drawGuide();
+    if (body) drawBody(body);
+    drawStroke();
+    if (!(gl && gl.active)) drawEyes();
+    updateGL(bob);
+    drawBrushCursor();
+    animateRing();
+    placeBubble();
+    placeTag();
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- speech bubble + name tag ---------- */
+  const bubble = document.getElementById('bubble');
+  let bubbleTimer = 0;
+  function say(text, ms = 1800, mono = false) {
+    if (!body) return;
+    bubble.textContent = text; bubble.hidden = false;
+    bubble.classList.toggle('mono', mono);
+    bubble.classList.remove('pop'); void bubble.offsetWidth; bubble.classList.add('pop');
+    clearTimeout(bubbleTimer);
+    if (ms) bubbleTimer = setTimeout(() => { bubble.hidden = true; }, ms);
+  }
+  function placeBubble() {
+    if (bubble.hidden || !body) return;
+    const bb = bbox(body.p), w = bubble.offsetWidth, h = bubble.offsetHeight;
+    const x = clamp((bb.x0 + bb.x1) / 2 - w / 2, 12, W - w - 12);
+    const y = Math.max(12, bb.y0 - h - 26);
+    bubble.style.transform = `translate(${x}px, ${y}px)`;
+  }
+  const tagEl = document.getElementById('nametag');
+  function placeTag() {
+    if (tagEl.hidden || !body) return;
+    const bb = bbox(body.p), w = tagEl.offsetWidth;
+    const y = Math.min(body.c.y + body.maxY * body.s + 26, dockEl.getBoundingClientRect().top - tagEl.offsetHeight - 6);
+    tagEl.style.transform = `translate(${clamp((bb.x0 + bb.x1) / 2 - w / 2, 8, W - w - 8)}px, ${y}px)`;
+  }
+  function showTag() {
+    document.getElementById('tagNick').textContent = nickname || trueName;
+    document.getElementById('tagAka').textContent = nickname && nickname !== trueName ? 'real name ' + trueName : '';
+    tagEl.hidden = false;
+    tagEl.classList.remove('pop'); void tagEl.offsetWidth; tagEl.classList.add('pop');
+  }
+
+  /* ---------- stage fitting ---------- */
+  function fitStage() {
+    if (!body) return;
+    const f = freeRect(), fw = f.x1 - f.x0, fh = f.y1 - f.y0;
+    // leave a band around the buddy for the eye ring
+    const band = btnSize() + 34;
+    const k = Math.min(1, (fw - band * 2) / body.w, (fh - band * 2) / body.h, fw * 0.72 / body.w, fh * 0.66 / body.h);
+    let scaled = false;
+    if (k < 0.98) { scaleBody(body, Math.max(0.2, k)); scaled = true; }
+    body.cT.x = (f.x0 + f.x1) / 2 - (body.minX + body.maxX) / 2;
+    body.cT.y = (f.y0 + f.y1) / 2 - (body.minY + body.maxY) / 2;
+    clampBody(body);
+    if (scaled && gl && gl.active) rebuildMesh();
+    if (ringOpen) layoutRing(true);
+  }
+
+  /* ---------- eye ring ---------- */
+  const eyeRing = document.getElementById('eyeRing');
+  const eyesNameEl = document.getElementById('eyesName');
+  const eyeLabel = (id) => EYES.find(e => e[0] === id)[1];
+
+  function radioKeys(container, items, current, choose, sel = '[data-id]') {
+    container.addEventListener('keydown', e => {
+      const dir = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!dir) return;
+      e.preventDefault();
+      const i = (items.indexOf(current()) + dir + items.length) % items.length;
+      choose(items[i]);
+      container.querySelectorAll(sel)[i].focus();
+    });
+  }
+
+  let hovered = null;
+  EYES.forEach(([id, label]) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'ring-btn'; b.dataset.id = id; b.setAttribute('role', 'radio'); b.title = label;
+    b.setAttribute('aria-label', label);
+    const fl = document.createElement('span'); fl.className = 'float';
+    const c = document.createElement('canvas'); c.width = c.height = 112;
+    fl.appendChild(c); b.appendChild(fl); eyeRing.appendChild(b);
+    // Each option gets its own temperament: how fast it reacts, how it floats, when it blinks.
+    b._st = {
+      ph: Math.random() * 6.28, sp: 0.7 + Math.random() * 0.6, follow: 0.05 + Math.random() * 0.17,
+      lx: 0, ly: 0, idle: null, next: Math.random() * 2, blinkAt: 0.5 + Math.random() * 5, blinkStart: -9,
+      sy: 1, syv: 0, hy: 0, hv: 0, rot: 0, rv: 0, mag: 0, focus: null,
+    };
+    b.addEventListener('click', () => { celebrate(b); chooseEyes(id); });
+    b.addEventListener('pointerenter', () => {
+      eyesNameEl.textContent = label; hovered = b;
+      b._st.rv += (Math.random() < 0.5 ? -1 : 1) * 0.14; b._st.syv -= 0.09;
+    });
+    b.addEventListener('pointerleave', () => { eyesNameEl.textContent = eyeLabel(eyeStyle); if (hovered === b) hovered = null; });
+  });
+  radioKeys(eyeRing, EYES.map(e => e[0]), () => eyeStyle, chooseEyes);
+
+  let ringOpen = false, ringHideTimer = 0;
+  const btnSize = () => (W < 480 ? 44 : 52);
+  function ringGeom() {
+    const f = freeRect(), B = btnSize(), pad = B / 2 + 6;
+    const cx = body.cT.x + (body.minX + body.maxX) / 2, cy = body.cT.y + (body.minY + body.maxY) / 2;
+    const maxRx = Math.min(cx - f.x0, f.x1 - cx) - pad, maxRy = Math.min(cy - f.y0, f.y1 - cy) - pad;
+    const minR = EYES.length * (B + 6) / (2 * Math.PI);
+    const rx = clamp(Math.max(body.w / 2 + B / 2 + 22, minR), 0, Math.max(maxRx, B));
+    const ry = clamp(Math.max(body.h / 2 + B / 2 + 22, minR), 0, Math.max(maxRy, B));
+    return { cx, cy, rx, ry, B };
+  }
+  function layoutRing(open) {
+    if (!body) return;
+    const g = ringGeom(), n = EYES.length;
+    eyeRing.style.setProperty('--btn', g.B + 'px');
+    eyeRing.querySelectorAll('.ring-btn').forEach((b, i) => {
+      const a = -Math.PI / 2 + i / n * Math.PI * 2;
+      b._x = g.cx + Math.cos(a) * g.rx; b._y = g.cy + Math.sin(a) * g.ry;
+      b.style.setProperty('--x', (open ? b._x : g.cx) + 'px');
+      b.style.setProperty('--y', (open ? b._y : g.cy) + 'px');
+      b.style.setProperty('--s', open ? 1 : 0.2);
+      b.style.opacity = open ? 1 : 0;
+      b.style.transitionDelay = RM < 1 ? '0ms' : (open ? i * 30 : (n - i) * 12) + 'ms';
+    });
+  }
+  function drawThumb(b, lk, bl = 0) {
+    const key = tone.fill + tone.eye + '|' + Math.round(lk.x * 20) + '|' + Math.round(lk.y * 20) + '|' + Math.round(bl * 8);
+    if (key === b._key) return;
+    b._key = key; b._lk = lk;
+    const g = b.querySelector('canvas').getContext('2d');
+    g.clearRect(0, 0, 112, 112);
+    const gr = g.createRadialGradient(40, 36, 4, 56, 56, 58);
+    gr.addColorStop(0, mix(tone.fill, '#FFFFFF', 0.3)); gr.addColorStop(0.6, tone.fill); gr.addColorStop(1, mix(tone.fill, '#000000', 0.16));
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(56, 56, 56, 0, Math.PI * 2); g.fill();
+    drawEyeStyle(g, b.dataset.id, 56, 56, 34, bl, false, tone.eye, lk);
+  }
+
+  // Picking one: it hops and glances at the buddy; the rest turn to look at it, one after another.
+  function celebrate(b) {
+    const btns = [...eyeRing.querySelectorAll('.ring-btn')], i0 = btns.indexOf(b), n = btns.length;
+    b._st.hv -= 5; b._st.syv += 0.14;
+    const bc = ringGeom();
+    b._st.focus = { x: bc.cx, y: bc.cy, start: T + 0.15, until: T + 1.4 };
+    btns.forEach((o, i) => {
+      if (o === b) return;
+      const steps = Math.min(Math.abs(i - i0), n - Math.abs(i - i0));
+      o._st.focus = { x: b._x, y: b._y, start: T + steps * 0.05, until: T + 1.1 + steps * 0.05 + Math.random() * 0.5 };
+    });
+  }
+
+  function aim(x, y, px, py, reach = 160) {
+    const dx = px - x, dy = py - y, d = Math.hypot(dx, dy) || 1, f = Math.min(1, d / reach);
+    return { x: dx / d * f, y: dy / d * f };
+  }
+
+  // Every option is its own little creature: floats on its own rhythm, reacts at its own speed,
+  // blinks on its own clock, and when you go quiet it glances at a neighbor, the buddy, or nothing in particular.
+  function animateRing() {
+    if (eyeRing.hidden) return;
+    const btns = eyeRing.querySelectorAll('.ring-btn'), n = btns.length;
+    const active = T - mouse.last < 2.2 && !(gl && gl.drag);
+    const bc = body ? ringGeom() : { cx: W / 2, cy: H / 2 };
+    btns.forEach((b, i) => {
+      const st = b._st, x = b._x || 0, y = b._y || 0;
+      st.syv = (st.syv + (1 - st.sy) * 0.18) * 0.78; st.sy += st.syv;
+      st.hv = (st.hv + (0 - st.hy) * 0.12) * 0.8; st.hy += st.hv;
+      st.rv = (st.rv + (0 - st.rot) * 0.14) * 0.82; st.rot += st.rv;
+
+      let tgt, rate = st.follow;
+      if (st.focus && T >= st.focus.start && T < st.focus.until) { tgt = aim(x, y, st.focus.x, st.focus.y, 60); rate = 0.3; }
+      else if (hovered === b) { tgt = aim(x, y, mouse.x, mouse.y, 40); rate = 0.35; }
+      else if (active) { tgt = aim(x, y, mouse.x, mouse.y); }
+      else {
+        if (T > st.next || !st.idle) {
+          const r = Math.random();
+          if (r < 0.28) st.idle = aim(x, y, bc.cx, bc.cy, 80);
+          else if (r < 0.52) { const nb = btns[(i + (Math.random() < 0.5 ? 1 : n - 1)) % n]; st.idle = aim(x, y, nb._x, nb._y, 40); }
+          else if (r < 0.66) st.idle = { x: 0, y: 0 };
+          else { const a = Math.random() * Math.PI * 2, m = 0.4 + Math.random() * 0.6; st.idle = { x: Math.cos(a) * m, y: Math.sin(a) * m }; }
+          st.next = T + 0.7 + Math.random() * 2.6;
+        }
+        tgt = st.idle; rate = 0.32;
+      }
+      st.lx += (tgt.x - st.lx) * rate; st.ly += (tgt.y - st.ly) * rate;
+
+      if (T > st.blinkAt) {
+        st.blinkStart = T;
+        st.blinkAt = T + (Math.random() < 0.18 ? 0.28 : 2.5 + Math.random() * 5);
+      }
+      const bt = (T - st.blinkStart) / 0.15, bl = bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0;
+
+      const dx = mouse.x - x, dy = mouse.y - y, d = Math.hypot(dx, dy) || 1;
+      st.mag += ((active ? Math.max(0, 1 - d / 150) : 0) - st.mag) * 0.15;
+      const ox = Math.sin(T * 0.9 * st.sp + st.ph) * 2.5 * RM + dx / d * st.mag * 7;
+      const oy = Math.cos(T * 1.3 * st.sp + st.ph * 1.7) * 3.5 * RM + dy / d * st.mag * 7 + st.hy;
+      const sc = 1 + st.mag * 0.1;
+      b.firstChild.style.transform = `translate(${ox.toFixed(2)}px, ${oy.toFixed(2)}px) rotate(${st.rot.toFixed(3)}rad) scale(${((2 - st.sy) * sc).toFixed(3)}, ${(st.sy * sc).toFixed(3)})`;
+      drawThumb(b, { x: st.lx, y: st.ly }, bl);
+    });
+  }
+
+  function showRing() {
+    if (!body || step !== 'eyes') return;
+    clearTimeout(ringHideTimer);
+    if (!ringOpen) {
+      eyeRing.hidden = false;
+      eyeRing.classList.add('snap'); layoutRing(false);
+      void eyeRing.offsetWidth; eyeRing.classList.remove('snap');
+    }
+    ringOpen = true;
+    requestAnimationFrame(() => layoutRing(true));
+  }
+  function hideRing() {
+    if (!ringOpen) return;
+    ringOpen = false;
+    layoutRing(false);
+    clearTimeout(ringHideTimer);
+    ringHideTimer = setTimeout(() => { if (!ringOpen) eyeRing.hidden = true; }, 520);
+  }
+
+  function refreshPickers() {
+    eyeRing.querySelectorAll('.ring-btn').forEach(b => {
+      const id = b.dataset.id;
+      b.setAttribute('aria-checked', id === eyeStyle);
+      b.tabIndex = id === eyeStyle ? 0 : -1;
+      b._key = ''; drawThumb(b, b._lk || { x: 0, y: 0 });
+    });
+    eyesNameEl.textContent = eyeLabel(eyeStyle);
+  }
+
+  function chooseEyes(id) {
+    eyeStyle = id; refreshPickers();
+    if (gl) gl.faceKey = '';
+    eyes.blinkStart = T;
+    maybeSave();
+  }
+
+  /* ---------- paint tray ---------- */
+  const brushesEl = document.getElementById('brushes'), sizesEl = document.getElementById('sizes');
+  function drawBrush(c, col) {
+    const g = c.getContext('2d'), w = c.width, h = c.height, cx = w / 2;
+    g.clearRect(0, 0, w, h);
+    // handle
+    const hg = g.createLinearGradient(cx - 7, 0, cx + 7, 0);
+    hg.addColorStop(0, '#B98B5E'); hg.addColorStop(0.5, '#DDB585'); hg.addColorStop(1, '#A87A4F');
+    g.fillStyle = hg; g.beginPath(); g.roundRect ? g.roundRect(cx - 6, 64, 12, h - 60, 6) : g.rect(cx - 6, 64, 12, h - 60); g.fill();
+    // metal ferrule
+    const mg = g.createLinearGradient(cx - 9, 0, cx + 9, 0);
+    mg.addColorStop(0, '#9AA1AE'); mg.addColorStop(0.45, '#EEF1F6'); mg.addColorStop(1, '#8C93A0');
+    g.fillStyle = mg; g.fillRect(cx - 9, 44, 18, 24);
+    g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(cx - 9, 50, 18, 2); g.fillRect(cx - 9, 58, 18, 2);
+    // bristles dipped in paint
+    g.beginPath();
+    g.moveTo(cx - 9, 46); g.bezierCurveTo(cx - 11, 28, cx - 4, 12, cx, 4); g.bezierCurveTo(cx + 4, 12, cx + 11, 28, cx + 9, 46); g.closePath();
+    g.fillStyle = col; g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 1.5; g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,0.45)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx - 4, 40); g.quadraticCurveTo(cx - 5, 24, cx - 1, 12); g.stroke();
+  }
+  PALETTE.forEach(([col, name], i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'brush'; b.setAttribute('role', 'radio'); b.setAttribute('aria-label', name); b.title = name;
+    b.style.setProperty('--tilt', ((i % 3) - 1) * 4 + 'deg');
+    const c = document.createElement('canvas'); c.width = 52; c.height = 136;
+    drawBrush(c, col); b.appendChild(c); brushesEl.appendChild(b);
+    b.addEventListener('click', () => chooseBrush(i));
+  });
+  SIZES.forEach(([px, name]) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'size'; b.setAttribute('role', 'radio'); b.setAttribute('aria-label', name + ' brush'); b.title = name;
+    const d = Math.round(4 + px / 36 * 14);
+    b.innerHTML = `<span style="width:${d}px;height:${d}px"></span>`;
+    sizesEl.appendChild(b);
+    b.addEventListener('click', () => chooseSize(px));
+  });
+  radioKeys(brushesEl, PALETTE.map((_, i) => i), () => brushIdx, chooseBrush, '.brush');
+  radioKeys(sizesEl, SIZES.map(s => s[0]), () => brushSize, chooseSize, '.size');
+  function chooseBrush(i) {
+    brushIdx = i;
+    brushesEl.querySelectorAll('.brush').forEach((b, k) => { b.setAttribute('aria-checked', k === i); b.tabIndex = k === i ? 0 : -1; });
+  }
+  function chooseSize(px) {
+    brushSize = px;
+    sizesEl.querySelectorAll('.size').forEach((b, k) => { const on = SIZES[k][0] === px; b.setAttribute('aria-checked', on); b.tabIndex = on ? 0 : -1; });
+  }
+  chooseBrush(brushIdx); chooseSize(brushSize);
+
+  document.getElementById('dip').addEventListener('click', () => {
+    if (!body || dipAnim) return;
+    pushUndo();
+    dipAnim = { col: PALETTE[brushIdx][0], t0: T };
+    body.syv -= 0.16; eyes.happyUntil = T + 0.8;
+    say(pick(['splash!', 'blub blub', 'ooh, a bath']), 1500);
+  });
+  undoBtn.addEventListener('click', () => {
+    const img = undoStack.pop();
+    if (!img) return;
+    pctx.putImageData(img, 0, 0); paintDirty = true;
+    undoBtn.disabled = !undoStack.length;
+    updateTone(); maybeSave();
+  });
+
+  /* ---------- naming ---------- */
+  // The buddy names itself from what it is: round shapes lean to soft letters, pointy ones to sharp letters,
+  // its color can slip in as a digit, its eyes can lend a letter. Then chance does the rest. 3 to 6 characters.
+  const SOFT = 'bmnlouaewy', SHARP = 'kzxtvqrijf', DIGITS = '0123456789', SYMS = '#*&%+!?~^@$';
+  function makeTrueName() {
+    const b = body, per = pathLen(b.r.concat([b.r[0]])), A = Math.abs(area(b.r));
+    const round = clamp(4 * Math.PI * A / (per * per), 0, 1);
+    const c = parseInt(tone.fill.slice(1), 16), R = (c >> 16) & 255, G = (c >> 8) & 255, Bc = c & 255;
+    const mx = Math.max(R, G, Bc), mn = Math.min(R, G, Bc);
+    let hue = 0;
+    if (mx !== mn) { hue = mx === R ? ((G - Bc) / (mx - mn)) % 6 : mx === G ? (Bc - R) / (mx - mn) + 2 : (R - G) / (mx - mn) + 4; hue = (hue * 60 + 360) % 360; }
+    const big = Math.max(b.w, b.h) > 240 ? 1 : 0;
+    const len = clamp(3 + Math.floor(Math.random() * 3) + big, 3, 6);
+    const pickOf = (s) => s[Math.floor(Math.random() * s.length)];
+    let out = '';
+    for (let i = 0; i < len; i++) {
+      const r = Math.random();
+      let ch;
+      if (r < 0.5) { ch = pickOf(Math.random() < round * 1.1 ? SOFT : SHARP); if (Math.random() < 0.3) ch = ch.toUpperCase(); }
+      else if (r < 0.7) ch = Math.random() < 0.5 ? String(Math.floor(hue / 36)) : pickOf(DIGITS);
+      else if (r < 0.86) ch = pickOf(SYMS);
+      else { const l = eyeLabel(eyeStyle).replace(/[^a-z]/gi, ''); ch = l[Math.floor(Math.random() * l.length)] || pickOf(SOFT); if (Math.random() < 0.5) ch = ch.toUpperCase(); }
+      out += ch;
+    }
+    if (!/[a-z]/i.test(out)) out = pickOf(round > 0.75 ? SOFT : SHARP).toUpperCase() + out.slice(1);
+    return out;
+  }
+
+  const nickInput = document.getElementById('nickname'), doneBtn = document.getElementById('done');
+  let nameTimers = [];
+  function startNaming() {
+    nameTimers.forEach(clearTimeout); nameTimers = [];
+    if (trueName) { nameReady(false); return; }
+    nickInput.disabled = true; doneBtn.disabled = true;
+    thinkUntil = T + 2.6;
+    setPrompt('Hold on…', 'Your buddy is thinking up a name for itself.');
+    say('hmm…', 0);
+    nameTimers.push(setTimeout(() => say('hmmmm…', 0), 1100));
+    nameTimers.push(setTimeout(() => {
+      const name = makeTrueName(), pool = SOFT + SHARP + DIGITS + SYMS;
+      let tick = 0;
+      // slot-machine reveal, settling left to right
+      const iv = setInterval(() => {
+        tick++;
+        const settled = Math.floor(tick / 3);
+        let s = '';
+        for (let i = 0; i < name.length; i++) s += i < settled ? name[i] : pool[Math.floor(Math.random() * pool.length)];
+        say('I’m ' + s, 0, true);
+        if (settled >= name.length) {
+          clearInterval(iv);
+          trueName = name;
+          eyes.happyUntil = T + 1.2; body.syv -= 0.12;
+          say('I’m ' + name + '!', 2600, true);
+          nameReady(true);
+        }
+      }, 55);
+      nameTimers.push(iv);
+    }, 2300));
+  }
+  function nameReady(fresh) {
+    thinkUntil = 0;
+    const tn = `<span class="tn">${esc(trueName)}</span>`;
+    setPrompt(fresh ? `It named itself ${tn}` : `Its name is ${tn}`,
+      'That’s its real name and it’s keeping it. You can give it a name of your own too.', true);
+    nickInput.disabled = false; doneBtn.disabled = false;
+    nickInput.placeholder = trueName;
+    nickInput.value = nickname;
+    if (matchMedia('(pointer: fine)').matches) nickInput.focus();
+    fitSoon();
+  }
+  const esc = (s) => s.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+  doneBtn.addEventListener('click', () => {
+    if (!trueName) return;
+    nickname = nickInput.value.trim();
+    goStep('meet');
+    save();
+    eyes.happyUntil = T + 1.2; body.syv -= 0.12;
+    if (gl && gl.active) gl.spinV = 0.22;
+    say(nickname && nickname !== trueName ? `${nickname}? I love it.` : `hi! I’m ${trueName}`, 2600);
+  });
+  nickInput.addEventListener('keydown', e => { if (e.key === 'Enter') doneBtn.click(); });
+
+  /* ---------- steps ---------- */
+  const titleEl = document.getElementById('promptTitle'), textEl = document.getElementById('promptText');
+  function setPrompt(title, text, html = false) {
+    if (html) { titleEl.innerHTML = title; } else titleEl.textContent = title;
+    textEl.textContent = text;
+    promptEl.classList.remove('swap'); void promptEl.offsetWidth; promptEl.classList.add('swap');
+  }
+  const PROMPTS = {
+    shape: ['Draw your buddy', 'Drag a loop around the eyes. Whatever you draw becomes its body.'],
+    eyes: ['Pick its eyes', 'Every pair has its own personality. Tap one to try it on.'],
+    paint: ['Paint it', 'Grab a brush and paint right on your buddy. Drag the empty space to turn it around.'],
+  };
+  const fitSoon = () => requestAnimationFrame(() => { fitStage(); if (ringOpen) layoutRing(true); });
+  const stepBtns = document.querySelectorAll('.steps button');
+  let pending3D = 0, drawing = false, paintedOnce = false;
+
+  function goStep(s) {
+    step = s;
+    const idx = STEPS.indexOf(s);
+    reached = Math.max(reached, idx);
+    stepBtns.forEach(b => {
+      const k = STEPS.indexOf(b.dataset.go);
+      const current = k === idx || (s === 'meet' && false);
+      b.classList.toggle('current', current);
+      b.classList.toggle('done', !current && k <= reached && k > 0 && !!body);
+      b.toggleAttribute('aria-current', current);
+    });
+    dockEl.querySelectorAll('section').forEach(sec => { sec.hidden = sec.dataset.step !== s; });
+    if (s !== 'eyes') hideRing();
+    if (s !== 'name' && nameTimers.length) { nameTimers.forEach(clearTimeout); nameTimers = []; thinkUntil = 0; bubble.hidden = true; }
+    tagEl.hidden = !(s === 'meet');
+    if (PROMPTS[s]) setPrompt(...PROMPTS[s]);
+    if (s === 'eyes' && gl && gl.active) setTimeout(showRing, 80);
+    if (s === 'paint' && !paintedOnce) { paintedOnce = true; setTimeout(() => say('ooh, paint!', 1500), 300); }
+    if (s === 'name') startNaming();
+    if (s === 'meet') {
+      const nm = nickname || trueName;
+      setPrompt(`Meet ${esc(nm)}`, nickname && nickname !== trueName ? '' : 'Drag to spin it, tap to say hi.', true);
+      if (nickname && nickname !== trueName) textEl.innerHTML = `Real name <span class="tn">${esc(trueName)}</span>. Drag to spin it, tap to say hi.`;
+      showTag();
+    }
+    cv.setAttribute('aria-label', s === 'shape' ? 'Buddy studio. Click and drag a loop around the eyes to shape a body.'
+      : s === 'paint' ? 'Your buddy. Drag on it to paint, drag around it to turn it.' : 'Your buddy. Drag it to spin, click to poke.');
+    fitSoon();
+  }
+  stepBtns.forEach(b => b.addEventListener('click', () => {
+    const k = STEPS.indexOf(b.dataset.go);
+    if (!b.classList.contains('done') || k === 0) return;
+    goStep(b.dataset.go);
+  }));
+
+  function shaped() {
+    goStep('eyes');
+    clearTimeout(pending3D);
+    pending3D = setTimeout(() => {
+      if (!body) return;
+      enter3D();
+      updateTone();
+      setTimeout(() => { if (!drawing) showRing(); }, 260);
+    }, 520);
+  }
+
+  document.getElementById('surprise').addEventListener('click', () => {
+    const h = home(), R = clamp(Math.min(W, H) * 0.17, 75, 140);
+    const ph = [Math.random() * 6, Math.random() * 6, Math.random() * 6];
+    const ys = 0.75 + Math.random() * 0.25;
+    const raw = Array.from({ length: N }, (_, i) => {
+      const a = i / N * Math.PI * 2;
+      const k = 1 + 0.16 * Math.sin(2 * a + ph[0]) + 0.09 * Math.sin(3 * a + ph[1]) + 0.05 * Math.sin(5 * a + ph[2]);
+      return { x: h.x + Math.cos(a) * R * k, y: h.y - R * 0.12 + Math.sin(a) * R * k * ys };
+    });
+    const sh = shapeFromStroke(raw);
+    body = makeBody(sh.r, sh.c, { spawn: { x: eyes.x, y: eyes.y }, prefer: { x: eyes.x, y: eyes.y } });
+    eyes.follow = 0.06; eyes.happyUntil = T + 0.8;
+    shaped();
+  });
+  document.getElementById('redraw').addEventListener('click', () => {
+    clearTimeout(pending3D); leave3D(); hideRing(); body = null; bubble.hidden = true;
+    reached = 0; goStep('shape');
+  });
+  document.getElementById('toPaint').addEventListener('click', () => goStep('paint'));
+  document.getElementById('toName').addEventListener('click', () => goStep('name'));
+  document.getElementById('edit').addEventListener('click', () => goStep('eyes'));
+
+  const resetBtn = document.getElementById('reset');
+  let resetArmed = 0;
+  resetBtn.addEventListener('click', () => {
+    if (!resetArmed) {
+      resetBtn.textContent = 'Tap again to start over';
+      resetArmed = setTimeout(() => { resetArmed = 0; resetBtn.textContent = 'Start over'; }, 3000);
+      return;
+    }
+    clearTimeout(resetArmed); resetArmed = 0; resetBtn.textContent = 'Start over';
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    leave3D();
+    body = null; trueName = ''; nickname = ''; nickInput.value = ''; bubble.hidden = true; paintedOnce = false;
+    pctx.fillStyle = BASE; pctx.fillRect(0, 0, PW, PH); paintDirty = true; undoStack.length = 0; undoBtn.disabled = true;
+    updateTone();
+    reached = 0; goStep('shape');
+  });
+
+  /* ---------- pointer ---------- */
+  function startSpin(x, y, noPoke) {
+    try { cv.setPointerCapture(lastPointerId); } catch (err) {}
+    gl.drag = { x, y, spin0: gl.spin, moved: false, v: 0, noPoke };
+    cv.style.cursor = 'grabbing';
+  }
+  let lastPointerId = 0;
+  window.addEventListener('pointermove', e => {
+    mouse.x = e.clientX; mouse.y = e.clientY; mouse.last = T;
+    if (painting) {
+      const uv = hitUV(e.clientX, e.clientY);
+      if (uv) paintTo(uv); else painting.last = null;
+      return;
+    }
+    if (gl && gl.drag) {
+      const dx = e.clientX - gl.drag.x;
+      if (Math.abs(dx) > 5) gl.drag.moved = true;
+      const prev = gl.spin;
+      gl.spin = gl.drag.spin0 + dx * 0.012;
+      gl.drag.v = gl.spin - prev;
+      gl.lastSpin = T;
+      turnAcc += Math.abs(gl.drag.v);
+      return;
+    }
+    if (drawing && stroke) {
+      const z = stroke[stroke.length - 1];
+      if (Math.hypot(z.x - e.clientX, z.y - e.clientY) > 3) stroke.push({ x: e.clientX, y: e.clientY });
+    } else if (e.target === cv) {
+      const over = body && inPoly(body.p, e.clientX, e.clientY), live = gl && gl.active;
+      cv.style.cursor = step === 'paint' ? (over ? 'none' : 'grab')
+        : over ? (live ? 'grab' : 'pointer') : (step === 'shape' || step === 'eyes') ? 'crosshair' : 'default';
+    }
+  });
+
+  cv.addEventListener('pointerdown', e => {
+    const x = e.clientX, y = e.clientY;
+    lastPointerId = e.pointerId;
+    mouse.x = x; mouse.y = y; mouse.last = T;
+    const onBody = body && inPoly(body.p, x, y), live = gl && gl.active;
+    if (step === 'paint' && live) {
+      const uv = onBody ? hitUV(x, y) : null;
+      if (uv) {
+        try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+        pushUndo(); painting = { last: null, count: 0 }; paintTo(uv);
+      } else startSpin(x, y, true);
+      return;
+    }
+    if (onBody) { if (live) startSpin(x, y, false); else poke(x, y); return; }
+    if (step === 'name' || step === 'meet' || step === 'paint') { eyes.blinkStart = T; return; }
+    e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    clearTimeout(pending3D);
+    leave3D();
+    hideRing();
+    drawing = true; stroke = [{ x, y }];
+    if (body) { body.alpha = 1; body.alphaT = 0.15; }
+    bubble.hidden = true;
+  });
+
+  function endPointer() {
+    if (painting) {
+      const p = painting; painting = null;
+      updateTone(); maybeSave();
+      if (p.count > 12 && Math.random() < 0.35) { eyes.happyUntil = T + 0.6; say(pick(PAINTED), 1300); }
+      return;
+    }
+    if (gl && gl.drag) {
+      const d = gl.drag; gl.drag = null;
+      cv.style.cursor = step === 'paint' ? 'grab' : 'grab';
+      if (!d.moved) { if (!d.noPoke) poke(d.x, d.y); }
+      else { gl.spinV = clamp(d.v, -0.25, 0.25); if (!d.noPoke) eyes.happyUntil = T + 0.6; }
+      return;
+    }
+    if (!drawing) return;
+    drawing = false;
+    const s = stroke; stroke = null;
+    if (!s || pathLen(s) < 70) {
+      if (body) { body.alphaT = 1; clearTimeout(pending3D); pending3D = setTimeout(() => { enter3D(); showRing(); }, 200); }
+      return;
+    }
+    const sh = shapeFromStroke(s);
+    body = makeBody(sh.r, sh.c, { start: sh.start, prefer: { x: eyes.x, y: eyes.y } });
+    eyes.follow = 0.06; eyes.happyUntil = T + 0.7;
+    shaped();
+  }
+  cv.addEventListener('pointerup', endPointer);
+  cv.addEventListener('pointercancel', endPointer);
+
+  /* ---------- persistence ---------- */
+  function maybeSave() { if (trueName && reached >= 4) save(); }
+  function save() {
+    if (!body) return;
+    try {
+      localStorage.setItem(KEY, JSON.stringify({
+        r: body.r.map(p => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10]),
+        fx: body.fx, fy: body.fy, eyeRel: body.eyeRel, eyeR: body.eyeR, eyes: eyeStyle,
+        trueName, nickname, paint: pcv.toDataURL('image/jpeg', 0.86),
+      }));
+    } catch (e) {}
+  }
+  function load() {
+    try {
+      const d = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!d || !Array.isArray(d.r) || d.r.length !== N || !d.trueName) return false;
+      if (EYES.some(e => e[0] === d.eyes)) eyeStyle = d.eyes;
+      trueName = String(d.trueName).slice(0, 6); nickname = String(d.nickname || '').slice(0, 16);
+      const er = d.eyeR || 18;
+      body = makeBody(d.r.map(([x, y]) => ({ x, y })), { x: d.fx * W, y: d.fy * H }, { eyeRel: d.eyeRel || { x: 0, y: 0 }, eyeR: er });
+      if (!fits(body.r, body.eyeRel, er)) placeEyes(body);
+      if (d.paint) {
+        const img = new Image();
+        img.onload = () => { pctx.drawImage(img, 0, 0, PW, PH); paintDirty = true; updateTone(); };
+        img.src = d.paint;
+      }
+      paintedOnce = true;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /* ---------- size ---------- */
+  function resize() {
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    fx.width = Math.round(W * DPR); fx.height = Math.round(H * DPR);
+    fxc.setTransform(DPR, 0, 0, DPR, 0, 0);
+    sizeGL();
+    if (body) { body.cT.x = body.fx * W; body.cT.y = body.fy * H; clampBody(body); fitStage(); }
+  }
+  window.addEventListener('resize', resize);
+
+  resize();
+  const h0 = home();
+  eyes.x = h0.x; eyes.y = h0.y; mouse.x = h0.x + 120; mouse.y = h0.y - 160;
+  updateTone();
+  if (load()) {
+    reached = 4;
+    goStep('meet');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      body.c.x = body.cT.x; body.c.y = body.cT.y;
+      body.p.forEach((p, i) => { p.x = body.c.x + body.r[i].x; p.y = body.c.y + body.r[i].y; });
+      eyes.x = body.c.x + body.eyeRel.x; eyes.y = body.c.y + body.eyeRel.y;
+      enter3D(); updateTone();
+    }));
+    setTimeout(() => say(`hi, it’s ${nickname || trueName}`, 2200), 900);
+  } else goStep('shape');
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
