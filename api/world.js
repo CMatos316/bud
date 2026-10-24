@@ -95,7 +95,7 @@ export async function GET(request) {
       ? `https://cdn.discordapp.com/avatars/${session.id}/${session.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(session.id) >> 22n) % 6}.png`;
     return json({
-      me: { id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists },
+      me: { id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists, dms: !meDoc.get?.('questionsOff') },
       buds: list,
       diary,
       inbox: inbox.map((n) => ({ from: n.from, fromName: names.get(n.from) || 'someone', fromBud: budNames.get(n.from) || null, text: n.text, color: n.color })),

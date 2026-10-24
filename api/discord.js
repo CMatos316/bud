@@ -5,7 +5,7 @@ import {
   isValidRequest, discordApi, InteractionType, ResponseType, EPHEMERAL,
   SITE_URL, WELCOME_CHANNEL_ID, APP_ID, linkButton, button, row,
 } from '../lib/discord.js';
-import { nudgeInterviews } from '../lib/nudge.js';
+import { sendQuestions, handleQuestionInteraction } from '../lib/questions.js';
 
 const json = (data, status = 200) => Response.json(data, { status });
 
@@ -47,11 +47,11 @@ export async function POST(request) {
       waitUntil((async () => {
         let content;
         try {
-          const r = await nudgeInterviews({ minAgeMs: 30 * 60e3, again: true });
-          content = r.waiting === 0
-            ? 'Everyone with a bud has answered its questions. Nobody to nudge!'
-            : `Nudged ${r.sent} ${r.sent === 1 ? 'person' : 'people'}. `
-              + (r.skipped ? `Skipped ${r.skipped} (nudged in the last week, DMs off, or not in the server anymore).` : '');
+          const r = await sendQuestions({ force: true });
+          content = r.due === 0
+            ? 'Nobody’s due a question right now (brand-new buds, questions turned off, or a few ignored in a row).'
+            : `Sent ${r.sent} ${r.sent === 1 ? 'question' : 'questions'}. `
+              + (r.skipped ? `Skipped ${r.skipped} (DMs off or not in the server anymore).` : '');
         } catch (err) {
           console.error(err);
           content = 'Something went wrong sending the nudges. Check the Vercel logs.';
@@ -77,6 +77,13 @@ export async function POST(request) {
         return privately('I couldn’t post in #welcome. Check that I can send messages there.');
       }
     }
+  }
+
+  // bud's DM questions: quick answers, "own words" text box, stop asking
+  const cid = interaction.data?.custom_id || '';
+  if ((interaction.type === InteractionType.MESSAGE_COMPONENT || interaction.type === InteractionType.MODAL_SUBMIT) && cid.startsWith('q:')) {
+    try { return json(await handleQuestionInteraction(interaction, waitUntil)); }
+    catch (err) { console.error(err); return privately('hm, something went wrong. try again in a bit?'); }
   }
 
   if (interaction.type === InteractionType.MESSAGE_COMPONENT && interaction.data?.custom_id === 'make_bud') {

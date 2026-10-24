@@ -224,30 +224,46 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
 @keyframes typing { 50% { opacity: .35; } }
 
 /* ---------- getting-to-know-you chat ---------- */
-.dock section.chat-step { flex-direction: column; align-items: stretch; width: min(520px, calc(100vw - 64px)); gap: 8px; }
-.chatlog { max-height: min(17vh, 150px); overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 2px 4px; scrollbar-width: thin; }
-.chatlog:empty { display: none; }
-.chatlog .m { margin: 0; max-width: 85%; padding: 7px 12px; border-radius: 16px; font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
-.chatlog .m.bud { align-self: flex-start; background: var(--chip); border-bottom-left-radius: 5px; }
-.chatlog .m.you { align-self: flex-end; background: var(--ink); color: var(--bg-top); border-bottom-right-radius: 5px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.dock section.chat-step { flex-direction: column; align-items: stretch; width: min(560px, calc(100vw - 40px)); gap: 12px; padding: 4px 4px 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.chat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dots { display: flex; gap: 7px; padding-left: 4px; }
+.dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--tray-line); transition: background .3s, transform .3s; }
+.dots i.done { background: var(--ink); }
+.dots i.now { background: var(--ink); opacity: .35; transform: scale(1.25); }
+.you-said { margin: -2px 0 0; padding: 0 4px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.you-said::before { content: "you: "; font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .chips:empty { display: none; }
 .chip {
-  appearance: none; font: 500 14px/1 var(--font-display); color: var(--ink); background: var(--field); cursor: pointer;
-  border: 1.5px solid var(--tray-line); border-radius: 999px; padding: 8px 13px;
+  appearance: none; font: 500 15px/1.2 var(--font-display); color: var(--ink); background: var(--field); cursor: pointer;
+  border: 1.5px solid var(--tray-line); border-radius: 999px; padding: 11px 16px; min-height: 44px;
+  transition: transform .12s ease, border-color .12s ease;
 }
-.chip:hover { border-color: var(--ink); }
+.chip:hover { border-color: var(--ink); transform: translateY(-1px); }
+.chip:active { transform: scale(.97); }
+.chip:disabled { opacity: .5; cursor: default; transform: none; }
 .chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.chatbar { display: flex; gap: 8px; align-items: center; }
+.chatbar { display: flex; gap: 8px; align-items: center; background: var(--field); border: 1.5px solid var(--tray-line); border-radius: 999px; padding: 4px 4px 4px 16px; }
+.chatbar:focus-within { border-color: var(--ink); }
 .chatbar input {
-  flex: 1; min-width: 0; font: 500 16px var(--font-display); color: var(--ink); background: var(--field);
-  border: 1.5px solid var(--tray-line); border-radius: 16px; padding: 11px 14px; -webkit-user-select: text; user-select: text;
+  flex: 1; min-width: 0; font: 500 16px var(--font-display); color: var(--ink); background: transparent; border: 0; outline: none;
+  padding: 9px 0; -webkit-user-select: text; user-select: text;
 }
-.chatbar input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
-.chat-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.send { appearance: none; flex: none; width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--ink); color: var(--bg-top); display: grid; place-items: center; cursor: pointer; }
+.send svg { width: 18px; height: 18px; }
+.send:disabled { opacity: .35; cursor: default; }
+.send:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; line-height: 1.35; cursor: pointer; }
+.check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--ink); flex: none; }
+.fine { margin: 0; font-size: 12.5px; color: var(--muted); }
+@media (max-width: 560px) {
+  .dock section.chat-step { width: auto; }
+  .chips { justify-content: stretch; }
+  .chip { flex: 1 1 calc(50% - 8px); }
+}
 .linkish { appearance: none; border: 0; background: none; color: var(--muted); font: 500 13px var(--font-display); cursor: pointer; padding: 4px; text-decoration: underline; text-underline-offset: 3px; }
 .linkish:hover { color: var(--ink); }
-.chat-note { margin: 0; font-size: 12px; color: var(--muted); }
 .learned { display: grid; gap: 10px; text-align: left; }
 .learned h2 { margin: 0; font-size: 15px; font-weight: 600; }
 .learned .tags { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -356,27 +372,29 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   </section>
 
   <section data-step="chat" class="chat-step" hidden aria-label="Chat with your bud">
-    <div class="chatlog" id="chatLog" aria-live="polite"></div>
+    <div class="chat-head">
+      <div class="dots" id="chatDots" role="img" aria-label="Question 1 of 3"><i></i><i></i><i></i></div>
+      <button class="linkish" id="chatLater" type="button">Skip for now</button>
+    </div>
+    <p class="you-said" id="youSaid" hidden></p>
     <div class="chips" id="chatChips"></div>
     <form class="chatbar" id="chatForm" autocomplete="off">
-      <input id="chatInput" maxlength="300" placeholder="say something…" aria-label="Your answer" enterkeyhint="send">
-      <button class="btn primary" id="chatSend" type="submit">Send</button>
+      <input id="chatInput" maxlength="300" placeholder="or type your own…" aria-label="Your answer" enterkeyhint="send">
+      <button class="send" id="chatSend" type="submit" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+      </button>
     </form>
-    <div class="chat-foot">
-      <p class="chat-note">Only you and your bud see this chat. It remembers a short summary, which you can check next.</p>
-      <button class="linkish" id="chatLater" type="button">Maybe later</button>
-    </div>
+    <div class="sr-only" id="chatLog" aria-live="polite"></div>
   </section>
 
   <section data-step="learned" class="chat-step" hidden aria-label="What your bud learned">
     <div class="learned" id="learned">
       <h2 id="learnedTitle">Here’s what I’ll remember</h2>
       <div class="tags" id="learnedTags"></div>
-      <p id="learnedQ"></p>
-      <div class="row">
-        <button class="btn" id="matchNo" type="button">Not yet</button>
-        <button class="btn primary" id="matchYes" type="button">Yes, find me friends</button>
-      </div>
+      <label class="check"><input type="checkbox" id="learnedDms" checked><span id="learnedDmsText">Ask me a new question in my Discord DMs every couple of days</span></label>
+      <label class="check"><input type="checkbox" id="learnedMatch"><span>Suggest people here who are into the same stuff</span></label>
+      <p class="fine">Only you see this. You can change any of it later from your bud’s card on the island.</p>
+      <div class="row"><button class="btn primary" id="learnedDone" type="button" disabled>Done</button></div>
     </div>
   </section>
 
@@ -1795,7 +1813,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     shape: ['Draw your buddy', 'Drag a loop around the eyes. Whatever you draw becomes its body.'],
     eyes: ['Pick its eyes', 'Every pair has its own personality. Tap one to try it on.'],
     paint: ['Paint it', 'Grab a brush and paint right on your buddy. Drag the empty space to turn it around.'],
-    chat: ['Getting to know you', 'Your bud wants to know what you’re into, so it can help you find friends.'],
+    chat: ['Getting to know you', 'Just 3 quick questions, so your bud can help you find friends.'],
     learned: ['What your bud learned', 'Take out anything you don’t want it to remember.'],
   };
   const fitSoon = () => requestAnimationFrame(() => { fitStage(); if (ringOpen) layoutRing(true); });
@@ -1991,18 +2009,24 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   const chatForm = document.getElementById('chatForm'), chatInput = document.getElementById('chatInput');
   const chatSend = document.getElementById('chatSend');
 
+  const youSaid = document.getElementById('youSaid'), chatDots = document.getElementById('chatDots');
+  function updateDots() {
+    const n = chat ? chat.history.filter((m) => m.role === 'you').length : 0;
+    chatDots.querySelectorAll('i').forEach((d, i) => { d.className = i < n ? 'done' : i === n ? 'now' : ''; });
+    chatDots.setAttribute('aria-label', n >= 3 ? 'All done' : `Question ${n + 1} of 3`);
+  }
   function startChat() {
     chat = { history: [], busy: false, done: false };
     chatLog.textContent = ''; chatChips.textContent = ''; chatInput.value = '';
+    youSaid.hidden = true; chatForm.hidden = false;
     goStep('chat');
-    chatInput.placeholder = `say something to ${nickname || trueName}…`;
+    updateDots();
     budTurn();
   }
   function addLog(role, text) {
     const m = document.createElement('p');
     m.className = 'm ' + role; m.textContent = text;
-    chatLog.append(m); chatLog.scrollTop = chatLog.scrollHeight;
-    fitSoon();   // the panel grew: keep the bud in view above it
+    chatLog.append(m);   // read out by screen readers; the bubble shows bud's line on screen
   }
   function setChatBusy(b) { chatSend.disabled = b; chatChips.querySelectorAll('button').forEach((x) => { x.disabled = b; }); }
   function budReacts(mood) {
@@ -2033,11 +2057,13 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
         else if (chat.history.length && chat.history[chat.history.length - 1].role === 'you') {
           // let them resend: take their last line back into the box
           const last = chat.history.pop(); chatLog.lastChild?.remove(); chatInput.value = last.text;
+          youSaid.hidden = true; updateDots();
         }
         return;
       }
       chat.history.push({ role: 'bud', text: data.say });
       addLog('bud', data.say); say(data.say, 0); budReacts(data.mood);
+      youSaid.hidden = true; updateDots();
       showChips(data.done ? [] : data.chips);
       if (data.done) { chat.done = true; chatForm.hidden = true; setTimeout(finishChat, 2600); }
       else if (!matchMedia('(pointer: coarse)').matches) chatInput.focus();
@@ -2063,7 +2089,9 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     chat.history.push({ role: 'you', text });
     S.play('click');
     addLog('you', text);
+    youSaid.textContent = text; youSaid.hidden = false;
     chatInput.value = ''; chatChips.textContent = '';
+    updateDots(); fitSoon();
     budTurn();
   }
   chatForm.addEventListener('submit', (e) => { e.preventDefault(); answer(chatInput.value); });
@@ -2072,8 +2100,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     if (!chat) return;
     goStep('learned');
     document.getElementById('learnedTags').textContent = '';
-    document.getElementById('learnedQ').textContent = '';
-    document.getElementById('matchYes').disabled = document.getElementById('matchNo').disabled = true;
+    document.getElementById('learnedDone').disabled = true;
     thinkUntil = T + 30; say('let me write that down…', 0);
     let data = {};
     try { const r = await talk('finish'); data = r.ok ? r.data : {}; } catch (e) {}
@@ -2099,27 +2126,27 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     p.interests.forEach((t) => addTag(t, 'interests', false));
     p.lookingFor.forEach((t) => addTag(t, 'lookingFor', true));
     if (!p.interests.length && !p.lookingFor.length) box.append('Nothing to remember. That’s okay too.');
-    const nm = nickname || trueName;
-    document.getElementById('learnedQ').textContent = `Want ${nm} to suggest people here who are into the same stuff? You can change this later.`;
-    document.getElementById('matchYes').disabled = document.getElementById('matchNo').disabled = false;
+    document.getElementById('learnedDmsText').textContent = `${nickname || trueName} can ask me a new question in my Discord DMs every couple of days`;
+    document.getElementById('learnedDone').disabled = false;
+    fitSoon();
   }
-  async function saveLearned(matchable) {
-    const yes = document.getElementById('matchYes'), no = document.getElementById('matchNo');
-    yes.disabled = no.disabled = true;
+  async function saveLearned() {
+    const done = document.getElementById('learnedDone');
+    const matchable = document.getElementById('learnedMatch').checked, dms = document.getElementById('learnedDms').checked;
+    done.disabled = true;
     try {
       await fetch('/api/profile', {
         method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interests: learnedProfile.interests, lookingFor: learnedProfile.lookingFor, matchable }),
+        body: JSON.stringify({ interests: learnedProfile.interests, lookingFor: learnedProfile.lookingFor, matchable, dms }),
       });
     } catch (e) {}
     S.play(matchable ? 'chime' : 'pop');
-    say(matchable ? 'yay! I’ll keep an eye out for you.' : 'okay! just us for now.', 2000);
+    say(matchable ? 'yay! I’ll keep an eye out for you.' : dms ? 'okay! talk soon.' : 'okay! see you on the island.', 2000);
     eyes.happyUntil = T + 2; body.syv -= 0.1;
     chat = null;
     setTimeout(() => { goStep('meet'); leaveForWorld(); }, 1800);
   }
-  document.getElementById('matchYes').addEventListener('click', () => saveLearned(true));
-  document.getElementById('matchNo').addEventListener('click', () => saveLearned(false));
+  document.getElementById('learnedDone').addEventListener('click', saveLearned);
   function endChat() {
     chat = null; chatForm.hidden = false; thinkUntil = 0;
     goStep('meet');

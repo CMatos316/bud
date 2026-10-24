@@ -17,10 +17,11 @@ function guard(request, write) {
 export async function GET(request) {
   const session = guard(request, false);
   if (session instanceof Response) return session;
-  const snap = await refs.profile(session.id).get();
-  if (!snap.exists) return json({ profile: null });
+  const [snap, user] = await Promise.all([refs.profile(session.id).get(), refs.user(session.id).get()]);
+  const dms = !(user.exists && user.get('questionsOff'));
+  if (!snap.exists) return json({ profile: null, dms });
   const d = snap.data();
-  return json({ profile: Object.fromEntries(FIELDS.map((k) => [k, d[k] ?? null])) });
+  return json({ profile: Object.fromEntries(FIELDS.map((k) => [k, d[k] ?? null])), dms });
 }
 
 // Edits only narrow what bud learned (remove things) or flip matching; new facts come from the chat.
@@ -29,8 +30,10 @@ export async function PUT(request) {
   if (session instanceof Response) return session;
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+  // bud's question DMs on or off (works even before there's a profile)
+  if (typeof body?.dms === 'boolean') await refs.user(session.id).set({ questionsOff: !body.dms }, { merge: true });
   const ref = refs.profile(session.id), snap = await ref.get();
-  if (!snap.exists) return json({ error: 'chat with your bud first' }, 404);
+  if (!snap.exists) return typeof body?.dms === 'boolean' ? json({ saved: true }) : json({ error: 'chat with your bud first' }, 404);
   const cur = snap.data(), patch = { updatedAt: Timestamp.now() };
   const keep = (list, old) => (list ? list.filter((t) => (old || []).includes(t)) : undefined);
   const interests = keep(tagList(body?.interests, 12, 32), cur.interests);

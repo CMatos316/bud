@@ -204,6 +204,9 @@ body {
 .composer-error { margin: 0; color: #C4385E; font-size: 13.5px; text-align: center; }
 .composer .row { justify-content: flex-end; width: 100%; }
 .flying { position: fixed; z-index: 7; margin: 0; pointer-events: none; }
+.dm-row { justify-content: space-between; border-top: 1px solid var(--chip-line); padding-top: 10px; }
+.dm-row .muted { font-size: 13px; }
+.dm-row .btn { padding: 7px 12px; font-size: 13px; }
 .diary h3 { margin: 4px 0 6px; font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
 .diary ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .diary li { display: grid; grid-template-columns: 22px 1fr; gap: 2px 8px; align-items: start; font-size: 14.5px; line-height: 1.35; }
@@ -1167,6 +1170,7 @@ const cardBody = document.getElementById('cardBody');
 let inbox = [];        // notes stuck on my bud: { from, fromName, fromBud, text, color }
 let diary = [];        // what my bud got up to: { at, kind, text, with?, fresh }
 let hasProfile = true; // false until you've done the getting-to-know-you chat
+let dmsOn = true;      // bud's question DMs every couple of days
 let cardBud = null;
 const nameOf = (bud) => bud.data.nickname || bud.data.trueName;
 const myBud = () => buds.find((b) => b.data.isMe);
@@ -1262,6 +1266,7 @@ function renderCardBody() {
     if (!inbox.length) {
       if (!diary.length) cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
       renderDiary(bud);
+      renderDmToggle(bud);
       return;
     }
     cardBody.append(el('p', 'muted', inbox.length === 1 ? `Someone stuck a note on ${nameOf(bud)}.` : `${inbox.length} notes are stuck on ${nameOf(bud)}.`));
@@ -1277,6 +1282,7 @@ function renderCardBody() {
       cardBody.append(note);
     }
     renderDiary(bud);
+    renderDmToggle(bud);
     return;
   }
   const others = bud.stickies.filter((st) => !st.dying && st.tag !== 'mine').length;
@@ -1319,6 +1325,17 @@ function whenLabel(ms) {
   if (ms >= dayStart) return part;
   if (ms >= dayStart - 864e5) return h < 5 || h >= 21 ? 'last night' : 'yesterday';
   return `${Math.round((dayStart - ms) / 864e5) + 1} days ago`;
+}
+function renderDmToggle(bud) {
+  const r = el('div', 'row dm-row');
+  r.append(el('span', 'muted', `${nameOf(bud)}’s questions in your Discord DMs: ${dmsOn ? 'on' : 'off'}`));
+  const t = el('button', 'btn', dmsOn ? 'Turn off' : 'Turn on'); t.type = 'button';
+  t.addEventListener('click', async () => {
+    t.disabled = true;
+    try { await api('PUT', '/api/profile', { dms: !dmsOn }); dmsOn = !dmsOn; S.play('click'); } catch (e) {}
+    renderCardBody();
+  });
+  r.append(t); cardBody.append(r);
 }
 function renderDiary(bud) {
   if (!diary.length) return;
@@ -1894,6 +1911,7 @@ function showCenter(title, text, linkText, href = '/') {
   inbox = world.inbox || [];
   diary = world.diary || [];
   hasProfile = world.me.hasProfile !== false;
+  dmsOn = world.me.dms !== false;
   for (const d of world.buds) {
     try { buds.push(await makeBud(d)); } catch (e) { console.error('could not build bud', d.id, e); }
   }

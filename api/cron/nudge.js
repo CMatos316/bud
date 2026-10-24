@@ -1,9 +1,9 @@
-// Daily: nudge people who made a bud but skipped its questions (see vercel.json "crons").
-// Safe if someone else calls it: it only ever sends each person their one nudge, and runs at most once an hour.
-// If CRON_SECRET is set in Vercel, only Vercel's scheduler (which sends that secret) can run it.
+// Daily: send bud's next question to everyone who's due one (see vercel.json "crons" and lib/questions.js).
+// Safe if someone else calls it: each person still gets at most one question per 48 hours, and it runs
+// at most once an hour. If CRON_SECRET is set in Vercel, only Vercel's scheduler can run it.
 import { db, Timestamp } from '../../lib/firebase.js';
 import { GUILD_ID } from '../../lib/discord.js';
-import { nudgeInterviews } from '../../lib/nudge.js';
+import { sendQuestions } from '../../lib/questions.js';
 
 export async function GET(request) {
   const secret = (process.env.CRON_SECRET || '').trim();
@@ -17,9 +17,9 @@ export async function GET(request) {
       return true;
     });
     if (!free) return Response.json({ ran: false, why: 'ran less than an hour ago' });
-    return Response.json({ ran: true, ...(await nudgeInterviews()) });
+    return Response.json({ ran: true, ...(await sendQuestions()) });
   } catch (err) {
-    console.error('nudge cron failed:', err);
+    console.error('question round failed:', err);
     return Response.json({ ran: false, error: 'failed' }, { status: 500 });
   }
 }
