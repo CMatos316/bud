@@ -1099,7 +1099,7 @@ function updateBud(bud, dt) {
   } else if (bud.state === 'walk') {
     const dx = bud.target.x - bud.x, dz = bud.target.z - bud.z, d = Math.hypot(dx, dz);
     if (d < 0.25) {
-      bud.state = 'idle'; bud.timer = rand(1.5, 5); bud.hopPhase = 0;
+      bud.state = 'idle'; bud.timer = rand(1.5, 5); bud.hopPhase = 0; bud.vx = bud.vz = 0; bud.checkD = null;
       if (bud.greetOnArrive && bud.greetOnArrive.state !== 'drop') { startGreeting(bud, bud.greetOnArrive); bud.greetOnArrive = null; }
       if (bud.onArrive) {
         const done = bud.onArrive; bud.onArrive = null; bud.rush = false;
@@ -1107,12 +1107,18 @@ function updateBud(bud, dt) {
         else if (done.target === bud.target) done.fn();   // only if it's still headed where it meant to go
       }
     } else {
-      // steer toward the target, around trees, and away from other buds
-      let mx = dx / d, mz = dz / d;
-      for (const o of obstacles) {
-        const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz);
-        if (od < o.r + 1.3) { mx += ox / od * 1.2; mz += oz / od * 1.2; }
+      // no progress for a while (wedged between pumpkins, say)? go somewhere else instead of pushing forever
+      if (T > (bud.checkAt || 0)) {
+        if (bud.checkD != null && bud.checkD - d < 0.35 && !bud.pose) {
+          bud.checkD = null; bud.checkAt = T + 1.4;
+          bud.onArrive = typeof bud.onArrive === 'function' ? bud.onArrive : null;   // the welcome-back run keeps its own fallback
+          bud.greetOnArrive = null; bud.state = 'idle'; bud.timer = rand(0.3, 1.2); bud.target = null;
+          return;
+        }
+        bud.checkD = d; bud.checkAt = T + 1.4;
       }
+      // steer toward the target, slide around trees and pumpkins, and away from other buds
+      let [mx, mz] = steerAround(bud, dx / d, dz / d);
       for (const o of buds) {
         if (o === bud || !o.placed || o.state === 'drop') continue;
         const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz) || 1;
@@ -1124,9 +1130,7 @@ function updateBud(bud, dt) {
       }
       const m = Math.hypot(mx, mz) || 1;
       const sp = bud.pose || bud.rush ? bud.speed * 1.8 : bud.speed;
-      bud.x += mx / m * sp * dt; bud.z += mz / m * sp * dt;
-      const want = Math.atan2(mx, mz);
-      bud.heading += angleTo(bud.heading, want) * Math.min(1, dt * 6);
+      moveSmoothly(bud, mx / m * sp, mz / m * sp, dt);
       // little hops
       const before = Math.sin(bud.hopPhase);
       bud.hopPhase += dt * 8.5;
@@ -1314,14 +1318,10 @@ function updateActivity(bud, dt) {
       const r = Math.hypot(bud.x, bud.z);
       if (r > WALK_R * 0.75) { mx -= bud.x / r * 2.5; mz -= bud.z / r * 2.5; }   // don't get cornered at the edge
     }
-    const d = Math.hypot(mx, mz) || 1; mx /= d; mz /= d;
-    for (const o of obstacles) {
-      const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz);
-      if (od < o.r + 1.1) { mx += ox / od * 1.5; mz += oz / od * 1.5; }
-    }
+    const d = Math.hypot(mx, mz) || 1;
+    [mx, mz] = steerAround(bud, mx / d, mz / d);
     const m = Math.hypot(mx, mz) || 1, sp = (it ? 2.5 : 2.2) * bud.speed;
-    bud.x += mx / m * sp * dt; bud.z += mz / m * sp * dt;
-    bud.heading += angleTo(bud.heading, Math.atan2(mx, mz)) * Math.min(1, dt * 8);
+    moveSmoothly(bud, mx / m * sp, mz / m * sp, dt, 7);
     const before = Math.sin(bud.hopPhase); bud.hopPhase += dt * 11;
     if (Math.sin(bud.hopPhase) * before < 0) bud.syv -= 0.04 * RM;
     const touch = (bud.width + other.width) * 0.5 * 0.85 + 0.25;
@@ -1336,6 +1336,31 @@ function updateActivity(bud, dt) {
     return;
   }
   if (T > a.until) endActivity(bud);
+}
+
+// Steering around trees, rocks and pumpkins: rather than pushing straight back (which can cancel out the
+// pull toward the target and leave a bud jittering in place), slide sideways around them, on whichever
+// side is closer to where it's headed.
+function steerAround(bud, mx, mz) {
+  for (const o of obstacles) {
+    const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz) || 1, reach = o.r + 1.2;
+    if (od >= reach) continue;
+    const w = (reach - od) / reach;
+    let px = -oz / od, pz = ox / od;
+    if (px * mx + pz * mz < 0) { px = -px; pz = -pz; }
+    mx += (ox / od) * w * 0.9 + px * w * 1.8;
+    mz += (oz / od) * w * 0.9 + pz * w * 1.8;
+  }
+  return [mx, mz];
+}
+// Ease the velocity toward where it wants to go, and face the way it's actually moving, so direction
+// changes are smooth instead of flipping from frame to frame.
+function moveSmoothly(bud, vx, vz, dt, k = 5) {
+  const a = Math.min(1, dt * k);
+  bud.vx = (bud.vx || 0) + (vx - (bud.vx || 0)) * a;
+  bud.vz = (bud.vz || 0) + (vz - (bud.vz || 0)) * a;
+  bud.x += bud.vx * dt; bud.z += bud.vz * dt;
+  if (Math.hypot(bud.vx, bud.vz) > 0.25) bud.heading += angleTo(bud.heading, Math.atan2(bud.vx, bud.vz)) * Math.min(1, dt * 6);
 }
 
 // Buds are solid: if two get closer than their bodies allow, nudge them apart.
@@ -1356,6 +1381,18 @@ function separateBuds() {
       const wa = aStill && !bStill ? 0 : bStill && !aStill ? 1 : 0.5;
       a.x -= nx * push * wa; a.z -= nz * push * wa;
       b.x += nx * push * (1 - wa); b.z += nz * push * (1 - wa);
+    }
+  }
+  // ...and trees, rocks, pumpkins and the campfire are solid too
+  for (const b of buds) {
+    if (!b.placed || b.state === 'drop' || b.y > 1) continue;
+    for (const o of obstacles) {
+      const dx = b.x - o.x, dz = b.z - o.z, min = o.r + b.width * 0.3;
+      if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
+      const d = Math.hypot(dx, dz);
+      if (d >= min) continue;
+      const nx = d > 1e-4 ? dx / d : 1, nz = d > 1e-4 ? dz / d : 0;
+      b.x = o.x + nx * min; b.z = o.z + nz * min;
     }
   }
 }
