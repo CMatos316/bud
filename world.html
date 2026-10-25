@@ -271,6 +271,26 @@ body { transition: background 2s linear; }
   .paper .stat b { font-size: 28px; }
 }
 @media (prefers-reduced-motion: reduce) { .paper { animation: none; } }
+.qbox { margin: 2px 0 12px; padding: 12px 14px; border-radius: 16px; background: #FFF8E6; color: #2B2A3A; border: 1px solid #EADFC2; }
+.qbox h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #9A8660; }
+.qbox .q { margin: 0 0 10px; font: 600 18px/1.25 var(--font-display); }
+.qbox .muted { color: #6F6656; margin: 8px 0 0; font-size: 13.5px; }
+.qbox .row { margin-top: 10px; }
+.qbox .btn { background: #fff; color: #2B2A3A; border-color: #E2D6B8; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: inherit; font-size: 14.5px; padding: 8px 14px; border-radius: 999px; border: 1.5px solid #E2D6B8; background: #fff; color: #2B2A3A; cursor: pointer; transition: transform .12s, background .12s; }
+.chip:hover { transform: translateY(-1px); }
+.chip[aria-pressed="true"] { background: #FFD25A; border-color: #E9B92F; font-weight: 600; }
+.chip:disabled { opacity: .6; cursor: default; }
+.signline { margin: 0 0 10px; font-size: 14.5px; }
+.signline .same { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 999px; background: #FFD25A; color: #2B2A3A; font-size: 12px; font-weight: 600; }
+.tally { display: grid; gap: 8px; margin: 4px 0 10px; }
+.tally-row { position: relative; display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-radius: 12px; background: rgba(127,127,160,.12); overflow: hidden; font-size: 15px; }
+.tally-row .bar { position: absolute; inset: 0 auto 0 0; background: rgba(127,127,160,.2); border-radius: 12px; }
+.tally-row.top .bar { background: #FFD25A; }
+.tally-row.top { font-weight: 600; color: #2B2A3A; }
+.tally-row .lbl, .tally-row .pct { position: relative; }
+.paper .qmark { width: 30px; text-align: center; font-size: 18px; }
 .diary h3 { margin: 4px 0 6px; font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
 .diary ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .diary li { display: grid; grid-template-columns: 22px 1fr; gap: 2px 8px; align-items: start; font-size: 14.5px; line-height: 1.35; }
@@ -457,8 +477,9 @@ const labels = document.getElementById('labels');
 const params = new URLSearchParams(location.search);
 const DROP = params.get('drop') === '1';
 const OPEN_NOTES = params.get('notes') === '1';
+const OPEN_SIGN = params.get('sign') === '1';
 const GAME_ID = /^[A-Za-z0-9]{10,40}$/.test(params.get('game') || '') ? params.get('game') : null;
-if (DROP || OPEN_NOTES || params.get('news') === '1') history.replaceState(null, '', location.pathname);
+if (DROP || OPEN_NOTES || params.get('news') === '1' || params.get('sign') === '1') history.replaceState(null, '', location.pathname);
 
 const HELLOS = ['hi!', 'hey!', 'oh hi', 'hello!', 'yo', 'hiii'];
 const POKED = ['hehe', 'hi there!', 'boop', 'oh! hello', 'that tickles'];
@@ -1598,7 +1619,7 @@ function hoverAt(x, y) {
     canvas.classList.toggle('over-bud', tappable(t));
     return;
   }
-  canvas.classList.toggle('over-bud', !!budAt(x, y));
+  canvas.classList.toggle('over-bud', !!budAt(x, y) || boardAt(x, y));
 }
 const card = document.getElementById('card');
 const cardBody = document.getElementById('cardBody');
@@ -1639,6 +1660,7 @@ function noteEl(text, color, small = false) {
 function clickAt(x, y) {
   if (game) { gameTap(x, y); return; }
   const bud = budAt(x, y);
+  if (!bud && !photo && !composing && boardAt(x, y)) { openResultsCard(); return; }
   if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return; }
   if (!bud) { if (!composing) closeCard(); return; }
   if (composing) return;
@@ -1699,8 +1721,12 @@ function renderCardBody() {
       go.href = '/?chat=1'; r.append(go); ask.append(r);
       cardBody.append(ask);
     }
+    // while signs are up, today's question sits at the top of your bud's card
+    const qFirst = signs && signs.phase === 'open' && !signs.ritualDone;
+    if (qFirst) renderSignSection(bud);
     if (!inbox.length) {
       if (!diary.length) cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
+      if (!qFirst) renderSignSection(bud);
       renderGamesList();
       renderDiary(bud);
       renderDmToggle(bud);
@@ -1718,11 +1744,13 @@ function renderCardBody() {
       r.append(yes, no); note.append(r);
       cardBody.append(note);
     }
+    if (!qFirst) renderSignSection(bud);
     renderGamesList();
     renderDiary(bud);
     renderDmToggle(bud);
     return;
   }
+  renderSignLine(bud);
   const others = bud.stickies.filter((st) => !st.dying && st.tag !== 'mine').length;
   if (d.friend) {
     cardBody.append(el('span', 'friends', `You and ${d.ownerName || 'them'} are friends`));
@@ -1757,7 +1785,7 @@ function renderCardBody() {
 }
 
 /* ---------------- your bud's diary ---------------- */
-const DIARY_ICON = { play: '✦', solo: '•', note: '✎', friend: '♥', photo: '◉', game: '◆' };
+const DIARY_ICON = { play: '✦', solo: '•', note: '✎', friend: '♥', photo: '◉', game: '◆', sign: '✈' };
 const firstPerson = (e) => (e.kind === 'play' || e.kind === 'solo' ? `I ${e.text}` : e.text);
 function whenLabel(ms) {
   const now = new Date(), t = new Date(ms), mins = (now - t) / 60e3;
@@ -1981,6 +2009,11 @@ function openNews() {
     for (const g of news.gossip) { const li = el('li'); const span = el('span'); span.append(el('b', null, g.name), ` ${g.text}`); li.append(portrait(g.id), span); ul.append(li); }
     body.append(section('Island gossip', ul));
   }
+  if (news.signs && news.signs.length) {
+    const ul = el('ul', 'gossip');
+    for (const q of news.signs.slice(0, 7)) { const li = el('li'); const span = el('span'); span.append(`“${q.question}” `, el('b', null, `${q.top}`), ` (${q.pct}%)`); li.append(el('span', 'qmark', '🪧'), span); ul.append(li); }
+    body.append(section('This week’s questions', ul));
+  }
   body.append(section('Most popular hobby', el('p', 'quiet', `${news.topHobby.label}, loved by ${news.topHobby.count} ${news.topHobby.count === 1 ? 'bud' : 'buds'}`)));
   paperWrap.hidden = false; paperWrap.scrollTop = 0;
   S.play('pop', { rate: 0.8 });
@@ -2034,6 +2067,10 @@ function welcomeBack(mine, lastVisit) {
       else if (!hasProfile) {
         setTimeout(() => say(mine, pick(['hey, I have a few questions for you!', 'psst… can I ask you some stuff?', 'oh! I’ve been wanting to ask you things']), 2800), 3000);
         setTimeout(() => { if (!photo && !composing && card.hidden) openCard(mine); }, 5600);
+      }
+      else if (signs && signs.phase === 'open' && !(signs.mine && (signs.mine.a != null || signs.mine.tossed))) {
+        setTimeout(() => say(mine, pick(['ooh, there’s a question today!', 'today’s question is a good one', 'I made up an answer for us, but what do YOU think?']), 2800), 3000);
+        setTimeout(() => { if (!photo && !composing && card.hidden) openCard(mine); }, 5800);
       }
       else if (fresh.length) {
         // tell you the best bit, then show the whole diary
@@ -2326,6 +2363,389 @@ function exitPhoto() {
   boothPost.onclick = null;
   photo.zone = null;
   photo = null;
+}
+
+/* ---------------- today's question: signs ---------------- */
+// From 9am to 9pm Eastern every bud holds up a sign with its person's answer to the day's question, or its
+// own answer in crayon if they haven't answered. You can fold yours into a paper airplane and throw it off
+// the island early. At 9pm every bud walks to the edge and they all throw their signs off together.
+let signs = null;     // from /api/world: { phase, date, question, signs: { budId: { a, own } }, mine, results, opensAt, launchAt, nextOpen, now }
+let signSkew = 0;     // the server's clock minus ours
+const serverNow = () => Date.now() + signSkew;
+const SIGN_W = 1.2, SIGN_H = 0.74;
+const signWood = new THREE.MeshStandardMaterial({ color: toLinear('#B98A5E'), roughness: 1 });
+const CRAYONS = ['#E4572E', '#3C78D8', '#2E9E5B', '#9B51E0', '#E58E1A', '#D6336C'];
+const choiceText = (i) => (signs && signs.question.choices[i]) || '';
+
+function fitLines(g, text, maxW, size, font) {
+  for (let s = size; s >= 18; s -= 2) {
+    g.font = font(s);
+    if (g.measureText(text).width <= maxW) return { lines: [text], size: s };
+    const words = text.split(' '), lines = [''];
+    for (const w of words) { const t = lines[lines.length - 1] ? lines[lines.length - 1] + ' ' + w : w; if (g.measureText(t).width <= maxW || !lines[lines.length - 1]) lines[lines.length - 1] = t; else lines.push(w); }
+    if (lines.length <= 2 && lines.every((l) => g.measureText(l).width <= maxW)) return { lines, size: s };
+  }
+  return { lines: [text], size: 18 };
+}
+function roundRectPath(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function drawSign(sg) {
+  const g = sg.ctx, W = 256, H = 158, r = seeded('sign:' + sg.seed), wear = sg.wear;
+  g.clearRect(0, 0, W, H);
+  // paper that yellows and creases as the day wears on
+  roundRectPath(g, 5, 5, W - 10, H - 10, 14);
+  g.fillStyle = mixHex(sg.own ? '#FFFFFF' : '#FFFBEF', '#E9D49C', wear * 0.75); g.fill();
+  g.lineWidth = 5; g.strokeStyle = mixHex('#E6DAC0', '#BFA36A', wear); g.stroke();
+  if (wear > 0.3) {
+    g.strokeStyle = `rgba(120,95,50,${0.12 + wear * 0.15})`; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(10 + r() * 40, 8); g.lineTo(80 + r() * 60, H - 8); g.stroke();
+    for (let i = 0; i < Math.round(wear * 4); i++) { g.fillStyle = `rgba(110,90,60,${0.06 + r() * 0.08})`; g.beginPath(); g.arc(20 + r() * (W - 40), 20 + r() * (H - 40), 6 + r() * 12, 0, Math.PI * 2); g.fill(); }
+  }
+  const font = sg.own ? (s) => `700 ${s}px "Comic Sans MS", "Chalkboard SE", "Marker Felt", cursive` : (s) => `600 ${s}px Fredoka, Nunito, system-ui, sans-serif`;
+  const { lines, size } = fitLines(g, sg.text, W - 44, 44, font);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  const lh = size * 1.12, y0 = H / 2 - (lines.length - 1) * lh / 2 + 2;
+  if (sg.own) {
+    // crayon: wobbly, a bit crooked, drawn twice for that waxy look
+    const col = CRAYONS[Math.floor(r() * CRAYONS.length)];
+    g.save(); g.translate(W / 2, H / 2); g.rotate((r() - 0.5) * 0.12); g.translate(-W / 2, -H / 2);
+    lines.forEach((l, i) => {
+      g.globalAlpha = 0.55; g.fillStyle = col; g.fillText(l, W / 2 + 1.5, y0 + i * lh + 1);
+      g.globalAlpha = 0.9; g.fillText(l, W / 2, y0 + i * lh);
+    });
+    g.globalAlpha = 0.7; g.strokeStyle = col; g.lineWidth = 3; g.beginPath();
+    const uy = y0 + (lines.length - 1) * lh + size * 0.62; g.moveTo(W * 0.26, uy); for (let x = W * 0.26; x < W * 0.74; x += 12) g.lineTo(x + 12, uy + (r() - 0.5) * 6); g.stroke();
+    g.restore(); g.globalAlpha = 1;
+  } else {
+    g.fillStyle = mixHex('#2B2A3A', '#5B5246', wear * 0.6);
+    lines.forEach((l, i) => g.fillText(l, W / 2, y0 + i * lh));
+  }
+  sg.tex.needsUpdate = true;
+}
+const wearNow = () => (signs ? clamp((serverNow() - signs.opensAt) / (signs.launchAt - signs.opensAt), 0, 1) : 0);
+const wearStage = (k) => (k < 0.55 ? 0 : k < 0.8 ? 0.45 : 0.9);
+
+function setSign(bud, info) {
+  const text = info && choiceText(info.a);
+  if (!text) { removeSign(bud); return; }
+  if (!bud.sign) {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 158;
+    const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4;
+    const g = new THREE.Group(), pivot = new THREE.Group();
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.042, 1, 6), signWood);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(SIGN_W, SIGN_H), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, side: THREE.DoubleSide }));
+    const hx = bud.width * 0.42 + 0.1, hy = bud.height * 0.42, L = bud.height * 0.62 + 0.25;
+    stick.scale.y = L; stick.position.set(0, L / 2, 0);
+    board.position.set(0, L + SIGN_H / 2 - 0.06, 0.03);
+    pivot.add(stick, board); pivot.position.set(hx, hy, 0);   // the sign pivots at the bud's "hand", so it can droop
+    g.add(pivot); bud.hop.add(g);
+    bud.sign = { g, pivot, board, tex, ctx: c.getContext('2d'), text: '', own: false, wear: -1, seed: bud.data.id };
+  }
+  const sg = bud.sign, own = !!info.own;
+  if (sg.text !== text || sg.own !== own) { sg.text = text; sg.own = own; sg.wear = -1; }
+}
+function removeSign(bud) {
+  const sg = bud.sign; if (!sg) return;
+  bud.hop.remove(sg.g);
+  sg.board.material.dispose(); sg.board.geometry.dispose(); sg.tex.dispose();
+  sg.g.traverse((o) => { if (o.geometry && o !== sg.board) o.geometry.dispose(); });
+  bud.sign = null;
+}
+let signCheckAt = 0;
+function signTick() {
+  const k = wearNow(), stage = wearStage(k);
+  const check = T > signCheckAt; if (check) signCheckAt = T + 1;
+  for (const b of buds) {
+    const sg = b.sign; if (!sg) continue;
+    sg.g.visible = !game && b.root.visible;
+    if (!sg.g.visible) continue;
+    if (sg.folding == null) {
+      // the sign stays on the bud's right as you look at it, facing you
+      sg.g.rotation.y = Math.atan2(camera.position.x - b.x, camera.position.z - b.z) - b.heading;
+      sg.pivot.rotation.z = -(stage * 0.28 + Math.sin(T * 1.3 + b.x) * 0.03);   // droops as the day goes on
+    }
+    if (check && sg.wear !== (sg.folding == null ? stage : sg.wear)) { sg.wear = stage; drawSign(sg); }
+    else if (sg.wear < 0) { sg.wear = stage; drawSign(sg); }
+  }
+}
+
+/* paper airplanes */
+const PLANE_GEO = (() => {
+  const g = new THREE.BufferGeometry(), nose = [0, 0, 0.55], tl = [-0.42, 0.04, -0.38], tr = [0.42, 0.04, -0.38], tc = [0, 0, -0.38], keel = [0, -0.13, -0.38];
+  g.setAttribute('position', new THREE.Float32BufferAttribute([...nose, ...tc, ...tl, ...nose, ...tr, ...tc, ...nose, ...keel, ...tc, ...nose, ...tc, ...keel], 3));
+  g.computeVertexNormals();
+  return g;
+})();
+const planes = [];
+let planeSounds = 0;
+function launchPlane(from, dir, own) {
+  const m = new THREE.Mesh(PLANE_GEO, new THREE.MeshStandardMaterial({ color: toLinear(own ? '#FFFFFF' : '#FFF6E0'), roughness: 0.8, side: THREE.DoubleSide, flatShading: true, transparent: true }));
+  m.position.copy(from); m.scale.setScalar(1.6); scene.add(m);
+  const side = new THREE.Vector3(-dir.z, 0, dir.x);
+  planes.push({ m, p: from.clone(), v: new THREE.Vector3(dir.x * rand(5, 6.5), rand(2.2, 3.2), dir.z * rand(5, 6.5)), side, t: 0, life: 9, ph: Math.random() * 6, sway: rand(0.6, 1.2) * (Math.random() < 0.5 ? -1 : 1) });
+  if (planeSounds < 4) { planeSounds++; S.play('whoosh', { gain: 0.5, rate: rand(1.2, 1.5) }); setTimeout(() => planeSounds--, 500); }
+}
+const tmpV = new THREE.Vector3();
+function planeTick(dt) {
+  for (let i = planes.length - 1; i >= 0; i--) {
+    const pl = planes[i]; pl.t += dt;
+    // glide: slowly sinking, drifting side to side, a long way out past the island
+    pl.v.y = Math.max(-0.7, pl.v.y - 1.4 * dt);
+    pl.v.addScaledVector(pl.side, Math.sin(pl.t * 1.7 + pl.ph) * pl.sway * dt);
+    pl.p.addScaledVector(pl.v, dt);
+    pl.m.position.copy(pl.p);
+    pl.m.lookAt(tmpV.copy(pl.p).add(pl.v));
+    pl.m.rotateZ(Math.sin(pl.t * 1.7 + pl.ph) * 0.45 * Math.sign(pl.sway));
+    pl.m.material.opacity = clamp((pl.life - pl.t) / 2.5, 0, 1);
+    if (pl.t > pl.life) { scene.remove(pl.m); pl.m.material.dispose(); planes.splice(i, 1); }
+  }
+}
+
+// the bud turns to face off the island, folds its sign (a quick crumple of the board), and throws it
+function foldAndThrow(bud, after) {
+  const sg = bud.sign; if (!sg) { if (after) after(); return; }
+  const out = { x: Math.sin(bud.heading), z: Math.cos(bud.heading) };
+  sg.folding = 0;
+  S.play('paint', { gain: 0.8, rate: 1.4 });
+  const start = performance.now();
+  const step = () => {
+    if (bud.sign !== sg) return;
+    const k = Math.min(1, (performance.now() - start) / 550);
+    sg.board.scale.set(1 - 0.75 * k, 1 - 0.8 * k, 1);
+    sg.board.rotation.z = k * 2.4; sg.pivot.rotation.z = -0.2 * k;
+    if (k < 1) return requestAnimationFrame(step);
+    sg.board.getWorldPosition(tmpV);
+    const own = sg.own;
+    removeSign(bud);
+    bud.syv -= 0.14; bud.y = Math.max(bud.y, 0.01); bud.vy = 3.5;   // a little hop as it throws
+    launchPlane(tmpV.clone(), out, own);
+    if (after) after();
+  };
+  requestAnimationFrame(step);
+}
+// walk to the edge of the island, facing out
+function walkToEdge(bud, done) {
+  if (bud.state === 'act') endActivity(bud);
+  const a = Math.atan2(bud.z, bud.x) + rand(-0.15, 0.15), r = WALK_R * 0.98;
+  const spot = { x: Math.cos(a) * r, z: Math.sin(a) * r };
+  let finished = false;
+  const finish = () => {
+    if (finished) return; finished = true;
+    bud.state = 'idle'; bud.target = null; bud.onArrive = null; bud.rush = false; bud.held = true;
+    bud.heading = Math.atan2(bud.x, bud.z); bud.lookCameraUntil = 0; bud.look = null;
+    done();
+  };
+  Object.assign(bud, { state: 'walk', target: spot, rush: true, partner: null, greetOnArrive: null, held: true, lookCameraUntil: 0 });
+  bud.onArrive = finish;
+  setTimeout(finish, 7000);   // stuck behind a tree? throw from wherever it got to
+}
+
+async function answerSign(i, btns) {
+  if (!signs || signs.phase !== 'open') return;
+  btns.forEach((b) => (b.disabled = true));
+  try {
+    await api('POST', '/api/world', { sign: i });
+    signs.mine = { a: i, tossed: false };
+    const me = myBud();
+    if (me) {
+      signs.signs[me.data.id] = { a: i };
+      setSign(me, { a: i });
+      me.syv -= 0.14; me.happyUntil = T + 1.4;
+      say(me, pick([`${choiceText(i)}!`, `ooh, ${choiceText(i)}`, `${choiceText(i)}. good answer`]), 1800);
+    }
+    S.play('pop', { rate: 1.1 });
+  } catch (e) { const m = myBud(); if (m) say(m, e.message, 2400); }
+  renderCardBody();
+}
+async function tossMySign(btn) {
+  const me = myBud();
+  if (!me || !signs || signs.phase !== 'open') return;
+  btn.disabled = true;
+  try { await api('POST', '/api/world', { toss: true }); }
+  catch (e) { btn.disabled = false; say(me, e.message, 2400); return; }
+  signs.mine = { a: signs.mine ? signs.mine.a : null, tossed: true };
+  delete signs.signs[me.data.id];
+  closeCard();
+  say(me, pick(['okay! one paper airplane, coming up', 'bye, sign!', 'watch this!']), 2000);
+  cam.follow = me; cam.followUntil = T + 9; camGoal.dist = Math.max(9, R * 0.85); cam.lastInput = T;
+  walkToEdge(me, () => setTimeout(() => foldAndThrow(me, () => {
+    setTimeout(() => { say(me, pick(['wheee!', 'look at it go!', 'byeee']), 1800); }, 500);
+    setTimeout(() => { me.held = false; me.lookCameraUntil = T + 2; me.timer = rand(2, 4); }, 2500);
+  }), 500));
+}
+
+// 9pm: everyone at once
+function scheduleRitual() {
+  if (!signs || signs.phase === 'night') return;
+  const wait = signs.launchAt - serverNow();
+  if (wait <= 0) setTimeout(ritual, 3500);
+  else if (wait < 2 ** 31 - 1) setTimeout(ritual, wait);
+}
+function ritual() {
+  if (!signs || signs.ritualDone) return;
+  signs.ritualDone = true; signs.phase = 'launch';
+  const holders = buds.filter((b) => b.sign && b.placed && b.state !== 'drop' && !b.pose && b.root.visible && !b.gamePiece);
+  if (game || photo || composing || !holders.length) { for (const b of buds) removeSign(b); setTimeout(refreshResults, 4000); return; }
+  if (cardBud && cardBud.data.isMe) renderCardBody();
+  const title = document.getElementById('title');
+  document.getElementById('titleText').textContent = 'It’s 9pm!';
+  document.getElementById('titleSub').textContent = 'Every bud folds its sign into a paper airplane…';
+  title.classList.remove('fade');
+  S.play('chime');
+  cam.follow = null; camGoal.target.set(0, 0.8, 0); camGoal.dist = fitDist() * 1.05; camGoal.pitch = 0.45; cam.lastInput = T;
+  let arrived = 0, launched = false;
+  const launchAll = () => {
+    if (launched) return; launched = true;
+    document.getElementById('titleSub').textContent = '…and off they go! ✈';
+    holders.forEach((b) => setTimeout(() => foldAndThrow(b), 200 + Math.random() * 1100));
+    setTimeout(() => {
+      for (const b of holders) { b.held = false; b.timer = rand(1, 4); b.lookCameraUntil = T + 1; }
+      camGoal.pitch = null; title.classList.add('fade');
+      for (const b of buds) removeSign(b);   // anyone who wasn't on screen
+      refreshResults();
+    }, 7000);
+  };
+  holders.forEach((b, i) => {
+    if (i < 4) setTimeout(() => say(b, pick(['time to fly!', 'it’s 9!', 'to the edge!', 'bye bye, sign']), 1600), 300 + i * 250);
+    walkToEdge(b, () => { if (++arrived >= holders.length) setTimeout(launchAll, 600); });
+  });
+  setTimeout(launchAll, 8500);
+}
+async function refreshResults() {
+  try {
+    const res = await fetch('/api/world', { credentials: 'same-origin', cache: 'no-store' });
+    if (!res.ok) return;
+    const w = await res.json();
+    if (w.signs) { const done = signs && signs.ritualDone; signs = w.signs; signs.ritualDone = done || signs.phase !== 'open'; signSkew = signs.now - Date.now(); drawResults(); }
+  } catch (e) {}
+}
+
+/* the results board by the campfire */
+let resultsBoard = null;
+function buildResultsBoard() {
+  const f = skyBits.fire; if (!f || resultsBoard) return;
+  const rr = seeded('results-board');
+  let spot = null;
+  for (let i = 0; i < 24 && !spot; i++) {
+    const a = rr() * Math.PI * 2, d = 2.8 + rr() * 1.2, p = { x: f.x + Math.cos(a) * d, z: f.z + Math.sin(a) * d };
+    if (Math.hypot(p.x, p.z) < WALK_R * 0.8 && obstacles.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + 1.1)) spot = p;
+  }
+  if (!spot) return;
+  const c = document.createElement('canvas'); c.width = 512; c.height = 360;
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4;
+  const face = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 });
+  const g = new THREE.Group();
+  for (const s of [-1, 1]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 2.1, 7), signWood); post.position.set(s * 0.95, 1.05, 0); g.add(post); }
+  const board = new THREE.Mesh(new THREE.BoxGeometry(2.3, 1.62, 0.07), [signWood, signWood, signWood, signWood, face, face]);
+  board.position.y = 1.55; g.add(board);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 0.35), signWood); roof.position.y = 2.42; roof.rotation.x = 0.1; g.add(roof);
+  g.position.set(spot.x, 0, spot.z);
+  g.rotation.y = Math.atan2(spot.x - f.x, spot.z - f.z);   // faces away from the fire
+  scene.add(g);
+  obstacles.push({ x: spot.x, z: spot.z, r: 1.1 });
+  resultsBoard = { g, board, tex, ctx: c.getContext('2d') };
+  drawResults();
+}
+function resultsLabel() {
+  if (!signs) return '';
+  return signs.results.date === signs.date ? 'tonight’s question' : 'yesterday’s question';
+}
+function drawResults() {
+  if (!resultsBoard || !signs) return;
+  const g = resultsBoard.ctx, W = 512, H = 360, res = signs.results;
+  g.fillStyle = '#FFF8E6'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#D9C69C'; g.lineWidth = 10; g.strokeRect(5, 5, W - 10, H - 10);
+  g.fillStyle = '#9A8660'; g.font = '600 22px Fredoka, Nunito, system-ui, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  g.fillText(resultsLabel().toUpperCase(), 28, 44);
+  g.fillStyle = '#2B2A3A';
+  const { lines, size } = fitLines(g, res.question, W - 56, 34, (s) => `700 ${s}px Fredoka, Nunito, system-ui, sans-serif`);
+  lines.forEach((l, i) => g.fillText(l, 28, 86 + i * size * 1.1));
+  const counts = res.people, total = res.total || 1;
+  const top = 86 + lines.length * size * 1.1 + 6, rowH = Math.min(50, (H - top - 46) / counts.length);
+  const best = Math.max(...counts);
+  counts.forEach((n, i) => {
+    const y = top + i * rowH, pct = Math.round(n / total * 100);
+    g.fillStyle = 'rgba(43,42,58,.07)'; g.fillRect(28, y, W - 56, rowH - 10);
+    g.fillStyle = n === best && n ? '#FFD25A' : '#E8DFC9'; g.fillRect(28, y, (W - 56) * n / total, rowH - 10);
+    g.fillStyle = '#2B2A3A'; g.font = `600 ${Math.round(rowH * 0.48)}px Fredoka, Nunito, system-ui, sans-serif`;
+    g.fillText(res.choices[i], 40, y + rowH * 0.58);
+    g.textAlign = 'right'; g.fillText(`${pct}%`, W - 40, y + rowH * 0.58); g.textAlign = 'left';
+  });
+  g.fillStyle = '#9A8660'; g.font = '500 20px Fredoka, Nunito, system-ui, sans-serif';
+  g.fillText(res.total ? `${res.total} ${res.total === 1 ? 'answer' : 'answers'} · tap for more` : 'nobody answered this one', 28, H - 22);
+  resultsBoard.tex.needsUpdate = true;
+}
+function boardAt(x, y) {
+  if (!resultsBoard) return false;
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  return ray.intersectObject(resultsBoard.g, true).length > 0;
+}
+function openResultsCard() {
+  if (!signs) return;
+  releaseCardBud(); cardBud = null;
+  const res = signs.results;
+  document.getElementById('cardName').textContent = res.question;
+  document.getElementById('cardSub').textContent = resultsLabel().replace(/^./, (c) => c.toUpperCase());
+  cardBody.textContent = '';
+  const counts = res.people, total = res.total || 1, best = Math.max(...counts);
+  const list = el('div', 'tally');
+  counts.forEach((n, i) => {
+    const r = el('div', 'tally-row' + (n === best && n ? ' top' : ''));
+    const bar = el('span', 'bar'); bar.style.width = `${Math.round(n / total * 100)}%`;
+    r.append(bar, el('span', 'lbl', res.choices[i]), el('span', 'pct', `${Math.round(n / total * 100)}%`));
+    list.append(r);
+  });
+  cardBody.append(list);
+  cardBody.append(el('p', 'muted', res.total
+    ? `${res.total} ${res.total === 1 ? 'person' : 'people'} answered. Only real answers count, not the buds’ crayon ones.`
+    : 'Nobody answered this one.'));
+  if (signs.phase !== 'open') cardBody.append(el('p', 'muted', 'New question at 9am Eastern.'));
+  card.hidden = false; hideHint();
+  S.play('pop', { rate: 0.85 });
+}
+
+// your bud's card: today's question
+function renderSignSection(bud) {
+  if (!signs) return;
+  const box = el('section', 'qbox');
+  if (signs.phase !== 'open' || signs.ritualDone) {
+    box.append(el('h3', null, 'Today’s question'));
+    box.append(el('p', 'muted', 'Tonight’s signs flew off the island at 9. A new question goes up at 9am Eastern.'));
+    const r = el('div', 'row'), see = el('button', 'btn', 'See the results'); see.type = 'button';
+    see.addEventListener('click', openResultsCard); r.append(see); box.append(r);
+    cardBody.append(box); return;
+  }
+  box.append(el('h3', null, 'Today’s question'), el('p', 'q', signs.question.text));
+  const mine = signs.mine;
+  if (mine && mine.tossed) {
+    box.append(el('p', 'muted', (mine.a != null ? `You said “${choiceText(mine.a)}” and` : 'You') + ' threw today’s sign off the island ✈. New question at 9am.'));
+    cardBody.append(box); return;
+  }
+  const chips = el('div', 'chips'), btns = [];
+  signs.question.choices.forEach((c, i) => {
+    const b = el('button', 'chip', c); b.type = 'button'; b.setAttribute('aria-pressed', String(!!mine && mine.a === i));
+    b.addEventListener('click', () => { if (!(mine && mine.a === i)) answerSign(i, btns); });
+    btns.push(b); chips.append(b);
+  });
+  box.append(chips);
+  const held = signs.signs[bud.data.id];
+  box.append(el('p', 'muted', mine && mine.a != null
+    ? `${nameOf(bud)} is holding up your answer until 9pm. Tap another to change it.`
+    : held && held.own ? `${nameOf(bud)} made up its own answer for now (“${choiceText(held.a)}”, in crayon). What’s yours?` : 'Pick one and your bud will hold it up until 9pm.'));
+  if (bud.sign) {
+    const r = el('div', 'row'), t = el('button', 'btn', 'Fold it into a paper airplane ✈'); t.type = 'button';
+    t.addEventListener('click', () => tossMySign(t)); r.append(t); box.append(r);
+  }
+  cardBody.append(box);
+}
+// someone else's bud's card: what its sign says
+function renderSignLine(bud) {
+  const sg = signs && bud.sign && signs.signs[bud.data.id];
+  if (!sg) return;
+  const p = el('p', 'signline');
+  p.append(sg.own ? `${nameOf(bud)}’s own answer, in crayon: ` : `${bud.data.ownerName ? bud.data.ownerName + '’s' : 'Their'} answer: `, el('b', null, choiceText(sg.a)));
+  if (!sg.own && signs.mine && !signs.mine.tossed && signs.mine.a === sg.a) p.append(' ', el('span', 'same', 'same as you!'));
+  cardBody.append(p);
 }
 
 /* ---------------- Peekaboo: battleship with buds ---------------- */
@@ -2865,6 +3285,8 @@ function frame(now) {
   separateBuds();
   photoTick();
   gameTick(dt);
+  signTick();
+  planeTick(dt);
   updateSky(dt);
   for (const c of clouds) {
     c.a += c.sp * dt;
@@ -2942,7 +3364,7 @@ function showCenter(title, text, linkText, href = '/') {
     document.getElementById('newsDot').hidden = !!news.seen;
     const OPEN_NEWS = params.get('news') === '1';
     if (OPEN_NEWS) setTimeout(openNews, 1200);
-    else if (!news.seen && !DROP && !GAME_ID) setTimeout(() => { if (card.hidden && !photo && !composing && !game) openNews(); }, 9500);
+    else if (!news.seen && !DROP && !GAME_ID && !OPEN_SIGN) setTimeout(() => { if (card.hidden && !photo && !composing && !game) openNews(); }, 9500);
   }
   hasProfile = world.me.hasProfile !== false;
   dmsOn = world.me.dms !== false;
@@ -2966,6 +3388,15 @@ function showCenter(title, text, linkText, href = '/') {
   }
   updateNotesPill();
 
+  // today's question: who's holding what
+  signs = world.signs || null;
+  if (signs) {
+    signSkew = signs.now - Date.now();
+    if (signs.phase !== 'night') for (const bud of buds) setSign(bud, signs.signs[bud.data.id]);
+    buildResultsBoard();
+    scheduleRitual();
+  }
+
   // everyone else starts somewhere on the island
   for (const bud of buds) {
     if (DROP && bud === mine) continue;
@@ -2986,7 +3417,8 @@ function showCenter(title, text, linkText, href = '/') {
     document.getElementById('titleSub').textContent = 'Your bud just moved in.';
     setTimeout(() => { mine.heading = Math.atan2(camera.position.x - mine.x, camera.position.z - mine.z); say(mine, 'wheeeee!', 1500); }, 200);
   }
-  if (mine && !DROP && !GAME_ID) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
+  if (mine && !DROP && !GAME_ID && !OPEN_SIGN) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
+  if (mine && OPEN_SIGN && !GAME_ID) setTimeout(() => { cam.follow = mine; cam.followUntil = T + 5; camGoal.dist = Math.max(9, R * 0.85); say(mine, signs && signs.phase === 'open' ? 'today’s question!' : 'the signs already flew off!', 1800); openCard(mine); }, 1600);
   if (GAME_ID && mine) setTimeout(() => enterGame(GAME_ID), 700);
   setTimeout(() => document.getElementById('title').classList.add('fade'), DROP ? 9000 : 6000);
   requestAnimationFrame(frame);
