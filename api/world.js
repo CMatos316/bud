@@ -8,7 +8,6 @@ import { latestIssue } from '../lib/newsletter.js';
 import { sameOrigin } from '../lib/session.js';
 import { lifeDiary, hobbyOf, HOBBY_LABEL } from '../lib/life.js';
 import { games as gamesRef } from '../lib/peekaboo.js';
-import { signsForWorld, answerSign, tossSign } from '../lib/signs.js';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const MAX_BUDS = 200;
@@ -77,8 +76,6 @@ export async function GET(request) {
       };
     }).filter((b) => b.r.length === 64);
     const budNames = new Map(list.map((b) => [b.id, b.nickname || b.trueName]));
-    const nowMs = Date.now();
-    const signs = await signsForWorld(me, list.map((b) => b.id), nowMs, Math.min(lastVisit ?? nowMs, nowMs - DIARY_WINDOW_MS)).catch((err) => { console.error('signs failed:', err); return null; });
     inbox.sort((a, b) => a.at - b.at);
 
     // Your bud's diary: what it got up to on its own, plus what other people did with it.
@@ -106,7 +103,6 @@ export async function GET(request) {
           ? `we won Peekaboo against ${theirBud}! found every single hider 👑`
           : `${theirBud} won Peekaboo. i was hiding SO well though` });
       }
-      if (signs) diary.push(...signs.diary);
       diary = diary.sort((a, b) => b.at - a.at).slice(0, DIARY_MAX).map((e) => ({ ...e, fresh: !!lastVisit && e.at > lastVisit }));
     }
 
@@ -117,7 +113,6 @@ export async function GET(request) {
       me: { id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists, dms: !meDoc.get?.('questionsOff') },
       buds: list,
       diary,
-      signs: signs && (({ diary: _d, ...rest }) => rest)(signs),
       games: gameSnap.docs.map((d) => d.data()).filter((g) => ['setup', 'playing'].includes(g.status)).map((g) => {
         const them = g.players.find((id) => id !== me);
         return { id: g.id, them, myTurn: g.status === 'playing' ? g.turn === me : !g.ready?.[me], status: g.status };
@@ -138,14 +133,6 @@ export async function POST(request) {
   if (!session) return json({ error: 'sign in first' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
-  // today's question sign: answer it, or fold it into a paper airplane and throw it off the island
-  if (body?.sign != null || body?.toss) {
-    try { return json(body.toss ? await tossSign(session.id) : await answerSign(session.id, Number(body.sign))); }
-    catch (err) {
-      if (err.status) return json({ error: err.message }, err.status);
-      console.error('sign failed:', err); return json({ error: 'something went wrong. try again?' }, 500);
-    }
-  }
   if (typeof body?.newsSeen !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.newsSeen)) return json({ error: 'bad issue' }, 400);
   await refs.user(session.id).set({ newsSeen: body.newsSeen }, { merge: true });
   return json({ saved: true });
