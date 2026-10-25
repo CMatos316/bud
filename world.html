@@ -290,6 +290,19 @@ body { transition: background 2s linear; }
 }
 .photo-bar p { margin: 0; flex: 1 1 180px; font-size: 14px; line-height: 1.35; }
 .photo-bar p b { font-weight: 600; }
+.game-bar { flex-direction: column; align-items: stretch; gap: 10px; width: min(460px, calc(100% - 32px)); }
+.game-top { display: flex; align-items: baseline; gap: 10px; }
+.game-top b { font: 600 17px/1.2 var(--font-display); }
+.game-top span { margin-left: auto; font-size: 12.5px; opacity: .75; white-space: nowrap; }
+.game-bar p { flex: none; }
+.game-bar .row { justify-content: flex-end; }
+.seg { display: flex; padding: 3px; border-radius: 999px; background: var(--chip); border: 1px solid var(--chip-line); }
+.seg[hidden] { display: none; }
+.seg button { flex: 1; min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 999px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg button[aria-pressed="true"] { background: var(--me); color: var(--me-ink); }
+.btn[aria-pressed="true"] { background: #C9B8FF; color: #2B2050; border-color: transparent; }
+.diary.games li { align-items: center; }
+.diary.games li .btn { margin-left: auto; padding: 5px 12px; font-size: 13px; }
 .countdown {
   position: fixed; inset: 0; z-index: 8; display: grid; place-items: center; pointer-events: none;
   font: 600 min(30vw, 180px)/1 var(--font-display); color: #fff; text-shadow: 0 6px 30px rgba(30, 20, 60, .45);
@@ -392,6 +405,12 @@ body { transition: background 2s linear; }
   <p id="photoText"></p>
   <div class="row"><button class="btn" type="button" id="photoCancel">Cancel</button><button class="btn primary" type="button" id="photoGo">Line up</button></div>
 </div>
+<div class="photo-bar game-bar" id="gameBar" hidden role="region" aria-label="Peekaboo">
+  <div class="game-top"><b id="gameTitle">Peekaboo</b><span id="gameScore"></span></div>
+  <div class="seg" id="gameSeg" role="group" aria-label="Which island"><button type="button" data-board="theirs" aria-pressed="false">Their island</button><button type="button" data-board="mine" aria-pressed="false">Your island</button></div>
+  <p id="gameText" aria-live="polite"></p>
+  <div class="row" id="gameRow"></div>
+</div>
 <div class="countdown" id="countdown" hidden aria-live="assertive"></div>
 <div class="booth" id="booth" hidden role="dialog" aria-modal="true" aria-label="Your photo">
   <div class="booth-card">
@@ -438,6 +457,7 @@ const labels = document.getElementById('labels');
 const params = new URLSearchParams(location.search);
 const DROP = params.get('drop') === '1';
 const OPEN_NOTES = params.get('notes') === '1';
+const GAME_ID = /^[A-Za-z0-9]{10,40}$/.test(params.get('game') || '') ? params.get('game') : null;
 if (DROP || OPEN_NOTES || params.get('news') === '1') history.replaceState(null, '', location.pathname);
 
 const HELLOS = ['hi!', 'hey!', 'oh hi', 'hello!', 'yo', 'hiii'];
@@ -514,14 +534,15 @@ function buildIsland(nBuds) {
   const cone = new THREE.ConeGeometry(R * 1.0, h, 30, 7, true);
   cone.rotateX(Math.PI);
   const pos = cone.attributes.position, colors = [];
+  const ur = seeded('underside');
   const soilTop = new THREE.Color('#C9A27A'), soilTip = new THREE.Color('#7F6250');
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
     const t = (h / 2 - y) / h;   // 0 at the top ring, 1 at the tip
     const a = Math.atan2(z, x), rr = Math.hypot(x, z);
     const edge = islandEdge(a, seed);
-    const jitter = t > 0.02 ? 1 + 0.12 * Math.sin(a * 7 + t * 9) + (Math.random() - 0.5) * 0.12 : 1;
-    pos.setXYZ(i, Math.cos(a) * rr * edge * jitter, y + (t > 0.05 && t < 0.98 ? (Math.random() - 0.5) * 0.5 : 0), Math.sin(a) * rr * edge * jitter);
+    const jitter = t > 0.02 ? 1 + 0.12 * Math.sin(a * 7 + t * 9) + (ur() - 0.5) * 0.12 : 1;
+    pos.setXYZ(i, Math.cos(a) * rr * edge * jitter, y + (t > 0.05 && t < 0.98 ? (ur() - 0.5) * 0.5 : 0), Math.sin(a) * rr * edge * jitter);
     const c = soilTop.clone().lerp(soilTip, t);
     colors.push(c.r, c.g, c.b);
   }
@@ -535,9 +556,9 @@ function buildIsland(nBuds) {
   const trunkMat = new THREE.MeshStandardMaterial({ color: toLinear('#A47551'), roughness: 1 });
   const leafCols = ['#7FCB8A', '#A6E3A1', '#6BBF7A', '#B9E8B0'].map((c) => new THREE.MeshStandardMaterial({ color: toLinear(c), roughness: 0.9, flatShading: true }));
   const rockMat = new THREE.MeshStandardMaterial({ color: toLinear('#B7B5C6'), roughness: 1, flatShading: true });
-  const place = (minR, maxR, clear) => {
+  const place = (minR, maxR, clear, rnd) => {
     for (let tries = 0; tries < 40; tries++) {
-      const a = Math.random() * Math.PI * 2, r = R * islandEdge(a, seed) * rand(minR, maxR);
+      const a = rnd() * Math.PI * 2, r = R * islandEdge(a, seed) * (minR + rnd() * (maxR - minR));
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
       if (obstacles.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + clear)) return { x, z };
     }
@@ -545,29 +566,29 @@ function buildIsland(nBuds) {
   };
   const trees = Math.round(R * 0.55);
   for (let i = 0; i < trees; i++) {
-    const p = place(0.74, 0.92, 2.2); if (!p) continue;
-    const s = rand(0.8, 1.35), t = new THREE.Group();
+    const tr = seeded('tree:' + i), p = place(0.74, 0.92, 2.2, tr); if (!p) continue;
+    const s = 0.8 + tr() * 0.55, t = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * s, 0.2 * s, 1.1 * s, 7), trunkMat); trunk.position.y = 0.55 * s; t.add(trunk);
     const m = leafCols[i % leafCols.length];
     for (let k = 0; k < 3; k++) {
       const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry((0.85 - k * 0.2) * s, 0), m);
-      leaf.position.set(rand(-0.15, 0.15) * s, (1.25 + k * 0.5) * s, rand(-0.15, 0.15) * s); leaf.rotation.y = Math.random() * 3;
+      leaf.position.set((tr() - 0.5) * 0.3 * s, (1.25 + k * 0.5) * s, (tr() - 0.5) * 0.3 * s); leaf.rotation.y = tr() * 3;
       t.add(leaf);
     }
     t.position.set(p.x, 0, p.z); group.add(t);
     obstacles.push({ x: p.x, z: p.z, r: 0.9 * s });
   }
   for (let i = 0; i < Math.round(R * 0.4); i++) {
-    const p = place(0.35, 0.9, 1.2); if (!p) continue;
-    const s = rand(0.25, 0.55), rk = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMat);
-    rk.position.set(p.x, s * 0.45, p.z); rk.rotation.set(Math.random(), Math.random(), Math.random()); group.add(rk);
+    const rr = seeded('rock:' + i), p = place(0.35, 0.9, 1.2, rr); if (!p) continue;
+    const s = 0.25 + rr() * 0.3, rk = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMat);
+    rk.position.set(p.x, s * 0.45, p.z); rk.rotation.set(rr(), rr(), rr()); group.add(rk);
     obstacles.push({ x: p.x, z: p.z, r: s + 0.2 });
   }
   // little flowers, just for looks
   const petal = ['#FFB3C7', '#FFE08A', '#FFFFFF', '#C9B8FF'].map((c) => new THREE.MeshStandardMaterial({ color: toLinear(c), roughness: 0.8 }));
   const stem = new THREE.MeshStandardMaterial({ color: toLinear('#5FA868') });
   for (let i = 0; i < Math.round(R * 2.5); i++) {
-    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R * 0.92;
+    const fr = seeded('flower:' + i), a = fr() * Math.PI * 2, r = Math.sqrt(fr()) * R * 0.92;
     const f = new THREE.Group();
     const st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 4), stem); st.position.y = 0.11; f.add(st);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), petal[i % petal.length]); head.position.y = 0.24; f.add(head);
@@ -654,8 +675,9 @@ function buildSkyAndSeason() {
 
   // a campfire near the middle: just a fire pit by day, lit at night, and buds gather round
   let spot = { x: 0, z: 0 };
+  const fireR = seeded('campfire');
   for (let i = 0; i < 40; i++) {
-    const a = Math.random() * Math.PI * 2, r = Math.random() * R * 0.3, p = { x: Math.cos(a) * r, z: Math.sin(a) * r };
+    const a = fireR() * Math.PI * 2, r = fireR() * R * 0.3, p = { x: Math.cos(a) * r, z: Math.sin(a) * r };
     if (obstacles.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + 3)) { spot = p; break; }
   }
   const fire = new THREE.Group();
@@ -694,14 +716,15 @@ function buildSkyAndSeason() {
     const count = Math.round(clamp(R * 0.55, 6, 16));
     for (let i = 0; i < count; i++) {
       let p = null;
+      const pr = seeded('pumpkin:' + i);
       for (let t = 0; t < 30 && !p; t++) {
-        const a = Math.random() * Math.PI * 2, r = R * rand(0.45, 0.9);
+        const a = pr() * Math.PI * 2, r = R * (0.45 + pr() * 0.45);
         const q = { x: Math.cos(a) * r, z: Math.sin(a) * r };
         if (obstacles.every((o) => Math.hypot(o.x - q.x, o.z - q.z) > o.r + 1)) p = q;
       }
       if (!p) continue;
-      const size = rand(0.32, 0.55), pk = makePumpkin(size, true);
-      pk.position.set(p.x, 0, p.z); pk.rotation.y = Math.atan2(-p.x, -p.z) + rand(-0.6, 0.6);   // mostly facing the middle
+      const size = 0.32 + pr() * 0.23, pk = makePumpkin(size, true);
+      pk.position.set(p.x, 0, p.z); pk.rotation.y = Math.atan2(-p.x, -p.z) + (pr() - 0.5) * 1.2;   // mostly facing the middle
       scene.add(pk); skyBits.pumpkins.push(pk);
       obstacles.push({ x: p.x, z: p.z, r: size + 0.3 });
     }
@@ -749,7 +772,24 @@ function makePumpkin(size, glowing) {
 }
 
 // Halloween costumes: about half the buds dress up, the same costume every visit
+// winners of Peekaboo wear a little crown for a day
+function crownFor(bud) {
+  const b = bud.b, top = b.r.reduce((m, p) => (p.y < m.y ? p : m), b.r[0]), unit = b.w;
+  const gold = new THREE.MeshStandardMaterial({ color: toLinear('#FFC93C'), metalness: 0.55, roughness: 0.3, emissive: toLinear('#6B4500'), emissiveIntensity: 0.3, side: THREE.DoubleSide });
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(unit * 0.13, unit * 0.12, unit * 0.07, 24, 1, true), gold));
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * Math.PI * 2, sp = new THREE.Mesh(new THREE.ConeGeometry(unit * 0.032, unit * 0.085, 6), gold);
+    sp.position.set(Math.cos(a) * unit * 0.125, unit * 0.075, Math.sin(a) * unit * 0.125); g.add(sp);
+    const gem = new THREE.Mesh(new THREE.SphereGeometry(unit * 0.016, 8, 6), new THREE.MeshStandardMaterial({ color: toLinear(i % 2 ? '#7FD3FF' : '#FF6F91'), roughness: 0.2 }));
+    gem.position.set(Math.cos(a + 0.63) * unit * 0.128, 0, Math.sin(a + 0.63) * unit * 0.128); g.add(gem);
+  }
+  g.position.set(top.x, -top.y + unit * 0.02, 0); g.rotation.z = -0.12; g.scale.setScalar(1.6);
+  bud.inner.add(g);
+}
+
 function costumeFor(bud) {
+  if (bud.data.crown) return crownFor(bud);
   if (!HALLOWEEN) return;
   let h = 0; for (const ch of String(bud.data.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   if (h % 100 >= 55) return;
@@ -1368,10 +1408,10 @@ function moveSmoothly(bud, vx, vz, dt, k = 5) {
 function separateBuds() {
   for (let i = 0; i < buds.length; i++) {
     const a = buds[i];
-    if (!a.placed || a.state === 'drop' || a.y > 1) continue;
+    if (!a.placed || a.state === 'drop' || a.y > 1 || a.gameHidden || a.gamePiece) continue;
     for (let j = i + 1; j < buds.length; j++) {
       const b = buds[j];
-      if (!b.placed || b.state === 'drop' || b.y > 1) continue;
+      if (!b.placed || b.state === 'drop' || b.y > 1 || b.gameHidden || b.gamePiece) continue;
       const dx = b.x - a.x, dz = b.z - a.z, min = (a.width + b.width) * 0.5 * 0.85;
       if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
       const d = Math.hypot(dx, dz);
@@ -1385,7 +1425,7 @@ function separateBuds() {
   }
   // ...and trees, rocks, pumpkins and the campfire are solid too
   for (const b of buds) {
-    if (!b.placed || b.state === 'drop' || b.y > 1) continue;
+    if (!b.placed || b.state === 'drop' || b.y > 1 || b.gameHidden || b.gamePiece) continue;
     for (const o of obstacles) {
       const dx = b.x - o.x, dz = b.z - o.z, min = o.r + b.width * 0.3;
       if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
@@ -1479,7 +1519,7 @@ function placeCamera(dt) {
   cam.dist += (camGoal.dist - cam.dist) * k;
   if (camGoal.pitch != null) cam.pitch += (camGoal.pitch - cam.pitch) * k;
   if (camGoal.yaw != null) cam.yaw += angleTo(cam.yaw, camGoal.yaw) * k;
-  if (T - cam.lastInput > 6 && !cam.follow) cam.yaw += dt * 0.035 * RM;
+  if (T - cam.lastInput > 6 && !cam.follow && !game) cam.yaw += dt * 0.035 * RM;
   const cp = Math.cos(cam.pitch);
   camera.position.set(
     cam.target.x + Math.sin(cam.yaw) * cp * cam.dist,
@@ -1489,7 +1529,7 @@ function placeCamera(dt) {
   camera.lookAt(cam.target);
   // With a card or note pad open at the bottom, slide the picture up so the bud you're looking at sits above it.
   const panel = [document.getElementById('card'), document.getElementById('composer')].find((e) => !e.hidden);
-  const want = panel && cam.follow ? Math.min(panel.getBoundingClientRect().height * 0.5, innerHeight * 0.3) : 0;
+  const want = game ? (gameBar.getBoundingClientRect().height + 24 - 64) / 2 : panel && cam.follow ? Math.min(panel.getBoundingClientRect().height * 0.5, innerHeight * 0.3) : 0;
   cam.shift = (cam.shift || 0) + (want - (cam.shift || 0)) * (1 - Math.pow(0.02, dt));
   if (Math.abs(cam.shift) > 0.5) camera.setViewOffset(innerWidth, innerHeight, 0, cam.shift, innerWidth, innerHeight);
   else if (camera.view && camera.view.enabled) camera.clearViewOffset();
@@ -1552,6 +1592,12 @@ let hoverT = 0;
 function hoverAt(x, y) {
   if (drag && drag.moved) return;
   if (T - hoverT < 0.06) return; hoverT = T;
+  if (game) {
+    const t = tileAt(x, y);
+    if (t !== game.hover) { game.hover = t; colorTiles(); }
+    canvas.classList.toggle('over-bud', tappable(t));
+    return;
+  }
   canvas.classList.toggle('over-bud', !!budAt(x, y));
 }
 const card = document.getElementById('card');
@@ -1591,6 +1637,7 @@ function noteEl(text, color, small = false) {
 }
 
 function clickAt(x, y) {
+  if (game) { gameTap(x, y); return; }
   const bud = budAt(x, y);
   if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return; }
   if (!bud) { if (!composing) closeCard(); return; }
@@ -1654,6 +1701,7 @@ function renderCardBody() {
     }
     if (!inbox.length) {
       if (!diary.length) cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
+      renderGamesList();
       renderDiary(bud);
       renderDmToggle(bud);
       return;
@@ -1670,6 +1718,7 @@ function renderCardBody() {
       r.append(yes, no); note.append(r);
       cardBody.append(note);
     }
+    renderGamesList();
     renderDiary(bud);
     renderDmToggle(bud);
     return;
@@ -1677,6 +1726,10 @@ function renderCardBody() {
   const others = bud.stickies.filter((st) => !st.dying && st.tag !== 'mine').length;
   if (d.friend) {
     cardBody.append(el('span', 'friends', `You and ${d.ownerName || 'them'} are friends`));
+    if (myBud()) {
+      const r = el('div', 'row'); r.append(peekabooButton(bud)); cardBody.append(r);
+      cardBody.append(el('p', 'muted', 'Peekaboo: you each hide 3 buds on the island and take turns finding them.'));
+    }
     return;
   }
   if (d.myNote && d.myNote.status === 'pending') {
@@ -1704,7 +1757,7 @@ function renderCardBody() {
 }
 
 /* ---------------- your bud's diary ---------------- */
-const DIARY_ICON = { play: '✦', solo: '•', note: '✎', friend: '♥', photo: '◉' };
+const DIARY_ICON = { play: '✦', solo: '•', note: '✎', friend: '♥', photo: '◉', game: '◆' };
 const firstPerson = (e) => (e.kind === 'play' || e.kind === 'solo' ? `I ${e.text}` : e.text);
 function whenLabel(ms) {
   const now = new Date(), t = new Date(ms), mins = (now - t) / 60e3;
@@ -2275,6 +2328,423 @@ function exitPhoto() {
   photo = null;
 }
 
+/* ---------------- Peekaboo: battleship with buds ---------------- */
+// Both players use the same island as their board: on yours, your three buds hide on tiles; on theirs, you tap
+// tiles to look. The server is the referee, so where they hid only shows up here once you find them.
+const gameBar = document.getElementById('gameBar'), gameTitle = document.getElementById('gameTitle');
+const gameScore = document.getElementById('gameScore'), gameText = document.getElementById('gameText');
+const gameRow = document.getElementById('gameRow'), gameSeg = document.getElementById('gameSeg');
+let game = null;     // the game on screen: { id, v (my view from the server), board: 'mine' | 'theirs', picks, yell, ... }
+let myGames = [];    // games still going: { id, them, myTurn, status }
+const budById = (id) => buds.find((b) => b.data.id === id);
+const GN = 7, GCELL = 0.225;
+const cellW = () => R * GCELL;
+const tilePos = (t) => ({ x: ((t % GN) - 3) * cellW(), z: (Math.floor(t / GN) - 3) * cellW() });
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitPoint = new THREE.Vector3();
+const TILE_GEO = new THREE.CircleGeometry(1, 28); TILE_GEO.rotateX(-Math.PI / 2);
+const PEBBLE_MAT = new THREE.MeshStandardMaterial({ color: toLinear('#9A97AE'), roughness: 1, flatShading: true });
+
+function tileAt(x, y) {
+  if (!game) return null;
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(groundPlane, hitPoint)) return null;
+  let best = null, bd = cellW() * 0.5;
+  for (const t of game.v.tiles) { const p = tilePos(t), d = Math.hypot(p.x - hitPoint.x, p.z - hitPoint.z); if (d < bd) { bd = d; best = t; } }
+  return best;
+}
+const theirName = () => (game && game.v.people && game.v.people[game.v.them]) || 'your friend';
+const budName = (id) => (game && game.v.buds && game.v.buds[id]) || 'a bud';
+const listNames = (ids) => { const n = ids.map(budName); return n.length < 2 ? n.join('') : `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}`; };
+const looked = (t) => game.v.myShots.some((s) => s.t === t && s.yell == null);
+const myTurn = () => game && game.v.status === 'playing' && game.v.turn === game.v.me;
+const settingUp = () => game && game.v.status === 'setup' && !game.v.ready[game.v.me];
+const isOver = () => game && (game.v.status === 'done' || game.v.status === 'resigned');
+function tappable(t) {
+  if (!game || game.busy || t == null) return false;
+  if (settingUp()) return game.board === 'mine';
+  return myTurn() && game.board === 'theirs' && (game.yell || !looked(t));
+}
+
+async function enterGame(id) {
+  if (game && game.id === id) return;
+  if (game) exitGame();
+  if (photo) exitPhoto();
+  closeComposer(); closeCard(); hideHint();
+  let v;
+  try { v = await api('GET', '/api/game?id=' + encodeURIComponent(id)); }
+  catch (e) { const m = myBud(); if (m) say(m, 'hmm, I can’t find that game', 2200); return; }
+  game = { id, v, board: 'mine', picks: [], yell: false, busy: false, msg: '', hover: null, group: new THREE.Group(), tiles: new Map(), marks: [], key: viewKey(v) };
+  game.board = defaultBoard(v);
+  scene.add(game.group);
+  for (const t of v.tiles) {
+    const m = new THREE.Mesh(TILE_GEO, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false }));
+    const p = tilePos(t); m.position.set(p.x, 0.04, p.z); m.scale.setScalar(cellW() * 0.42); m.renderOrder = 1;
+    game.group.add(m); game.tiles.set(t, m);
+  }
+  for (const b of buds) { b.gameHidden = true; b.root.visible = false; }
+  game.savedPitch = cam.pitch;
+  cam.follow = null; camGoal.target.set(0, 0.8, 0); camGoal.pitch = 1.22; camGoal.yaw = Math.round(cam.yaw / (Math.PI / 2)) * (Math.PI / 2);
+  if (params.get('game') !== id) history.replaceState(null, '', `${location.pathname}?game=${encodeURIComponent(id)}`);
+  gameBar.hidden = false;
+  S.play('whoosh', { gain: 0.8 });
+  renderGame();
+  camGoal.dist = gameDist();
+  game.poll = setInterval(pollGame, 3000);
+}
+
+// far enough back that the whole island fits between the top bar and the game panel
+function gameDist() {
+  const barH = gameBar.getBoundingClientRect().height + 24, availH = Math.max(200, innerHeight - barH - 64);
+  const tv = Math.tan(camera.fov * Math.PI / 360);
+  const halfV = Math.atan(tv * availH / innerHeight), halfH = Math.atan(tv * camera.aspect * 0.94);
+  return R * 1.12 / Math.tan(Math.min(halfV, halfH)) + 1.5;
+}
+
+function exitGame() {
+  if (!game) return;
+  clearInterval(game.poll);
+  clearTimeout(game.flip);
+  scene.remove(game.group);
+  for (const m of game.tiles.values()) m.material.dispose();
+  clearMarks();
+  for (const b of buds) {
+    b.gameHidden = false; b.root.visible = true;
+    if (b.gamePiece) { b.gamePiece = false; b.root.scale.set(1, 1, 1); b.held = false; b.lookCameraUntil = T + 1; b.timer = rand(0.5, 2); }
+  }
+  const g = myGames.find((x) => x.id === game.id);
+  if (g) { g.status = game.v.status; g.myTurn = myTurn() || settingUp(); }
+  myGames = myGames.filter((x) => x.status === 'setup' || x.status === 'playing');
+  camGoal.pitch = game.savedPitch; camGoal.yaw = null; camGoal.dist = fitDist();
+  setTimeout(() => { if (!game && !photo) camGoal.pitch = null; }, 1500);
+  gameBar.hidden = true;
+  game = null;
+  history.replaceState(null, '', location.pathname);
+  canvas.classList.remove('over-bud');
+}
+
+const viewKey = (v) => [v.status, v.turn, v.myShots.length, v.theirShots.length, !!v.ready[v.them], !!v.ready[v.me]].join('|');
+function defaultBoard(v) {
+  if (v.status === 'setup') return 'mine';
+  if (v.status === 'playing') return v.turn === v.me ? 'theirs' : 'mine';
+  return 'theirs';
+}
+
+async function pollGame() {
+  if (!game || game.busy || document.hidden || isOver() || myTurn() || settingUp()) return;
+  try {
+    const v = await api('GET', '/api/game?id=' + encodeURIComponent(game.id));
+    if (game && v.id === game.id && viewKey(v) !== game.key) applyView(v);
+  } catch (e) {}
+}
+
+// A new view from the server: show what changed (their latest look lands on your island).
+function applyView(v, myShot = null) {
+  const before = game.v;
+  game.v = v; game.key = viewKey(v);
+  const theirNew = v.theirShots.slice(before.theirShots.length);
+  clearTimeout(game.flip);
+  if (myShot) {
+    game.board = 'theirs';
+    renderGame();
+    animateShot(myShot, 'theirs');
+    if (v.status === 'playing') game.flip = setTimeout(() => { if (game && !myTurn()) { game.board = 'mine'; renderGame(); } }, 2600);
+  } else if (theirNew.length) {
+    game.board = 'mine';
+    const s = theirNew[theirNew.length - 1];
+    game.msg = s.yell != null ? `${theirName()} yelled across your island!` : s.hit ? `${theirName()} found ${budName(v.mySquad[v.myHides.indexOf(s.t)])}!` : `${theirName()} looked and missed.`;
+    renderGame();
+    animateShot(s, 'mine');
+    if (v.status === 'playing') game.flip = setTimeout(() => { if (game && myTurn()) { game.board = 'theirs'; game.msg = ''; renderGame(); } }, 2600);
+  } else {
+    if (before.status !== v.status) { game.board = defaultBoard(v); if (v.status === 'playing') S.play('chime'); }
+    renderGame();
+  }
+  if (isOver() && before.status !== v.status) setTimeout(() => S.play(v.winner === v.me ? 'sparkle' : 'boing'), 700);
+}
+
+function clearMarks() {
+  for (const m of game.marks) {
+    game.group.remove(m);
+    m.traverse((o) => { if (o.material && o.material !== PEBBLE_MAT) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } if (o.geometry && o.geometry !== TILE_GEO) o.geometry.dispose(); });
+  }
+  game.marks = [];
+}
+function textSprite(text, bg, fg) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.font = '600 62px Fredoka, Nunito, system-ui, sans-serif';
+  const w = Math.min(240, g.measureText(text).width + 56);
+  g.fillStyle = bg; g.beginPath();
+  if (g.roundRect) g.roundRect((256 - w) / 2, 22, w, 84, 42); else g.rect((256 - w) / 2, 22, w, 84);
+  g.fill();
+  g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 66);
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  const k = cellW() * 0.95; s.scale.set(k, k / 2, 1); s.renderOrder = 6;
+  return s;
+}
+function addMark(obj) { game.group.add(obj); game.marks.push(obj); return obj; }
+function pebble(t) {
+  const p = tilePos(t), g = new THREE.Group();
+  for (let i = 0; i < 3; i++) {
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.16 + i * 0.05, 0), PEBBLE_MAT);
+    m.position.set(Math.cos(i * 2.1 + t) * 0.28, 0.08, Math.sin(i * 2.1 + t) * 0.28); m.rotation.set(t, i, t * 0.3);
+    g.add(m);
+  }
+  g.position.set(p.x, 0, p.z);
+  return addMark(g);
+}
+function yellSquare(t, n) {
+  const p = tilePos(t), half = cellW() * 2.5, th = 0.12, g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: toLinear('#C9B8FF'), transparent: true, opacity: 0.85, depthWrite: false });
+  for (const [x, z, w, d] of [[0, -half, half * 2, th], [0, half, half * 2, th], [-half, 0, th, half * 2], [half, 0, th, half * 2]]) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.06, z); m.renderOrder = 2; g.add(m);
+  }
+  const label = textSprite(`${n} near`, '#C9B8FF', '#2B2050'); label.position.set(0, 1.3, 0); g.add(label);
+  g.position.set(p.x, 0, p.z);
+  return addMark(g);
+}
+
+// put a bud on a tile (or a stand-in if that bud isn't on this island, or is already standing somewhere else)
+function piece(id, t, { crouch = false, used }) {
+  const p = tilePos(t), b = budById(id);
+  if (b && !used.has(b)) {
+    used.add(b);
+    if (b.state === 'act') endActivity(b);
+    b.gameHidden = false; b.root.visible = true; b.gamePiece = true; b.placed = true;
+    b.x = p.x; b.z = p.z; b.state = b.y > 0 ? b.state : 'idle'; b.target = null; b.partner = null; b.look = null;
+    b.held = true; b.lookCameraUntil = Infinity;
+    b.root.scale.set(1, crouch ? 0.5 : 1, 1);
+    return b;
+  }
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 20, 14), new THREE.MeshStandardMaterial({ color: toLinear('#F3C4D6'), roughness: 0.6 }));
+  body.scale.set(1, crouch ? 0.45 : 0.9, 1); body.position.y = crouch ? 0.3 : 0.65; g.add(body);
+  const label = textSprite(budName(id), '#FFFFFF', '#2B2A3A'); label.position.y = crouch ? 1.2 : 1.9; g.add(label);
+  g.position.set(p.x, 0, p.z);
+  addMark(g);
+  return null;
+}
+
+function renderBoard() {
+  clearMarks();
+  for (const b of buds) if (b.gamePiece) { b.gamePiece = false; b.gameHidden = true; b.root.visible = false; b.root.scale.set(1, 1, 1); b.held = false; }
+  const v = game.v, used = new Set(), state = new Map();   // tile -> 'pick' | 'hide' | 'found' | 'miss' | 'giggle'
+  if (game.board === 'mine') {
+    const hides = settingUp() ? game.picks : v.myHides;
+    const hits = new Set(v.theirShots.filter((s) => s.hit).map((s) => s.t));
+    hides.forEach((t, i) => {
+      const found = hits.has(t);
+      state.set(t, settingUp() ? 'pick' : found ? 'found' : 'hide');
+      piece(v.mySquad[i], t, { crouch: !found && !settingUp(), used });
+    });
+    for (const s of v.theirShots) {
+      if (s.yell != null) yellSquare(s.t, s.yell);
+      else if (!s.hit) { state.set(s.t, 'miss'); pebble(s.t); }
+    }
+  } else {
+    for (const s of v.myShots) {
+      if (s.yell != null) { yellSquare(s.t, s.yell); continue; }
+      if (s.hit) { state.set(s.t, 'found'); piece(s.bud, s.t, { used }); continue; }
+      state.set(s.t, s.giggle ? 'giggle' : 'miss'); pebble(s.t);
+      if (s.giggle) { const l = addMark(textSprite('hehe', '#FFE08A', '#5A4300')); const p = tilePos(s.t); l.position.set(p.x, 1.1, p.z); }
+    }
+    if (v.theirHides) v.theirHides.forEach((t, i) => { if (!state.has(t) || state.get(t) !== 'found') { state.set(t, 'reveal'); piece(v.theirSquad[i], t, { used }); } });
+  }
+  game.state = state;
+  colorTiles();
+}
+const TILE_LOOK = {
+  base: ['#FFFFFF', 0.42], pick: ['#FFD25A', 0.9], hide: ['#A6E3A1', 0.75], found: ['#FF8FA3', 0.85],
+  miss: ['#8E8BA8', 0.45], giggle: ['#FFE08A', 0.6], reveal: ['#C9B8FF', 0.8],
+};
+function colorTiles() {
+  if (!game) return;
+  const active = settingUp() ? game.board === 'mine' : myTurn() && game.board === 'theirs';
+  for (const [t, m] of game.tiles) {
+    let [c, o] = TILE_LOOK[game.state.get(t) || 'base'];
+    if (!game.state.has(t)) {
+      if (game.yell && active) { c = '#D9CEFF'; o = 0.55; }
+      if (!active) o = 0.22;
+    }
+    if (t === game.hover && tappable(t)) o = Math.min(1, o + 0.3);
+    m.material.color.set(c).convertSRGBToLinear(); m.material.opacity = o;
+  }
+}
+
+function renderGame() {
+  if (!game) return;
+  const v = game.v, me = v.me, them = theirName();
+  gameTitle.textContent = `Peekaboo with ${them}`;
+  gameScore.textContent = v.status === 'setup' ? '' : `found ${v.found}/${v.hiders} · lost ${v.lost}/${v.hiders}`;
+  const showSeg = !settingUp();
+  gameSeg.hidden = !showSeg;
+  for (const b of gameSeg.querySelectorAll('button')) {
+    b.setAttribute('aria-pressed', String(b.dataset.board === game.board));
+    b.textContent = b.dataset.board === 'mine' ? 'Your island' : `${them}’s island`;
+  }
+  gameRow.textContent = '';
+  const btn = (label, fn, primary = false, disabled = false) => {
+    const b = el('button', 'btn' + (primary ? ' primary' : ''), label); b.type = 'button'; b.disabled = disabled || game.busy;
+    b.addEventListener('click', fn); gameRow.append(b); return b;
+  };
+  let text = '';
+  if (settingUp()) {
+    text = `Hide ${listNames(v.mySquad)}. Tap 3 spots on your island (${game.picks.length}/3).`;
+    btn('Leave', exitGame);
+    btn('Hide them', hideBuds, true, game.picks.length !== 3);
+  } else if (v.status === 'setup') {
+    text = `Your buds are hiding. Waiting for ${them} to hide theirs. You can leave; the game will wait.`;
+    btn('Give up', resignGame); btn('Leave', exitGame, true);
+  } else if (v.status === 'playing' && myTurn()) {
+    text = game.board === 'theirs'
+      ? game.yell ? 'Yell! Tap a spot to hear how many hiders are within 2 tiles of it.' : `Your turn. Tap a spot on ${them}’s island to look there.`
+      : `Your turn. Switch to ${them}’s island to look.`;
+    if (game.board === 'theirs') {
+      const y = btn(v.yelled ? 'Yell used' : game.yell ? 'Cancel yell' : 'Yell (once)', () => { game.yell = !game.yell; S.play('click'); renderGame(); }, false, v.yelled);
+      y.setAttribute('aria-pressed', String(game.yell));
+    }
+    btn('Leave', exitGame, true);
+  } else if (v.status === 'playing') {
+    text = `${them} is looking for your buds. We’ll DM you when it’s your turn.`;
+    btn('Give up', resignGame); btn('Leave', exitGame, true);
+  } else {
+    const won = v.winner === me;
+    text = v.status === 'resigned'
+      ? won ? `${them} gave up. You win!` : 'You gave up. Next time!'
+      : won ? `You found all ${v.hiders}! ${nameOf(myBud() || { data: { trueName: 'Your bud' } })} gets a crown for a day 👑` : `${them} found all your hiders. So close!`;
+    btn('Leave', exitGame);
+    btn('Rematch', rematch, true);
+  }
+  gameText.textContent = '';
+  gameText.append(text);
+  if (game.msg) { gameText.append(el('br')); gameText.append(el('b', null, game.msg)); }
+  renderBoard();
+}
+
+function gameTap(x, y) {
+  const t = tileAt(x, y);
+  if (!tappable(t)) {
+    if (t != null && game.board === 'theirs' && myTurn() && looked(t)) S.play('click', { gain: 0.6 });
+    return;
+  }
+  if (settingUp()) {
+    const i = game.picks.indexOf(t);
+    if (i >= 0) game.picks.splice(i, 1);
+    else { if (game.picks.length >= 3) game.picks.shift(); game.picks.push(t); }
+    S.play('pop', { rate: i >= 0 ? 0.75 : 1.1 });
+    game.msg = '';
+    renderGame();
+    const b = budById(game.v.mySquad[game.picks.indexOf(t)]);
+    if (b && i < 0) { b.syv -= 0.12; say(b, pick(['ooh, good spot', 'here?', 'they’ll never look here', 'shh!']), 1200); }
+    return;
+  }
+  shootAt(t);
+}
+
+async function hideBuds() {
+  if (!game || game.picks.length !== 3) return;
+  game.busy = true; renderGame();
+  try {
+    const v = await api('POST', '/api/game', { action: 'hide', id: game.id, tiles: game.picks });
+    game.busy = false; game.msg = '';
+    for (const id of v.mySquad) { const b = budById(id); if (b) b.syv -= 0.15; }
+    S.play('giggle');
+    applyView(v);
+  } catch (e) { game.busy = false; game.msg = e.message; renderGame(); }
+}
+
+async function shootAt(t) {
+  const yell = game.yell;
+  game.busy = true; colorTiles();
+  try {
+    const v = await api('POST', '/api/game', { action: 'shoot', id: game.id, tile: t, yell });
+    game.busy = false; game.yell = false;
+    const s = v.last;
+    game.msg = s.yell != null ? (s.yell ? `${s.yell} hiding within 2 tiles of there!` : 'Nobody’s hiding anywhere near there.')
+      : s.hit ? `You found ${budName(s.bud)}!` : s.giggle ? 'Nothing there… but you hear a giggle nearby.' : 'Nothing there but pebbles.';
+    applyView(v, s);
+  } catch (e) { game.busy = false; game.msg = e.message; renderGame(); }
+}
+
+function animateShot(s, board) {
+  const p = tilePos(s.t);
+  if (s.yell != null) { S.play('alert'); return; }
+  if (s.hit) {
+    const id = board === 'theirs' ? s.bud : game.v.mySquad[game.v.myHides.indexOf(s.t)];
+    const b = budById(id);
+    puff(p.x, p.z);
+    S.play('boing');
+    setTimeout(() => S.play('sparkle', { gain: 0.8 }), 180);
+    if (b && b.gamePiece) {
+      b.y = 0.01; b.vy = 8; b.syv -= 0.15; b.happyUntil = T + 2.5;
+      say(b, board === 'theirs' ? pick(['peekaboo!', 'aw, you found me!', 'how did you know?!']) : pick(['eek, they found me!', 'aw, found!', 'peekaboo…']), 2000);
+    }
+    return;
+  }
+  S.play('thump', { gain: 0.45 });
+  if (s.giggle) setTimeout(() => S.play('giggle'), 350);
+}
+
+async function resignGame() {
+  if (!game) return;
+  game.busy = true; renderGame();
+  try { const v = await api('POST', '/api/game', { action: 'resign', id: game.id }); game.busy = false; applyView(v); }
+  catch (e) { game.busy = false; game.msg = e.message; renderGame(); }
+}
+
+async function rematch() {
+  if (!game) return;
+  const them = game.v.them;
+  game.busy = true; renderGame();
+  try { await startGameWith(them); } catch (e) { if (game) { game.busy = false; game.msg = e.message; renderGame(); } }
+}
+
+async function startGameWith(them) {
+  const res = await api('POST', '/api/game', { action: 'create', opponent: them });
+  if (!myGames.some((g) => g.id === res.id)) myGames.push({ id: res.id, them, myTurn: true, status: 'setup' });
+  if (game) exitGame();
+  await enterGame(res.id);
+}
+
+// the card buttons: on a friend's bud, and the list on your own
+function peekabooButton(bud) {
+  const g = myGames.find((x) => x.them === bud.data.id);
+  const b = el('button', 'btn primary', g ? (g.myTurn ? 'Your turn in Peekaboo' : 'Open Peekaboo') : 'Play Peekaboo'); b.type = 'button';
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { if (g) await enterGame(g.id); else await startGameWith(bud.data.id); }
+    catch (e) { b.disabled = false; b.textContent = e.message; }
+  });
+  return b;
+}
+function renderGamesList() {
+  if (!myGames.length) return;
+  const box = el('section', 'diary games');
+  box.append(el('h3', null, 'Peekaboo'));
+  const ul = el('ul');
+  for (const g of myGames) {
+    const other = budById(g.them), who = other ? other.data.ownerName || nameOf(other) : 'a friend';
+    const li = el('li', g.myTurn ? 'fresh' : null);
+    const open = el('button', 'btn', g.myTurn ? 'Your turn' : 'Open'); open.type = 'button';
+    open.addEventListener('click', () => enterGame(g.id));
+    li.append(el('span', 'ico', '◆'), el('span', null, `with ${who}`), open);
+    ul.append(li);
+  }
+  box.append(ul);
+  cardBody.append(box);
+}
+
+gameSeg.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-board]');
+  if (!b || !game || b.dataset.board === game.board) return;
+  game.board = b.dataset.board; game.yell = false; game.msg = '';
+  S.play('click');
+  renderGame();
+});
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && game && !game.busy) exitGame(); });
+
 const hint = document.getElementById('hint');
 function hideHint() { hint.classList.add('gone'); }
 setTimeout(hideHint, 9000);
@@ -2283,7 +2753,7 @@ setTimeout(hideHint, 9000);
 function placeLabels() {
   for (const bud of buds) {
     tmp.set(bud.x, bud.y + bud.hop.position.y - bud.y + bud.height * bud.sy + 0.35, bud.z).project(camera);
-    const visible = tmp.z < 1 && bud.placed;
+    const visible = tmp.z < 1 && bud.placed && !bud.gameHidden;
     const sx = (tmp.x + 1) / 2 * innerWidth, sy = (1 - tmp.y) / 2 * innerHeight;
     const dist = camera.position.distanceTo(bud.root.position);
     const scale = clamp(22 / dist, 0.55, 1.15);
@@ -2301,7 +2771,7 @@ let T = 0, last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
   setClock(T);
-  for (const bud of buds) if (bud.placed) { updateBud(bud, dt); drawFace(bud); animateStickies(bud, dt); }
+  for (const bud of buds) if (bud.placed && !bud.gameHidden) { updateBud(bud, dt); drawFace(bud); animateStickies(bud, dt); }
   separateBuds();
   photoTick();
   updateSky(dt);
@@ -2329,6 +2799,7 @@ function resize() {
   // pull back on narrow screens so the whole island fits
   camera.fov = innerWidth < innerHeight ? 50 : 38;
   camera.updateProjectionMatrix();
+  if (game) camGoal.dist = gameDist();
 }
 // how far back the camera sits to see the whole island, wide or narrow screen
 function fitDist() {
@@ -2373,13 +2844,14 @@ function showCenter(title, text, linkText, href = '/') {
 
   inbox = world.inbox || [];
   diary = world.diary || [];
+  myGames = world.games || [];
   news = world.news || null;
   if (news) {
     document.getElementById('newsBtn').hidden = false;
     document.getElementById('newsDot').hidden = !!news.seen;
     const OPEN_NEWS = params.get('news') === '1';
     if (OPEN_NEWS) setTimeout(openNews, 1200);
-    else if (!news.seen && !DROP) setTimeout(() => { if (card.hidden && !photo && !composing) openNews(); }, 9500);
+    else if (!news.seen && !DROP && !GAME_ID) setTimeout(() => { if (card.hidden && !photo && !composing && !game) openNews(); }, 9500);
   }
   hasProfile = world.me.hasProfile !== false;
   dmsOn = world.me.dms !== false;
@@ -2423,7 +2895,8 @@ function showCenter(title, text, linkText, href = '/') {
     document.getElementById('titleSub').textContent = 'Your bud just moved in.';
     setTimeout(() => { mine.heading = Math.atan2(camera.position.x - mine.x, camera.position.z - mine.z); say(mine, 'wheeeee!', 1500); }, 200);
   }
-  if (mine && !DROP) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
+  if (mine && !DROP && !GAME_ID) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
+  if (GAME_ID && mine) setTimeout(() => enterGame(GAME_ID), 700);
   setTimeout(() => document.getElementById('title').classList.add('fade'), DROP ? 9000 : 6000);
   requestAnimationFrame(frame);
 })();

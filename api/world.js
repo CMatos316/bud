@@ -7,6 +7,7 @@ import { RETRY_AFTER_MS } from '../lib/notes.js';
 import { latestIssue } from '../lib/newsletter.js';
 import { sameOrigin } from '../lib/session.js';
 import { lifeDiary, hobbyOf, HOBBY_LABEL } from '../lib/life.js';
+import { games as gamesRef } from '../lib/peekaboo.js';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const MAX_BUDS = 200;
@@ -21,7 +22,7 @@ export async function GET(request) {
   try {
     const me = session.id;
     const buds = db().collection('guilds').doc(GUILD_ID).collection('buds');
-    const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news] = await Promise.all([
+    const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news, gameSnap] = await Promise.all([
       buds.select(...FIELDS).limit(MAX_BUDS).get(),
       // every unanswered note on the island: anyone can see that a bud has notes on it, not what they say
       refs.notes().where('status', '==', 'pending').select('from', 'to', 'color', 'text', 'createdAt').limit(2000).get(),
@@ -32,6 +33,7 @@ export async function GET(request) {
       refs.photos().where('buds', 'array-contains', me).limit(30).get(),
       refs.profile(me).get(),
       latestIssue().catch(() => null),
+      gamesRef().where('players', 'array-contains', me).get().catch(() => ({ docs: [] })),
     ]);
     // When you were last here, so your bud can greet you to match ("oh hi again!" vs "it's been forever!").
     const lastVisit = meDoc.exists ? meDoc.get('lastIslandVisit')?.toMillis() ?? null : null;
@@ -57,8 +59,9 @@ export async function GET(request) {
 
     // Owner display names, so a bud can say whose it is.
     const people = [...new Set([...snap.docs.map((d) => d.id), ...inbox.map((n) => n.from)])];
-    const owners = people.length ? await db().getAll(...people.map((id) => refs.user(id)), { fieldMask: ['displayName'] }) : [];
+    const owners = people.length ? await db().getAll(...people.map((id) => refs.user(id)), { fieldMask: ['displayName', 'crownUntil'] }) : [];
     const names = new Map(owners.map((d) => [d.id, d.exists ? d.get('displayName') : null]));
+    const crowned = new Set(owners.filter((d) => d.exists && (d.get('crownUntil')?.toMillis() ?? 0) > Date.now()).map((d) => d.id));
 
     const list = snap.docs.map((d) => {
       const data = d.data();
@@ -68,6 +71,7 @@ export async function GET(request) {
         stickies: (stickies.get(d.id) || []).slice(0, 8),
         myNote: mySent.get(d.id) || null,
         friend: friendIds.has(d.id),
+        crown: crowned.has(d.id),
         hobby: hobbyOf(d.id), hobbyLabel: HOBBY_LABEL[hobbyOf(d.id)],
       };
     }).filter((b) => b.r.length === 64);
@@ -91,6 +95,14 @@ export async function GET(request) {
         const others = p.get('buds').filter((id) => id !== me).map((id) => budNames.get(id)).filter(Boolean);
         diary.push({ at, kind: 'photo', text: `${names.get(by) || 'someone'} took a photo of me${others.length ? ` with ${others.slice(0, 3).join(', ')}` : ''}!` });
       }
+      for (const g of gameSnap.docs) {
+        const at = g.get('finishedAt')?.toMillis() ?? 0, them = g.get('players').find((id) => id !== me);
+        if (at <= since || !['done', 'resigned'].includes(g.get('status'))) continue;
+        const theirBud = budNames.get(them) || 'someone';
+        diary.push({ at, kind: 'game', with: them, text: g.get('winner') === me
+          ? `we won Peekaboo against ${theirBud}! found every single hider 👑`
+          : `${theirBud} won Peekaboo. i was hiding SO well though` });
+      }
       diary = diary.sort((a, b) => b.at - a.at).slice(0, DIARY_MAX).map((e) => ({ ...e, fresh: !!lastVisit && e.at > lastVisit }));
     }
 
@@ -101,6 +113,10 @@ export async function GET(request) {
       me: { id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists, dms: !meDoc.get?.('questionsOff') },
       buds: list,
       diary,
+      games: gameSnap.docs.map((d) => d.data()).filter((g) => ['setup', 'playing'].includes(g.status)).map((g) => {
+        const them = g.players.find((id) => id !== me);
+        return { id: g.id, them, myTurn: g.status === 'playing' ? g.turn === me : !g.ready?.[me], status: g.status };
+      }),
       news: news ? { ...news, seen: meDoc.exists && meDoc.get('newsSeen') === news.id } : null,
       inbox: inbox.map((n) => ({ from: n.from, fromName: names.get(n.from) || 'someone', fromBud: budNames.get(n.from) || null, text: n.text, color: n.color })),
     });
