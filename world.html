@@ -866,13 +866,15 @@ function updateSky(dt) {
   if (skyBits.moon) skyBits.moon.material.opacity = n;
   const f = skyBits.fire;
   if (f) {
-    const lit = clamp((n - 0.15) / 0.5, 0, 1);
+    // lit at night, and for the 9pm sign burning whatever the sky looks like where you are
+    f.boost = Math.max(0, (f.boost || 0) - dt / 25); f.flare = Math.max(0, (f.flare || 0) - dt * 1.6);
+    const lit = Math.max(clamp((n - 0.15) / 0.5, 0, 1), clamp(f.boost * 3, 0, 1)), up = 1 + f.flare * 0.9;
     f.flames.forEach((fl, i) => {
       const flick = 1 + Math.sin(T * (9 + i * 3) + i) * 0.12 + Math.sin(T * 23 + i * 2) * 0.06;
-      fl.scale.set(lit * (1 + Math.sin(T * 7 + i) * 0.08), lit * flick + 0.0001, lit * (1 + Math.cos(T * 6 + i) * 0.08));
+      fl.scale.set(lit * up * (1 + Math.sin(T * 7 + i) * 0.08), lit * up * up * flick + 0.0001, lit * up * (1 + Math.cos(T * 6 + i) * 0.08));
       fl.visible = lit > 0.02;
     });
-    f.light.intensity = lit * (1.6 + Math.sin(T * 13) * 0.25);
+    f.light.intensity = lit * (1.6 + Math.sin(T * 13) * 0.25) * up;
   }
   const ffl = skyBits.fireflies;
   if (ffl) {
@@ -1785,7 +1787,7 @@ function renderCardBody() {
 }
 
 /* ---------------- your bud's diary ---------------- */
-const DIARY_ICON = { play: '✦', solo: '•', note: '✎', friend: '♥', photo: '◉', game: '◆', sign: '✈' };
+const DIARY_ICON = { play: '✦', solo: '•', note: '✎', friend: '♥', photo: '◉', game: '◆', sign: '🪧' };
 const firstPerson = (e) => (e.kind === 'play' || e.kind === 'solo' ? `I ${e.text}` : e.text);
 function whenLabel(ms) {
   const now = new Date(), t = new Date(ms), mins = (now - t) / 60e3;
@@ -2368,7 +2370,7 @@ function exitPhoto() {
 /* ---------------- today's question: signs ---------------- */
 // From 9am to 9pm Eastern every bud holds up a sign with its person's answer to the day's question, or its
 // own answer in crayon if they haven't answered. You can fold yours into a paper airplane and throw it off
-// the island early. At 9pm every bud walks to the edge and they all throw their signs off together.
+// the island early. At 9pm every bud gathers round the campfire and they all toss their signs in together.
 let signs = null;     // from /api/world: { phase, date, question, signs: { budId: { a, own } }, mine, results, opensAt, launchAt, nextOpen, now }
 let signSkew = 0;     // the server's clock minus ours
 const serverNow = () => Date.now() + signSkew;
@@ -2456,7 +2458,7 @@ function signTick() {
   const check = T > signCheckAt; if (check) signCheckAt = T + 1;
   for (const b of buds) {
     const sg = b.sign; if (!sg) continue;
-    sg.g.visible = !game && b.root.visible;
+    sg.g.visible = !game && b.root.visible && !sg.gone;
     if (!sg.g.visible) continue;
     if (sg.folding == null) {
       // the sign stays on the bud's right as you look at it, facing you
@@ -2486,6 +2488,13 @@ function launchPlane(from, dir, own) {
 }
 const tmpV = new THREE.Vector3();
 function planeTick(dt) {
+  for (let i = embers.length - 1; i >= 0; i--) {
+    const e = embers[i]; e.t += dt;
+    e.vy -= 1.2 * dt; e.vx += Math.sin(e.t * 5 + i) * dt * 0.8;
+    e.m.position.x += e.vx * dt; e.m.position.y += e.vy * dt; e.m.position.z += e.vz * dt;
+    e.m.material.opacity = clamp(1 - e.t / e.life, 0, 1);
+    if (e.t > e.life) { scene.remove(e.m); e.m.geometry.dispose(); e.m.material.dispose(); embers.splice(i, 1); }
+  }
   for (let i = planes.length - 1; i >= 0; i--) {
     const pl = planes[i]; pl.t += dt;
     // glide: slowly sinking, drifting side to side, a long way out past the island
@@ -2588,27 +2597,85 @@ function ritual() {
   if (cardBud && cardBud.data.isMe) renderCardBody();
   const title = document.getElementById('title');
   document.getElementById('titleText').textContent = 'It’s 9pm!';
-  document.getElementById('titleSub').textContent = 'Every bud folds its sign into a paper airplane…';
+  document.getElementById('titleSub').textContent = 'Everyone brings their sign to the campfire…';
   title.classList.remove('fade');
   S.play('chime');
-  cam.follow = null; camGoal.target.set(0, 0.8, 0); camGoal.dist = fitDist() * 1.05; camGoal.pitch = 0.45; cam.lastInput = T;
-  let arrived = 0, launched = false;
-  const launchAll = () => {
-    if (launched) return; launched = true;
-    document.getElementById('titleSub').textContent = '…and off they go! ✈';
-    holders.forEach((b) => setTimeout(() => foldAndThrow(b), 200 + Math.random() * 1100));
+  const fire = skyBits.fire;
+  fire.boost = 1;   // light it up even if it's still daytime where you are
+  cam.follow = { x: fire.x, y: 0, z: fire.z }; cam.followUntil = T + 30;
+  camGoal.dist = Math.max(11, Math.min(fitDist(), 6 + Math.sqrt(holders.length) * 4)); camGoal.pitch = 0.5; cam.lastInput = T;
+  let arrived = 0, burned = false;
+  const burnAll = () => {
+    if (burned) return; burned = true;
+    document.getElementById('titleSub').textContent = '…and in they go! 🔥';
+    holders.forEach((b, i) => setTimeout(() => tossIntoFire(b), 300 + i * Math.min(450, 4000 / holders.length) + Math.random() * 200));
     setTimeout(() => {
       for (const b of holders) { b.held = false; b.timer = rand(1, 4); b.lookCameraUntil = T + 1; }
-      camGoal.pitch = null; title.classList.add('fade');
+      camGoal.pitch = null; cam.followUntil = T; title.classList.add('fade');
       for (const b of buds) removeSign(b);   // anyone who wasn't on screen
       refreshResults();
-    }, 7000);
+    }, 1500 + Math.min(4500, holders.length * 450) + 2500);
   };
-  holders.forEach((b, i) => {
-    if (i < 4) setTimeout(() => say(b, pick(['time to fly!', 'it’s 9!', 'to the edge!', 'bye bye, sign']), 1600), 300 + i * 250);
-    walkToEdge(b, () => { if (++arrived >= holders.length) setTimeout(launchAll, 600); });
+  // a ring around the fire (two rings if it's crowded), each bud taking the spot nearest where it is
+  const ring = holders.map((b) => ({ b, a: Math.atan2(b.z - fire.z, b.x - fire.x) })).sort((p, q) => p.a - q.a);
+  const inner = Math.min(ring.length, 9);
+  ring.forEach(({ b }, i) => {
+    const outer = i >= inner, n = outer ? ring.length - inner : inner, k = outer ? i - inner : i;
+    const a = ring[0].a + (k + (outer ? 0.5 : 0)) / n * Math.PI * 2, d = outer ? 3.1 : 1.9;
+    const spot = { x: fire.x + Math.cos(a) * d, z: fire.z + Math.sin(a) * d };
+    if (i < 4) setTimeout(() => say(b, pick(['it’s 9!', 'campfire time!', 'bye bye, sign', 'to the fire!']), 1600), 300 + i * 250);
+    walkTo(b, spot, () => {
+      b.heading = Math.atan2(fire.x - b.x, fire.z - b.z);
+      if (++arrived >= holders.length) setTimeout(burnAll, 700);
+    });
   });
-  setTimeout(launchAll, 8500);
+  setTimeout(burnAll, 9000);
+}
+function walkTo(bud, spot, done) {
+  if (bud.state === 'act') endActivity(bud);
+  let finished = false;
+  const finish = () => {
+    if (finished) return; finished = true;
+    bud.state = 'idle'; bud.target = null; bud.onArrive = null; bud.rush = false; bud.held = true; bud.lookCameraUntil = 0; bud.look = null;
+    done();
+  };
+  Object.assign(bud, { state: 'walk', target: spot, rush: true, partner: null, greetOnArrive: null, held: true, lookCameraUntil: 0 });
+  bud.onArrive = finish;
+  setTimeout(finish, 8000);
+}
+// the sign leaves the bud's hands in a little arc and lands in the fire, which flares up with sparks
+const embers = [];
+function tossIntoFire(bud) {
+  const sg = bud.sign, fire = skyBits.fire; if (!sg || !fire) return;
+  sg.board.getWorldPosition(tmpV);
+  const from = tmpV.clone(), text = sg.text, own = sg.own;
+  // a copy of the board flies, so the bud can let go
+  const fly = new THREE.Mesh(sg.board.geometry.clone(), sg.board.material.clone());
+  fly.material.map = sg.tex; fly.position.copy(from); fly.quaternion.copy(sg.board.getWorldQuaternion(new THREE.Quaternion()));
+  scene.add(fly);
+  sg.g.visible = false; sg.gone = true;
+  bud.syv -= 0.12; bud.y = Math.max(bud.y, 0.01); bud.vy = 3;
+  const to = new THREE.Vector3(fire.x, 0.45, fire.z), start = performance.now(), dur = 650;
+  const step = () => {
+    const k = Math.min(1, (performance.now() - start) / dur);
+    fly.position.lerpVectors(from, to, k); fly.position.y += Math.sin(k * Math.PI) * 1.6;
+    fly.rotation.x += 0.18; fly.rotation.z += 0.11; fly.scale.setScalar(1 - 0.6 * k);
+    if (k < 1) return requestAnimationFrame(step);
+    scene.remove(fly); fly.geometry.dispose(); fly.material.dispose();
+    removeSign(bud);
+    fire.flare = Math.min(1.4, (fire.flare || 0) + 0.8); fire.boost = Math.max(fire.boost || 0, 0.6);
+    sparks(fire.x, fire.z);
+    if (planeSounds < 3) { planeSounds++; S.play('whoosh', { gain: 0.35, rate: 0.6 }); setTimeout(() => S.play('sparkle', { gain: 0.35, rate: 0.7 }), 120); setTimeout(() => planeSounds--, 450); }
+  };
+  requestAnimationFrame(step);
+}
+const emberMat = new THREE.MeshBasicMaterial({ color: 0xFFB347, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+function sparks(x, z) {
+  for (let i = 0; i < 16; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(rand(0.04, 0.08), 6, 4), emberMat.clone());
+    m.position.set(x + rand(-0.3, 0.3), 0.6, z + rand(-0.3, 0.3)); scene.add(m);
+    embers.push({ m, vx: rand(-0.8, 0.8), vy: rand(2, 4.5), vz: rand(-0.8, 0.8), t: 0, life: rand(0.9, 1.8) });
+  }
 }
 async function refreshResults() {
   try {
@@ -2710,7 +2777,7 @@ function renderSignSection(bud) {
   const box = el('section', 'qbox');
   if (signs.phase !== 'open' || signs.ritualDone) {
     box.append(el('h3', null, 'Today’s question'));
-    box.append(el('p', 'muted', 'Tonight’s signs flew off the island at 9. A new question goes up at 9am Eastern.'));
+    box.append(el('p', 'muted', 'Tonight’s signs went into the campfire at 9. A new question goes up at 9am Eastern.'));
     const r = el('div', 'row'), see = el('button', 'btn', 'See the results'); see.type = 'button';
     see.addEventListener('click', openResultsCard); r.append(see); box.append(r);
     cardBody.append(box); return;
@@ -3418,7 +3485,7 @@ function showCenter(title, text, linkText, href = '/') {
     setTimeout(() => { mine.heading = Math.atan2(camera.position.x - mine.x, camera.position.z - mine.z); say(mine, 'wheeeee!', 1500); }, 200);
   }
   if (mine && !DROP && !GAME_ID && !OPEN_SIGN) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
-  if (mine && OPEN_SIGN && !GAME_ID) setTimeout(() => { cam.follow = mine; cam.followUntil = T + 5; camGoal.dist = Math.max(9, R * 0.85); say(mine, signs && signs.phase === 'open' ? 'today’s question!' : 'the signs already flew off!', 1800); openCard(mine); }, 1600);
+  if (mine && OPEN_SIGN && !GAME_ID) setTimeout(() => { cam.follow = mine; cam.followUntil = T + 5; camGoal.dist = Math.max(9, R * 0.85); say(mine, signs && signs.phase === 'open' ? 'today’s question!' : 'the signs already went in the campfire!', 1800); openCard(mine); }, 1600);
   if (GAME_ID && mine) setTimeout(() => enterGame(GAME_ID), 700);
   setTimeout(() => document.getElementById('title').classList.add('fade'), DROP ? 9000 : 6000);
   requestAnimationFrame(frame);
