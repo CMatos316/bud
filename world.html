@@ -2071,7 +2071,7 @@ function welcomeBack(mine, lastVisit) {
         setTimeout(() => { if (!photo && !composing && card.hidden) openCard(mine); }, 5600);
       }
       else if (signs && signs.phase === 'open' && !(signs.mine && (signs.mine.a != null || signs.mine.tossed))) {
-        setTimeout(() => say(mine, pick(['ooh, there’s a question today!', 'today’s question is a good one', 'I made up an answer for us, but what do YOU think?']), 2800), 3000);
+        setTimeout(() => say(mine, pick(['ooh, there’s a question today!', 'today’s question is a good one', 'answer it and I’ll hold up a sign!']), 2800), 3000);
         setTimeout(() => { if (!photo && !composing && card.hidden) openCard(mine); }, 5800);
       }
       else if (fresh.length) {
@@ -2369,14 +2369,14 @@ function exitPhoto() {
 
 /* ---------------- today's question: signs ---------------- */
 // From 9am to 9pm Eastern every bud holds up a sign with its person's answer to the day's question, or its
-// own answer in crayon if they haven't answered. You can fold yours into a paper airplane and throw it off
+// From 9am to 9pm Eastern, buds whose person answered hold up a sign with the answer (buds never answer on
+// their own). You can fold yours into a paper airplane and throw it off
 // the island early. At 9pm every bud gathers round the campfire and they all toss their signs in together.
-let signs = null;     // from /api/world: { phase, date, question, signs: { budId: { a, own } }, mine, results, opensAt, launchAt, nextOpen, now }
+let signs = null;     // from /api/world: { phase, date, question, signs: { budId: { a } }, mine, results, opensAt, launchAt, nextOpen, now }
 let signSkew = 0;     // the server's clock minus ours
 const serverNow = () => Date.now() + signSkew;
 const SIGN_W = 1.2, SIGN_H = 0.74;
 const signWood = new THREE.MeshStandardMaterial({ color: toLinear('#B98A5E'), roughness: 1 });
-const CRAYONS = ['#E4572E', '#3C78D8', '#2E9E5B', '#9B51E0', '#E58E1A', '#D6336C'];
 const choiceText = (i) => (signs && signs.question.choices[i]) || '';
 
 function fitLines(g, text, maxW, size, font) {
@@ -2395,32 +2395,19 @@ function drawSign(sg) {
   g.clearRect(0, 0, W, H);
   // paper that yellows and creases as the day wears on
   roundRectPath(g, 5, 5, W - 10, H - 10, 14);
-  g.fillStyle = mixHex(sg.own ? '#FFFFFF' : '#FFFBEF', '#E9D49C', wear * 0.75); g.fill();
+  g.fillStyle = mixHex('#FFFBEF', '#E9D49C', wear * 0.75); g.fill();
   g.lineWidth = 5; g.strokeStyle = mixHex('#E6DAC0', '#BFA36A', wear); g.stroke();
   if (wear > 0.3) {
     g.strokeStyle = `rgba(120,95,50,${0.12 + wear * 0.15})`; g.lineWidth = 2;
     g.beginPath(); g.moveTo(10 + r() * 40, 8); g.lineTo(80 + r() * 60, H - 8); g.stroke();
     for (let i = 0; i < Math.round(wear * 4); i++) { g.fillStyle = `rgba(110,90,60,${0.06 + r() * 0.08})`; g.beginPath(); g.arc(20 + r() * (W - 40), 20 + r() * (H - 40), 6 + r() * 12, 0, Math.PI * 2); g.fill(); }
   }
-  const font = sg.own ? (s) => `700 ${s}px "Comic Sans MS", "Chalkboard SE", "Marker Felt", cursive` : (s) => `600 ${s}px Fredoka, Nunito, system-ui, sans-serif`;
+  const font = (s) => `600 ${s}px Fredoka, Nunito, system-ui, sans-serif`;
   const { lines, size } = fitLines(g, sg.text, W - 44, 44, font);
   g.textAlign = 'center'; g.textBaseline = 'middle';
   const lh = size * 1.12, y0 = H / 2 - (lines.length - 1) * lh / 2 + 2;
-  if (sg.own) {
-    // crayon: wobbly, a bit crooked, drawn twice for that waxy look
-    const col = CRAYONS[Math.floor(r() * CRAYONS.length)];
-    g.save(); g.translate(W / 2, H / 2); g.rotate((r() - 0.5) * 0.12); g.translate(-W / 2, -H / 2);
-    lines.forEach((l, i) => {
-      g.globalAlpha = 0.55; g.fillStyle = col; g.fillText(l, W / 2 + 1.5, y0 + i * lh + 1);
-      g.globalAlpha = 0.9; g.fillText(l, W / 2, y0 + i * lh);
-    });
-    g.globalAlpha = 0.7; g.strokeStyle = col; g.lineWidth = 3; g.beginPath();
-    const uy = y0 + (lines.length - 1) * lh + size * 0.62; g.moveTo(W * 0.26, uy); for (let x = W * 0.26; x < W * 0.74; x += 12) g.lineTo(x + 12, uy + (r() - 0.5) * 6); g.stroke();
-    g.restore(); g.globalAlpha = 1;
-  } else {
-    g.fillStyle = mixHex('#2B2A3A', '#5B5246', wear * 0.6);
-    lines.forEach((l, i) => g.fillText(l, W / 2, y0 + i * lh));
-  }
+  g.fillStyle = mixHex('#2B2A3A', '#5B5246', wear * 0.6);
+  lines.forEach((l, i) => g.fillText(l, W / 2, y0 + i * lh));
   sg.tex.needsUpdate = true;
 }
 const wearNow = () => (signs ? clamp((serverNow() - signs.opensAt) / (signs.launchAt - signs.opensAt), 0, 1) : 0);
@@ -2440,10 +2427,10 @@ function setSign(bud, info) {
     board.position.set(0, L + SIGN_H / 2 - 0.06, 0.03);
     pivot.add(stick, board); pivot.position.set(hx, hy, 0);   // the sign pivots at the bud's "hand", so it can droop
     g.add(pivot); bud.hop.add(g);
-    bud.sign = { g, pivot, board, tex, ctx: c.getContext('2d'), text: '', own: false, wear: -1, seed: bud.data.id };
+    bud.sign = { g, pivot, board, tex, ctx: c.getContext('2d'), text: '', wear: -1, seed: bud.data.id };
   }
-  const sg = bud.sign, own = !!info.own;
-  if (sg.text !== text || sg.own !== own) { sg.text = text; sg.own = own; sg.wear = -1; }
+  const sg = bud.sign;
+  if (sg.text !== text) { sg.text = text; sg.wear = -1; }
 }
 function removeSign(bud) {
   const sg = bud.sign; if (!sg) return;
@@ -2479,8 +2466,8 @@ const PLANE_GEO = (() => {
 })();
 const planes = [];
 let planeSounds = 0;
-function launchPlane(from, dir, own) {
-  const m = new THREE.Mesh(PLANE_GEO, new THREE.MeshStandardMaterial({ color: toLinear(own ? '#FFFFFF' : '#FFF6E0'), roughness: 0.8, side: THREE.DoubleSide, flatShading: true, transparent: true }));
+function launchPlane(from, dir) {
+  const m = new THREE.Mesh(PLANE_GEO, new THREE.MeshStandardMaterial({ color: toLinear('#FFF6E0'), roughness: 0.8, side: THREE.DoubleSide, flatShading: true, transparent: true }));
   m.position.copy(from); m.scale.setScalar(1.6); scene.add(m);
   const side = new THREE.Vector3(-dir.z, 0, dir.x);
   planes.push({ m, p: from.clone(), v: new THREE.Vector3(dir.x * rand(5, 6.5), rand(2.2, 3.2), dir.z * rand(5, 6.5)), side, t: 0, life: 9, ph: Math.random() * 6, sway: rand(0.6, 1.2) * (Math.random() < 0.5 ? -1 : 1) });
@@ -2523,10 +2510,9 @@ function foldAndThrow(bud, after) {
     sg.board.rotation.z = k * 2.4; sg.pivot.rotation.z = -0.2 * k;
     if (k < 1) return requestAnimationFrame(step);
     sg.board.getWorldPosition(tmpV);
-    const own = sg.own;
     removeSign(bud);
     bud.syv -= 0.14; bud.y = Math.max(bud.y, 0.01); bud.vy = 3.5;   // a little hop as it throws
-    launchPlane(tmpV.clone(), out, own);
+    launchPlane(tmpV.clone(), out);
     if (after) after();
   };
   requestAnimationFrame(step);
@@ -2648,7 +2634,7 @@ const embers = [];
 function tossIntoFire(bud) {
   const sg = bud.sign, fire = skyBits.fire; if (!sg || !fire) return;
   sg.board.getWorldPosition(tmpV);
-  const from = tmpV.clone(), text = sg.text, own = sg.own;
+  const from = tmpV.clone();
   // a copy of the board flies, so the bud can let go
   const fly = new THREE.Mesh(sg.board.geometry.clone(), sg.board.material.clone());
   fly.material.map = sg.tex; fly.position.copy(from); fly.quaternion.copy(sg.board.getWorldQuaternion(new THREE.Quaternion()));
@@ -2764,7 +2750,7 @@ function openResultsCard() {
   });
   cardBody.append(list);
   cardBody.append(el('p', 'muted', res.total
-    ? `${res.total} ${res.total === 1 ? 'person' : 'people'} answered. Only real answers count, not the buds’ crayon ones.`
+    ? `${res.total} ${res.total === 1 ? 'person' : 'people'} answered.`
     : 'Nobody answered this one.'));
   if (signs.phase !== 'open') cardBody.append(el('p', 'muted', 'New question at 9am Eastern.'));
   card.hidden = false; hideHint();
@@ -2795,10 +2781,9 @@ function renderSignSection(bud) {
     btns.push(b); chips.append(b);
   });
   box.append(chips);
-  const held = signs.signs[bud.data.id];
   box.append(el('p', 'muted', mine && mine.a != null
     ? `${nameOf(bud)} is holding up your answer until 9pm. Tap another to change it.`
-    : held && held.own ? `${nameOf(bud)} made up its own answer for now (“${choiceText(held.a)}”, in crayon). What’s yours?` : 'Pick one and your bud will hold it up until 9pm.'));
+    : 'Pick one and your bud will hold it up on a sign until 9pm.'));
   if (bud.sign) {
     const r = el('div', 'row'), t = el('button', 'btn', 'Fold it into a paper airplane ✈'); t.type = 'button';
     t.addEventListener('click', () => tossMySign(t)); r.append(t); box.append(r);
@@ -2810,8 +2795,8 @@ function renderSignLine(bud) {
   const sg = signs && bud.sign && signs.signs[bud.data.id];
   if (!sg) return;
   const p = el('p', 'signline');
-  p.append(sg.own ? `${nameOf(bud)}’s own answer, in crayon: ` : `${bud.data.ownerName ? bud.data.ownerName + '’s' : 'Their'} answer: `, el('b', null, choiceText(sg.a)));
-  if (!sg.own && signs.mine && !signs.mine.tossed && signs.mine.a === sg.a) p.append(' ', el('span', 'same', 'same as you!'));
+  p.append(`${bud.data.ownerName ? bud.data.ownerName + '’s' : 'Their'} answer: `, el('b', null, choiceText(sg.a)));
+  if (signs.mine && !signs.mine.tossed && signs.mine.a === sg.a) p.append(' ', el('span', 'same', 'same as you!'));
   cardBody.append(p);
 }
 
