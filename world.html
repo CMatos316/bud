@@ -1495,13 +1495,13 @@ function drawFace(bud) {
 /* landing dust */
 const puffs = [];
 const puffMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true });
-function puff(x, z) {
+function puff(x, z, k = 1) {
   for (let i = 0; i < 12; i++) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(rand(0.12, 0.25), 8, 6), puffMat.clone());
+    const m = new THREE.Mesh(new THREE.SphereGeometry(rand(0.12, 0.25) * k, 8, 6), puffMat.clone());
     const a = i / 12 * Math.PI * 2 + rand(-0.2, 0.2);
-    m.position.set(x, 0.15, z);
+    m.position.set(x, 0.15 * k, z);
     scene.add(m);
-    puffs.push({ m, vx: Math.cos(a) * rand(1.5, 3), vz: Math.sin(a) * rand(1.5, 3), vy: rand(0.6, 1.6), life: 0 });
+    puffs.push({ m, vx: Math.cos(a) * rand(1.5, 3) * k, vz: Math.sin(a) * rand(1.5, 3) * k, vy: rand(0.6, 1.6) * k, life: 0 });
   }
 }
 
@@ -2342,7 +2342,7 @@ const cellW = () => R * GCELL;
 const tilePos = (t) => ({ x: ((t % GN) - 3) * cellW(), z: (Math.floor(t / GN) - 3) * cellW() });
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitPoint = new THREE.Vector3();
 const TILE_GEO = new THREE.CircleGeometry(1, 28); TILE_GEO.rotateX(-Math.PI / 2);
-const PEBBLE_MAT = new THREE.MeshStandardMaterial({ color: toLinear('#9A97AE'), roughness: 1, flatShading: true });
+const PEBBLE_MAT = new THREE.MeshStandardMaterial({ color: toLinear('#8C889E'), roughness: 1, flatShading: true });
 
 function tileAt(x, y) {
   if (!game) return null;
@@ -2361,7 +2361,7 @@ const myTurn = () => game && game.v.status === 'playing' && game.v.turn === game
 const settingUp = () => game && game.v.status === 'setup' && !game.v.ready[game.v.me];
 const isOver = () => game && (game.v.status === 'done' || game.v.status === 'resigned');
 function tappable(t) {
-  if (!game || game.busy || t == null) return false;
+  if (!game || game.busy || game.pending || t == null) return false;
   if (settingUp()) return game.board === 'mine';
   return myTurn() && game.board === 'theirs' && (game.yell || !looked(t));
 }
@@ -2405,6 +2405,7 @@ function exitGame() {
   if (!game) return;
   clearInterval(game.poll);
   clearTimeout(game.flip);
+  throws.length = 0;
   scene.remove(game.group);
   for (const m of game.tiles.values()) m.material.dispose();
   clearMarks();
@@ -2431,36 +2432,124 @@ function defaultBoard(v) {
 }
 
 async function pollGame() {
-  if (!game || game.busy || document.hidden || isOver() || myTurn() || settingUp()) return;
+  if (!game || game.busy || game.pending || document.hidden || isOver() || myTurn() || settingUp()) return;
   try {
     const v = await api('GET', '/api/game?id=' + encodeURIComponent(game.id));
     if (game && v.id === game.id && viewKey(v) !== game.key) applyView(v);
   } catch (e) {}
 }
 
-// A new view from the server: show what changed (their latest look lands on your island).
-function applyView(v, myShot = null) {
-  const before = game.v;
+// A new view from the server: show what changed. A look is a pebble thrown at a spot: nothing about the
+// result shows (no bud popping out, no giggle, no message) until it lands.
+function applyView(v, myShot = null, myMsg = '') {
+  const before = game.v, id = game.id;
   game.v = v; game.key = viewKey(v);
   const theirNew = v.theirShots.slice(before.theirShots.length);
   clearTimeout(game.flip);
-  if (myShot) {
-    game.board = 'theirs';
+  const finish = () => {
+    if (!game || game.id !== id) return;
+    if (isOver() && before.status !== v.status) setTimeout(() => S.play(v.winner === v.me ? 'sparkle' : 'boing'), 500);
+  };
+  const reveal = (s, board, msg, flipTo) => {
+    const land = () => {
+      if (!game || game.id !== id) return;
+      game.pending = null; game.board = board; game.msg = msg;
+      renderGame();
+      animateShot(s, board);
+      if (v.status === 'playing') game.flip = setTimeout(() => {
+        if (game && game.id === id && game.board === board && flipTo()) { game.board = board === 'mine' ? 'theirs' : 'mine'; if (board === 'mine') game.msg = ''; renderGame(); }
+      }, 2400);
+      finish();
+    };
+    game.board = board;
+    if (s.yell != null) { game.pending = null; return land(); }
+    game.pending = { board, idx: (board === 'theirs' ? v.myShots : v.theirShots).length - 1 };   // it's always the newest one
+    game.msg = '';
     renderGame();
-    animateShot(myShot, 'theirs');
-    if (v.status === 'playing') game.flip = setTimeout(() => { if (game && !myTurn()) { game.board = 'mine'; renderGame(); } }, 2600);
-  } else if (theirNew.length) {
-    game.board = 'mine';
+    throwPebble(s.t, board, !!s.hit, land);
+  };
+  if (myShot) reveal(myShot, 'theirs', myMsg, () => !myTurn());
+  else if (theirNew.length) {
     const s = theirNew[theirNew.length - 1];
-    game.msg = s.yell != null ? `${theirName()} yelled across your island!` : s.hit ? `${theirName()} found ${budName(v.mySquad[v.myHides.indexOf(s.t)])}!` : `${theirName()} looked and missed.`;
-    renderGame();
-    animateShot(s, 'mine');
-    if (v.status === 'playing') game.flip = setTimeout(() => { if (game && myTurn()) { game.board = 'theirs'; game.msg = ''; renderGame(); } }, 2600);
+    const msg = s.yell != null ? `${theirName()} yelled across your island!` : s.hit ? `${theirName()} found ${budName(v.mySquad[v.myHides.indexOf(s.t)])}!` : `${theirName()} looked and missed.`;
+    reveal(s, 'mine', msg, () => myTurn());
   } else {
     if (before.status !== v.status) { game.board = defaultBoard(v); if (v.status === 'playing') S.play('chime'); }
     renderGame();
+    finish();
   }
-  if (isOver() && before.status !== v.status) setTimeout(() => S.play(v.winner === v.me ? 'sparkle' : 'boing'), 700);
+}
+
+/* the pebble throw: an arc from your side of the island (or theirs, when they're throwing at you) */
+const throws = [];
+const cheb = (a, b) => Math.max(Math.abs((a % GN) - (b % GN)), Math.abs(Math.floor(a / GN) - Math.floor(b / GN)));
+function pebbleCluster(t) {
+  const g = new THREE.Group();
+  for (let i = 0; i < 3; i++) {
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22 + i * 0.07, 0), PEBBLE_MAT);
+    m.position.set(Math.cos(i * 2.1 + t) * 0.4, 0.12, Math.sin(i * 2.1 + t) * 0.4); m.rotation.set(t, i, t * 0.3);
+    g.add(m);
+  }
+  return g;
+}
+function throwPebble(t, board, hit, done) {
+  const to = tilePos(t);
+  // you throw from the camera's side of the island; the other player throws from the far side
+  const cx = camera.position.x, cz = camera.position.z, cl = Math.hypot(cx, cz) || 1, side = board === 'theirs' ? 1 : -1;
+  const from = { x: cx / cl * R * 1.3 * side, y: 2.2, z: cz / cl * R * 1.3 * side };
+  const d = Math.hypot(to.x - from.x, to.z - from.z);
+  const g = pebbleCluster(t);
+  // bunched up in the air, they spread into the little pile when they land
+  for (const m of g.children) { m.userData.rest = m.position.clone(); m.position.multiplyScalar(0.35); }
+  const sh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: 0 }));
+  sh.rotation.x = -Math.PI / 2; sh.renderOrder = 3;
+  game.group.add(g, sh);
+  throws.push({ g, sh, from, to, dur: clamp(0.55 + d * 0.014, 0.65, 1.05), h: 2.5 + d * 0.22, t: 0, hit, land: null, done, game: game.id, start: performance.now() });
+  S.play('whoosh', { gain: 0.45, rate: 1.35 });
+}
+function landPebble(th) {
+  puff(th.to.x, th.to.z, 0.45);
+  S.play(th.hit ? 'boing' : 'thump', { gain: th.hit ? 0.5 : 0.55, rate: th.hit ? 1.4 : 1.25 });
+  if (!game || th.hit) return;
+  // hiders next door flinch (only ones you're allowed to see: yours, when they're throwing at you)
+  if (game.board === 'mine' && !settingUp()) {
+    const tile = game.v.theirShots[game.pending ? game.pending.idx : -1]?.t;
+    game.v.myHides.forEach((h, i) => {
+      if (tile == null || cheb(h, tile) !== 1) return;
+      const b = budById(game.v.mySquad[i]);
+      if (b && b.gamePiece) { b.syv -= 0.14; say(b, pick(['eep!', 'that was close…', 'shhh', '!!']), 1300); }
+    });
+  }
+}
+function gameTick(dt) {
+  const now = performance.now();
+  for (let i = throws.length - 1; i >= 0; i--) {
+    const th = throws[i];
+    if (!game || game.id !== th.game) { throws.splice(i, 1); continue; }
+    th.t = (now - th.start) / 1000;   // real time, so a slow device still lands it on schedule
+    if (th.land == null) {
+      const k = Math.min(1, th.t / th.dur);
+      const x = th.from.x + (th.to.x - th.from.x) * k, z = th.from.z + (th.to.z - th.from.z) * k;
+      th.g.position.set(x, th.from.y * (1 - k) + 4 * th.h * k * (1 - k) + 0.02 * k, z);
+      th.g.rotation.x += dt * 9; th.g.rotation.z += dt * 5;
+      th.g.scale.setScalar(2.2 - 1.2 * k);
+      th.sh.position.set(x, 0.05, z); th.sh.scale.setScalar(0.5 + 0.6 * k); th.sh.material.opacity = 0.2 + 0.7 * k;
+      if (k >= 1) { th.land = th.t; th.g.rotation.set(0, 0, 0); landPebble(th); }
+    } else {
+      // one little bounce while the pile spreads out (on a hit it pings off the bud and is gone)
+      const b = (th.t - th.land) / (th.hit ? 0.35 : 0.3);
+      th.g.position.y = Math.sin(Math.min(1, b) * Math.PI) * (th.hit ? 1.4 : 0.35);
+      for (const m of th.g.children) m.position.lerp(m.userData.rest, Math.min(1, dt * 14));
+      if (th.hit) th.g.scale.setScalar(Math.max(0.01, 1 - b));
+      th.sh.material.opacity = 0.9 * (1 - Math.min(1, b));
+      if (b >= 1) {
+        game.group.remove(th.g, th.sh); th.sh.geometry.dispose(); th.sh.material.dispose();
+        for (const m of th.g.children) m.geometry.dispose();
+        throws.splice(i, 1);
+        th.done();
+      }
+    }
+  }
 }
 
 function clearMarks() {
@@ -2486,12 +2575,7 @@ function textSprite(text, bg, fg) {
 }
 function addMark(obj) { game.group.add(obj); game.marks.push(obj); return obj; }
 function pebble(t) {
-  const p = tilePos(t), g = new THREE.Group();
-  for (let i = 0; i < 3; i++) {
-    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.16 + i * 0.05, 0), PEBBLE_MAT);
-    m.position.set(Math.cos(i * 2.1 + t) * 0.28, 0.08, Math.sin(i * 2.1 + t) * 0.28); m.rotation.set(t, i, t * 0.3);
-    g.add(m);
-  }
+  const p = tilePos(t), g = pebbleCluster(t);
   g.position.set(p.x, 0, p.z);
   return addMark(g);
 }
@@ -2533,23 +2617,26 @@ function renderBoard() {
   const v = game.v, used = new Set(), state = new Map();   // tile -> 'pick' | 'hide' | 'found' | 'miss' | 'giggle'
   if (game.board === 'mine') {
     const hides = settingUp() ? game.picks : v.myHides;
-    const hits = new Set(v.theirShots.filter((s) => s.hit).map((s) => s.t));
+    const flying = (i) => game.pending && game.pending.board === 'mine' && game.pending.idx === i;
+    const hits = new Set(v.theirShots.filter((s, i) => s.hit && !flying(i)).map((s) => s.t));
     hides.forEach((t, i) => {
       const found = hits.has(t);
       state.set(t, settingUp() ? 'pick' : found ? 'found' : 'hide');
       piece(v.mySquad[i], t, { crouch: !found && !settingUp(), used });
     });
-    for (const s of v.theirShots) {
+    v.theirShots.forEach((s, i) => {
+      if (flying(i)) return;
       if (s.yell != null) yellSquare(s.t, s.yell);
       else if (!s.hit) { state.set(s.t, 'miss'); pebble(s.t); }
-    }
+    });
   } else {
-    for (const s of v.myShots) {
-      if (s.yell != null) { yellSquare(s.t, s.yell); continue; }
-      if (s.hit) { state.set(s.t, 'found'); piece(s.bud, s.t, { used }); continue; }
+    v.myShots.forEach((s, i) => {
+      if (game.pending && game.pending.board === 'theirs' && game.pending.idx === i) { state.set(s.t, 'aim'); return; }
+      if (s.yell != null) { yellSquare(s.t, s.yell); return; }
+      if (s.hit) { state.set(s.t, 'found'); piece(s.bud, s.t, { used }); return; }
       state.set(s.t, s.giggle ? 'giggle' : 'miss'); pebble(s.t);
       if (s.giggle) { const l = addMark(textSprite('hehe', '#FFE08A', '#5A4300')); const p = tilePos(s.t); l.position.set(p.x, 1.1, p.z); }
-    }
+    });
     if (v.theirHides) v.theirHides.forEach((t, i) => { if (!state.has(t) || state.get(t) !== 'found') { state.set(t, 'reveal'); piece(v.theirSquad[i], t, { used }); } });
   }
   game.state = state;
@@ -2557,7 +2644,7 @@ function renderBoard() {
 }
 const TILE_LOOK = {
   base: ['#FFFFFF', 0.42], pick: ['#FFD25A', 0.9], hide: ['#A6E3A1', 0.75], found: ['#FF8FA3', 0.85],
-  miss: ['#8E8BA8', 0.45], giggle: ['#FFE08A', 0.6], reveal: ['#C9B8FF', 0.8],
+  miss: ['#8E8BA8', 0.45], aim: ['#FFFFFF', 0.75], giggle: ['#FFE08A', 0.6], reveal: ['#C9B8FF', 0.8],
 };
 function colorTiles() {
   if (!game) return;
@@ -2577,7 +2664,9 @@ function renderGame() {
   if (!game) return;
   const v = game.v, me = v.me, them = theirName();
   gameTitle.textContent = `Peekaboo with ${them}`;
-  gameScore.textContent = v.status === 'setup' ? '' : `found ${v.found}/${v.hiders} · lost ${v.lost}/${v.hiders}`;
+  const pend = game.pending && (game.pending.board === 'theirs' ? v.myShots : v.theirShots)[game.pending.idx];
+  const found = v.found - (pend && pend.hit && game.pending.board === 'theirs' ? 1 : 0), lost = v.lost - (pend && pend.hit && game.pending.board === 'mine' ? 1 : 0);
+  gameScore.textContent = v.status === 'setup' ? '' : `found ${found}/${v.hiders} · lost ${lost}/${v.hiders}`;
   const showSeg = !settingUp();
   gameSeg.hidden = !showSeg;
   for (const b of gameSeg.querySelectorAll('button')) {
@@ -2590,7 +2679,10 @@ function renderGame() {
     b.addEventListener('click', fn); gameRow.append(b); return b;
   };
   let text = '';
-  if (settingUp()) {
+  if (game.pending) {
+    text = game.pending.board === 'theirs' ? 'Your pebble is flying…' : `${them} threw a pebble at your island…`;
+    btn('Leave', exitGame, true);
+  } else if (settingUp()) {
     text = `Hide ${listNames(v.mySquad)}. Tap 3 spots on your island (${game.picks.length}/3).`;
     btn('Leave', exitGame);
     btn('Hide them', hideBuds, true, game.picks.length !== 3);
@@ -2662,9 +2754,9 @@ async function shootAt(t) {
     const v = await api('POST', '/api/game', { action: 'shoot', id: game.id, tile: t, yell });
     game.busy = false; game.yell = false;
     const s = v.last;
-    game.msg = s.yell != null ? (s.yell ? `${s.yell} hiding within 2 tiles of there!` : 'Nobody’s hiding anywhere near there.')
+    const msg = s.yell != null ? (s.yell ? `${s.yell} hiding within 2 tiles of there!` : 'Nobody’s hiding anywhere near there.')
       : s.hit ? `You found ${budName(s.bud)}!` : s.giggle ? 'Nothing there… but you hear a giggle nearby.' : 'Nothing there but pebbles.';
-    applyView(v, s);
+    applyView(v, s, msg);
   } catch (e) { game.busy = false; game.msg = e.message; renderGame(); }
 }
 
@@ -2675,16 +2767,14 @@ function animateShot(s, board) {
     const id = board === 'theirs' ? s.bud : game.v.mySquad[game.v.myHides.indexOf(s.t)];
     const b = budById(id);
     puff(p.x, p.z);
-    S.play('boing');
-    setTimeout(() => S.play('sparkle', { gain: 0.8 }), 180);
+    S.play('sparkle', { gain: 0.8 });
     if (b && b.gamePiece) {
       b.y = 0.01; b.vy = 8; b.syv -= 0.15; b.happyUntil = T + 2.5;
       say(b, board === 'theirs' ? pick(['peekaboo!', 'aw, you found me!', 'how did you know?!']) : pick(['eek, they found me!', 'aw, found!', 'peekaboo…']), 2000);
     }
     return;
   }
-  S.play('thump', { gain: 0.45 });
-  if (s.giggle) setTimeout(() => S.play('giggle'), 350);
+  if (s.giggle) setTimeout(() => S.play('giggle'), 150);
 }
 
 async function resignGame() {
@@ -2774,6 +2864,7 @@ function frame(now) {
   for (const bud of buds) if (bud.placed && !bud.gameHidden) { updateBud(bud, dt); drawFace(bud); animateStickies(bud, dt); }
   separateBuds();
   photoTick();
+  gameTick(dt);
   updateSky(dt);
   for (const c of clouds) {
     c.a += c.sp * dt;
