@@ -531,7 +531,7 @@ function islandEdge(a, seed) {
 }
 
 function buildIsland(nBuds) {
-  R = Math.max(clamp(9 + Math.sqrt(nBuds) * 2.2, 11, 30), cityRadius());
+  R = clamp(9 + Math.sqrt(nBuds) * 2.2, 11, 30);
   WALK_R = R * 0.78;
   const seed = 2.1;
   const group = new THREE.Group();
@@ -575,9 +575,6 @@ function buildIsland(nBuds) {
   under.position.y = -(depth + bevel) - h / 2 + 0.05;
   group.add(under);
 
-  // the city goes in first, so trees and rocks fit around it
-  buildCity(group);
-
   // trees and rocks near the rim
   const trunkMat = new THREE.MeshStandardMaterial({ color: toLinear('#A47551'), roughness: 1 });
   const leafCols = ['#7FCB8A', '#A6E3A1', '#6BBF7A', '#B9E8B0'].map((c) => new THREE.MeshStandardMaterial({ color: toLinear(c), roughness: 0.9, flatShading: true }));
@@ -586,7 +583,7 @@ function buildIsland(nBuds) {
     for (let tries = 0; tries < 40; tries++) {
       const a = rnd() * Math.PI * 2, r = R * islandEdge(a, seed) * (minR + rnd() * (maxR - minR));
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (obstacles.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + clear) && outsideTown(x, z)) return { x, z };
+      if (obstacles.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + clear)) return { x, z };
     }
     return null;
   };
@@ -615,7 +612,6 @@ function buildIsland(nBuds) {
   const stem = new THREE.MeshStandardMaterial({ color: toLinear('#5FA868') });
   for (let i = 0; i < Math.round(R * 2.5); i++) {
     const fr = seeded('flower:' + i), a = fr() * Math.PI * 2, r = Math.sqrt(fr()) * R * 0.92;
-    if (nearPath(Math.cos(a) * r, Math.sin(a) * r, 1.0) || Math.hypot(Math.cos(a) * r, Math.sin(a) * r) < 4) continue;   // flowers anywhere but the paths and the fire
     const f = new THREE.Group();
     const st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 4), stem); st.position.y = 0.11; f.add(st);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), petal[i % petal.length]); head.position.y = 0.24; f.add(head);
@@ -639,319 +635,6 @@ function buildIsland(nBuds) {
   }
 
   scene.add(group);
-}
-
-/* ---------------- the bud city (lib/city.js on the server decides what's built) ---------------- */
-// A cozy village: a cottage for every bud (roof in that bud's colors), and special buildings when enough
-// people share an interest. Lamps and benches appear as the island grows.
-let CITY = null;                 // { homes: [bud ids, oldest first], buildings: [{ id, ... }], extras: [...] }
-const cityGroup = new THREE.Group();   // hidden during Peekaboo, so the board is clear
-const homeUnits = new Map();     // bud id -> { facade, win, roof } materials, colored once its paint loads
-const cityGlow = [];             // { mat, day, night }: windows and lamps that light up at night
-const CM = (hex, o = {}) => new THREE.MeshStandardMaterial({ color: toLinear(hex), roughness: 0.8, ...o });
-function glowMat(hex, day = 0.15, night = 1.1) {
-  const m = new THREE.MeshStandardMaterial({ color: toLinear(hex), emissive: toLinear(hex), emissiveIntensity: day, roughness: 0.4 });
-  cityGlow.push({ mat: m, day, night }); return m;
-}
-function signTexture(text, bg, fg, w = 256, h = 64, font = 'bold 40px Fredoka, Nunito, system-ui, sans-serif') {
-  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
-  x.fillStyle = bg; x.fillRect(0, 0, w, h); x.fillStyle = fg; x.font = font; x.textAlign = 'center'; x.textBaseline = 'middle';
-  x.fillText(text, w / 2, h / 2 + 2);
-  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t;
-}
-const BOX = (w, h, d, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); return m; };
-
-function arcade() {
-  const g = new THREE.Group();
-  g.add(BOX(3, 2.1, 2, CM('#5B3FA8'), 0, 1.05, 0));
-  g.add(BOX(3.2, 0.18, 2.2, CM('#3B2A75'), 0, 2.19, 0));
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshStandardMaterial({ map: signTexture('ARCADE', '#1E1240', '#FF6FD0'), emissive: toLinear('#FFFFFF'), emissiveMap: signTexture('ARCADE', '#1E1240', '#FF6FD0'), emissiveIntensity: 0.6 }));
-  sign.position.set(0, 1.75, 1.02); g.add(sign);
-  cityGlow.push({ mat: sign.material, day: 0.5, night: 1.4 });
-  g.add(BOX(0.8, 1.1, 0.06, CM('#1E1240'), 0, 0.55, 1.01));
-  for (const s of [-1, 1]) {
-    g.add(BOX(0.45, 0.95, 0.45, CM(s < 0 ? '#2FB6E8' : '#E8394B'), s * 1.05, 0.48, 1.25));
-    g.add(BOX(0.34, 0.26, 0.04, glowMat('#8EFFC1', 0.6, 1.5), s * 1.05, 0.72, 1.48));
-  }
-  g.userData.len = 3.4; return g;
-}
-function stage() {
-  const g = new THREE.Group();
-  g.add(BOX(3.4, 0.35, 2, CM('#B07A45'), 0, 0.175, 0));
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.13, 10, 32, Math.PI), CM('#E8394B')); arch.position.set(0, 0.35, -0.85); g.add(arch);
-  g.add(BOX(3.1, 1.7, 0.06, CM('#7A2A3A'), 0, 1.2, -0.9));
-  for (const s of [-1, 1]) {
-    g.add(BOX(0.45, 0.75, 0.4, CM('#2B2D42'), s * 1.35, 0.72, -0.4));
-    const cone = new THREE.Mesh(new THREE.CircleGeometry(0.15, 16), CM('#5E5D75')); cone.position.set(s * 1.35, 0.78, -0.19); g.add(cone);
-  }
-  const note = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshStandardMaterial({ map: signTexture('♪', '#7A2A3A', '#FFE07A', 64, 64, 'bold 52px serif'), transparent: true }));
-  note.position.set(0, 2.15, -0.86); g.add(note);
-  g.add(BOX(0.06, 0.5, 0.06, CM('#B7B5C6'), 0, 0.6, 0.3));
-  const mic = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), CM('#2B2D42')); mic.position.set(0, 0.88, 0.3); g.add(mic);
-  for (const s of [-1.1, 0, 1.1]) { const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), glowMat(['#FF6F91', '#FFE07A', '#7FD3FF'][Math.round(s / 1.1) + 1], 0.4, 1.6)); bulb.position.set(s, 1.95, -0.6); g.add(bulb); }
-  g.userData.len = 3.8; return g;
-}
-function court(sport) {
-  const g = new THREE.Group(), W = 4.6, L = 2.8;
-  const c = document.createElement('canvas'); c.width = 256; c.height = 160; const x = c.getContext('2d');
-  const field = sport === 'basketball' || sport === 'volleyball' || sport === 'tennis' ? '#D9895A' : '#5FB06A';
-  x.fillStyle = field; x.fillRect(0, 0, 256, 160); x.strokeStyle = '#FFFFFF'; x.lineWidth = 4;
-  x.strokeRect(8, 8, 240, 144); x.beginPath(); x.moveTo(128, 8); x.lineTo(128, 152); x.stroke();
-  x.beginPath(); x.arc(128, 80, 24, 0, Math.PI * 2); x.stroke();
-  if (sport === 'basketball') { x.beginPath(); x.arc(8, 80, 40, -Math.PI / 2, Math.PI / 2); x.stroke(); x.beginPath(); x.arc(248, 80, 40, Math.PI / 2, Math.PI * 1.5); x.stroke(); }
-  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, L), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 })); floor.rotation.x = -Math.PI / 2; floor.position.y = 0.02; g.add(floor);
-  for (const s of [-1, 1]) {
-    if (sport === 'basketball') {
-      g.add(BOX(0.08, 1.8, 0.08, CM('#B7B5C6'), s * (W / 2 + 0.1), 0.9, 0));
-      g.add(BOX(0.06, 0.55, 0.8, CM('#FFFFFF'), s * (W / 2 - 0.02), 1.75, 0));
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.02, 6, 20), CM('#F08A24')); rim.rotation.x = Math.PI / 2; rim.position.set(s * (W / 2 - 0.25), 1.55, 0); g.add(rim);
-    } else if (sport === 'volleyball' || sport === 'tennis') {
-      if (s < 0) { g.add(BOX(0.05, sport === 'tennis' ? 0.5 : 1.3, L, CM('#FFFFFF', { transparent: true, opacity: 0.7 }), 0, sport === 'tennis' ? 0.25 : 0.8, 0)); }
-    } else {
-      // goals for soccer and everything else
-      const frame = CM('#FFFFFF');
-      g.add(BOX(0.06, 0.8, 0.06, frame, s * (W / 2), 0.4, -0.55)); g.add(BOX(0.06, 0.8, 0.06, frame, s * (W / 2), 0.4, 0.55));
-      g.add(BOX(0.06, 0.06, 1.16, frame, s * (W / 2), 0.8, 0));
-      g.add(BOX(0.4, 0.8, 1.1, CM('#FFFFFF', { transparent: true, opacity: 0.25 }), s * (W / 2 + 0.2), 0.4, 0));
-    }
-  }
-  g.userData.len = W + 0.6; g.userData.flat = true; return g;
-}
-function friendTree(hearts) {
-  const g = new THREE.Group(), s = 1.5;
-  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2 * s, 0.3 * s, 1.4 * s, 8), CM('#8A5A3C')).translateY(0.7 * s));
-  const blossoms = ['#FFC2D6', '#FFB0C8', '#FFD6E4'];
-  for (let k = 0; k < 5; k++) {
-    const b = new THREE.Mesh(new THREE.IcosahedronGeometry((0.9 - k * 0.08) * s, 1), CM(blossoms[k % 3], { flatShading: true }));
-    b.position.set(Math.cos(k * 1.3) * 0.45 * s, (1.7 + (k % 3) * 0.35) * s, Math.sin(k * 1.3) * 0.45 * s); g.add(b);
-  }
-  // a heart for every friendship on the island
-  const heart = new THREE.Shape(); heart.moveTo(0, -0.1); heart.bezierCurveTo(-0.16, 0.02, -0.12, 0.16, 0, 0.08); heart.bezierCurveTo(0.12, 0.16, 0.16, 0.02, 0, -0.1);
-  const hg = new THREE.ExtrudeGeometry(heart, { depth: 0.03, bevelEnabled: false }), hm = glowMat('#FF4F7B', 0.25, 0.9), r = seeded('hearts');
-  for (let i = 0; i < hearts; i++) {
-    const a = r() * Math.PI * 2, y = (1.4 + r() * 1.3) * s, rad = (0.95 + r() * 0.25) * s;
-    const h = new THREE.Mesh(hg, hm); h.position.set(Math.cos(a) * rad, y, Math.sin(a) * rad); h.lookAt(Math.cos(a) * rad * 3, y, Math.sin(a) * rad * 3); g.add(h);
-  }
-  g.userData.len = 3; return g;
-}
-function lamp() {
-  const g = new THREE.Group();
-  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 1.5, 6), CM('#3B3F52')).translateY(0.75));
-  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), glowMat('#FFE9A8', 0.2, 1.8)).translateY(1.58));
-  return g;
-}
-function bench() {
-  const g = new THREE.Group(), wood = CM('#B07A45');
-  g.add(BOX(1, 0.07, 0.35, wood, 0, 0.38, 0)); g.add(BOX(1, 0.3, 0.06, wood, 0, 0.6, -0.16));
-  for (const s of [-0.42, 0.42]) g.add(BOX(0.06, 0.38, 0.3, CM('#3B3F52'), s, 0.19, 0));
-  return g;
-}
-
-// Cottages, one per bud, Animal Crossing style: a chunky single storey with a big roof in the bud's
-// color, a door a bud fits through, warm windows, a mailbox and a flower patch out front.
-const HOUSE_W = 2.6, HOUSE_D = 2.3;
-function cottage(id) {
-  const g = new THREE.Group(), r = seeded('home:' + id), F = HOUSE_D / 2, H = 2.45;
-  const facade = CM('#F2EADF'), roof = CM('#C96A5A'), win = glowMat('#FFD98A', 0.2, 1.3);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(HOUSE_W, H, HOUSE_D), facade); body.position.y = H / 2; g.add(body);
-  g.add(BOX(HOUSE_W + 0.1, 0.25, HOUSE_D + 0.1, CM('#CDBFA8'), 0, 0.12, 0));                   // stone footing
-  // a big gable roof that overhangs, made from two slabs
-  const RW = HOUSE_W / 2 + 0.35, rise = 1.25, slope = Math.hypot(RW, rise), ang = Math.atan2(rise, RW);
-  for (const s of [-1, 1]) {
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(slope, 0.22, HOUSE_D + 0.6), roof);
-    slab.position.set(s * RW / 2, H + rise / 2, 0); slab.rotation.z = -s * ang; g.add(slab);
-  }
-  const gable = new THREE.Shape(); gable.moveTo(-HOUSE_W / 2, 0); gable.lineTo(HOUSE_W / 2, 0); gable.lineTo(0, rise - 0.1); gable.closePath();
-  for (const s of [-1, 1]) { const m = new THREE.Mesh(new THREE.ShapeGeometry(gable), facade); m.position.set(0, H, s * (F - 0.001)); if (s < 0) m.rotation.y = Math.PI; g.add(m); }
-  if (r() < 0.6) g.add(BOX(0.35, 0.8, 0.35, CM('#B5A898'), HOUSE_W * 0.28, H + rise * 0.75, -0.3));    // chimney
-  g.add(BOX(0.95, 2.05, 0.08, CM('#8A5A3C'), -0.45, 1.02 + 0.12, F + 0.03));                            // door
-  g.add(BOX(0.08, 0.08, 0.06, CM('#FFC93C', { metalness: 0.6 }), -0.12, 1.15, F + 0.09));
-  const round = new THREE.Mesh(new THREE.CircleGeometry(0.36, 24), win); round.position.set(0.62, 1.45, F + 0.02); g.add(round);
-  const rim = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.46, 24), CM('#FFFFFF')); rim.position.set(0.62, 1.45, F + 0.025); g.add(rim);
-  for (const s of [-1, 1]) { const w = new THREE.Mesh(new THREE.CircleGeometry(0.32, 20), win); w.position.set(s * (HOUSE_W / 2 + 0.002), 1.45, 0); w.rotation.y = s * Math.PI / 2; g.add(w); }
-  // mailbox and a little flower patch by the door
-  g.add(BOX(0.08, 0.9, 0.08, CM('#8A5A3C'), 1.25, 0.45, F + 1.0));
-  const mb = BOX(0.32, 0.26, 0.42, roof, 1.25, 0.98, F + 1.0); g.add(mb);
-  const cols = ['#FF9EBB', '#FFE07A', '#FFFFFF', '#B9A6FF'];
-  for (let k = 0; k < 5; k++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), CM(cols[Math.floor(r() * 4)])); f.position.set(0.3 + k * 0.22, 0.14, F + 0.35 + (k % 2) * 0.12); g.add(f); }
-  homeUnits.set(id, { facade, win, roof, mailbox: mb });
-  return g;
-}
-
-// The town: a cozy village. Homes sit in loose neighborhoods around the campfire square with dirt paths
-// winding between them, trees and flowers in the gaps, the arcade, stage and court just off the square,
-// and a park with the friendship tree. No roads: buds walk everywhere.
-const LOT_W = 4.2, BLOCK_W = 4 * LOT_W, BLOCK_D = 2 * HOUSE_D + 5.6, ROAD = 3.2;
-const PER_BLOCK = 8;
-let townRect = null;
-const pathSegs = [];   // the dirt paths, as segments, so trees and rocks stay off them
-function nearPath(x, z, pad = 1.2) {
-  for (const s of pathSegs) {
-    const vx = s.x1 - s.x0, vz = s.z1 - s.z0, t = clamp(((x - s.x0) * vx + (z - s.z0) * vz) / (vx * vx + vz * vz || 1), 0, 1);
-    if (Math.hypot(s.x0 + vx * t - x, s.z0 + vz * t - z) < pad) return true;
-  }
-  return false;
-}
-// trees and rocks: not on paths or in the square; flowers: anywhere off the paths
-const outsideTown = (x, z) => !nearPath(x, z, 1.6) && Math.hypot(x, z) > 6;
-const blockXZ = (i, j) => ({ x: i * (BLOCK_W + ROAD), z: j * (BLOCK_D + ROAD) });
-const BLOCK_ORDER = [[0, -1], [1, -1], [-1, -1], [1, 1], [-1, 1], [2, 0], [-2, 0], [2, -1], [-2, -1], [2, 1], [-2, 1], [0, -2], [1, -2], [-1, -2], [0, 2], [1, 2], [-1, 2], [2, -2], [-2, -2], [2, 2], [-2, 2]];
-
-let cityPlanned = null;
-function planCity() {
-  if (!CITY || cityPlanned) return cityPlanned;
-  const blocks = [{ i: 0, j: 0, use: 'plaza' }];
-  const has = (id) => CITY.buildings.find((b) => b.id === id);
-  const taken = new Set(['0,0']);
-  const take = (i, j, use, extra = {}) => { taken.add(`${i},${j}`); blocks.push({ i, j, use, ...extra }); };
-  if (has('court')) take(1, 0, 'court', { sport: has('court').sport });
-  if (has('arcade') || has('stage')) take(-1, 0, 'downtown', { arcade: !!has('arcade'), stage: !!has('stage') });
-  if (has('friendtree') || CITY.extras.includes('benches')) take(0, 1, 'park', { tree: has('friendtree') });
-  const homes = CITY.homes;
-  let k = 0;
-  for (const [i, j] of BLOCK_ORDER) {
-    if (k >= homes.length) break;
-    if (taken.has(`${i},${j}`)) continue;
-    take(i, j, 'homes', { ids: homes.slice(k, k + PER_BLOCK) });
-    k += PER_BLOCK;
-  }
-  const xs = blocks.map((b) => b.i), zs = blocks.map((b) => b.j);
-  const ext = { i0: Math.min(...xs), i1: Math.max(...xs), j0: Math.min(...zs), j1: Math.max(...zs) };
-  const x0 = blockXZ(ext.i0, 0).x - BLOCK_W / 2 - ROAD, x1 = blockXZ(ext.i1, 0).x + BLOCK_W / 2 + ROAD;
-  const z0 = blockXZ(0, ext.j0).z - BLOCK_D / 2 - ROAD, z1 = blockXZ(0, ext.j1).z + BLOCK_D / 2 + ROAD;
-  townRect = { x0, x1, z0, z1 };
-  const needR = Math.max(...[[x0, z0], [x0, z1], [x1, z0], [x1, z1]].map(([x, z]) => Math.hypot(x, z))) + 4;
-  cityPlanned = { blocks, ext, rect: townRect, needR };
-  return cityPlanned;
-}
-function cityRadius() { const p = planCity(); return p ? p.needR : 0; }
-
-// a round little tree for between the houses
-function smallTree(seed) {
-  const g = new THREE.Group(), r = seeded(seed), s = 0.8 + r() * 0.35;
-  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.12 * s, 0.16 * s, 0.9 * s, 7), CM('#A47551')).translateY(0.45 * s));
-  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.75 * s, 12, 10), CM(['#7FCB8A', '#6BBF7A', '#A6E3A1'][Math.floor(r() * 3)]));
-  leaf.position.y = 1.35 * s; leaf.scale.y = 0.9; g.add(leaf);
-  if (r() < 0.4) for (let k = 0; k < 4; k++) { const fr = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), CM('#FF7A6B')); const a = r() * 6.28; fr.position.set(Math.cos(a) * 0.62 * s, (1.2 + r() * 0.4) * s, Math.sin(a) * 0.62 * s); g.add(fr); }
-  return g;
-}
-// homes in a neighborhood: 4 along the path on each side, each a little off-grid and turned slightly,
-// with trees and bushes between and behind them
-function houseBlock(ids, spots, seed) {
-  const g = new THREE.Group(), r = seeded('block:' + seed);
-  ids.forEach((id, n) => {
-    const north = n % 2 === 0, k = Math.floor(n / 2), hr = seeded('lot:' + id);
-    const x = (k - 1.5) * LOT_W + (hr() - 0.5) * 0.7, z = (north ? 1 : -1) * (BLOCK_D / 2 - 1.9 - HOUSE_D / 2) + (hr() - 0.5) * 0.5;
-    const h = cottage(id); h.position.set(x, 0, z); h.rotation.y = (north ? 0 : Math.PI) + (hr() - 0.5) * 0.3; g.add(h);
-    spots.push({ x, z, r: 1.7 });
-  });
-  for (let k = 0; k < 4; k++) {
-    const t = smallTree(`btree:${seed}:${k}`), x = (k - 1.5) * LOT_W + LOT_W / 2 * (r() < 0.5 ? -1 : 1) * 0.5, z = (r() - 0.5) * 1.2;
-    t.position.set(x, 0, z); g.add(t); spots.push({ x, z, r: 0.6 });
-  }
-  return g;
-}
-function plazaBlock() {
-  // the town square: grass with a ring of flat stones around the campfire, and a notice board
-  const g = new THREE.Group(), n = 22;
-  for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, s = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.45, 0.06, 9), CM('#D9CDB6')); s.position.set(Math.cos(a) * 3.2, 0.03, Math.sin(a) * 3.2); g.add(s); }
-  const board = new THREE.Group(); board.add(BOX(0.1, 1.5, 0.1, CM('#8A5A3C'), -0.6, 0.75, 0)); board.add(BOX(0.1, 1.5, 0.1, CM('#8A5A3C'), 0.6, 0.75, 0)); board.add(BOX(1.5, 0.9, 0.08, CM('#C9965F'), 0, 1.2, 0));
-  board.add(BOX(0.35, 0.3, 0.02, CM('#FFE98A'), -0.3, 1.25, 0.05)); board.add(BOX(0.3, 0.35, 0.02, CM('#BFDFFF'), 0.25, 1.2, 0.05));
-  board.position.set(0, 0, -4.2); g.add(board);
-  return g;
-}
-function parkBlock(tree, spots) {
-  const g = new THREE.Group();
-  const pond = new THREE.Mesh(new THREE.CircleGeometry(1.4, 32), CM('#7FC8F0', { roughness: 0.15, metalness: 0.1 })); pond.rotation.x = -Math.PI / 2; pond.scale.set(1.5, 1, 1); pond.position.set(4, 0.04, 1.2); g.add(pond);
-  const edge = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.65, 32), CM('#D9CDB6')); edge.rotation.x = -Math.PI / 2; edge.scale.set(1.5, 1, 1); edge.position.set(4, 0.035, 1.2); g.add(edge);
-  spots.push({ x: 4, z: 1.2, r: 2 });
-  if (tree) { const t = friendTree(tree.hearts); t.scale.setScalar(1.4); t.position.set(-2.5, 0, -0.3); g.add(t); spots.push({ x: -2.5, z: -0.3, r: 0.9 }); }
-  const beds = ['#FF9EBB', '#FFE07A', '#B9A6FF', '#FFFFFF'];
-  for (let i = 0; i < 18; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), CM(beds[i % 4])); const a = i / 18 * Math.PI * 2; f.position.set(-2.5 + Math.cos(a) * 2.6, 0.15, -0.3 + Math.sin(a) * 2.2); g.add(f); }
-  if (CITY.extras.includes('benches')) for (const [x, z, rr] of [[1, -2.4, 0], [4, -1.4, -0.4]]) { const b = bench(); b.scale.setScalar(1.4); b.position.set(x, 0, z); b.rotation.y = rr; g.add(b); spots.push({ x, z, r: 0.7 }); }
-  return g;
-}
-function downtownBlock(d, spots) {
-  const g = new THREE.Group();
-  if (d.arcade) { const a = arcade(); a.scale.setScalar(1.75); a.position.set(d.stage ? -3.6 : 0, 0, 0); a.rotation.y = Math.PI / 2; g.add(a); for (const dz of [-1.5, 0, 1.5]) spots.push({ x: d.stage ? -3.6 : 0, z: dz, r: 1.8 }); }
-  if (d.stage) { const s = stage(); s.scale.setScalar(1.5); s.position.set(d.arcade ? 3.6 : 0, 0, 0); s.rotation.y = -Math.PI / 2; g.add(s); for (const dz of [-1.6, 1.6]) spots.push({ x: (d.arcade ? 3.6 : 0) + 0.8, z: dz, r: 1.3 }); }
-  return g;
-}
-function courtBlock(sport) {
-  const g = new THREE.Group(), c = court(sport); c.scale.setScalar(1.9); g.add(c);
-  return g;
-}
-
-function buildCity(island) {
-  const plan = planCity();
-  if (!plan) return;
-  const group = cityGroup; island.add(group);
-  const { ext } = plan;
-  for (const b of plan.blocks) {
-    const { x, z } = blockXZ(b.i, b.j), spots = [];
-    let g = null;
-    if (b.use === 'homes') g = houseBlock(b.ids, spots, `${b.i},${b.j}`);
-    else if (b.use === 'plaza') g = plazaBlock();
-    else if (b.use === 'park') g = parkBlock(b.tree, spots);
-    else if (b.use === 'downtown') g = downtownBlock(b, spots);
-    else if (b.use === 'court') g = courtBlock(b.sport);
-    if (!g) continue;
-    g.position.set(x, 0, z); group.add(g);
-    for (const s of spots) obstacles.push({ x: x + s.x, z: z + s.z, r: s.r });
-  }
-  // dirt paths winding between the neighborhoods (one InstancedMesh of soft blobs, so it stays cheap)
-  const hEdges = new Set(), vEdges = new Set();
-  for (const b of plan.blocks) { hEdges.add(`${b.i},${b.j}`); hEdges.add(`${b.i},${b.j + 1}`); vEdges.add(`${b.i},${b.j}`); vEdges.add(`${b.i + 1},${b.j}`); }
-  const lineX = (i) => blockXZ(i, 0).x - (BLOCK_W + ROAD) / 2, lineZ = (j) => blockXZ(0, j).z - (BLOCK_D + ROAD) / 2;
-  const pts = [];
-  const wobble = (u, key) => Math.sin(u * 0.45 + key) * 0.6 + Math.sin(u * 1.1 + key * 2.1) * 0.25;
-  const run = (ax, az, bx, bz, key) => {
-    const len = Math.hypot(bx - ax, bz - az), n = Math.ceil(len / 0.32), nx = -(bz - az) / len, nz = (bx - ax) / len;
-    let px = ax, pz = az;
-    for (let k = 0; k <= n; k++) {
-      const t = k / n, w = wobble(t * len + ax * 0.3 + az * 0.7, key), x = ax + (bx - ax) * t + nx * w, z = az + (bz - az) * t + nz * w;
-      pts.push([x, z]);
-      if (k) pathSegs.push({ x0: px, z0: pz, x1: x, z1: z });
-      px = x; pz = z;
-    }
-  };
-  for (const key of hEdges) { const [i, j] = key.split(',').map(Number), cx = blockXZ(i, 0).x, cz = lineZ(j); run(cx - (BLOCK_W + ROAD) / 2, cz, cx + (BLOCK_W + ROAD) / 2, cz, j * 7.1); }
-  for (const key of vEdges) { const [i, j] = key.split(',').map(Number), cx = lineX(i), cz = blockXZ(0, j).z; run(cx, cz - (BLOCK_D + ROAD) / 2, cx, cz + (BLOCK_D + ROAD) / 2, i * 3.7); }
-  const blob = new THREE.CylinderGeometry(0.55, 0.6, 0.05, 12), dirt = CM('#E3C99B', { roughness: 1 });
-  const inst = new THREE.InstancedMesh(blob, dirt, pts.length), m = new THREE.Matrix4();
-  pts.forEach(([x, z], k) => { m.makeRotationY((k * 1.7) % 6.28); m.setPosition(x, 0.02 + (k % 3) * 0.001, z); inst.setMatrixAt(k, m); });
-  group.add(inst);
-  // lamps where paths meet, once the island has 10 buds
-  if (CITY.extras.includes('lamps')) {
-    const corners = new Set();
-    for (const b of plan.blocks) for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]]) corners.add(`${b.i + di},${b.j + dj}`);
-    for (const key of corners) {
-      const [i, j] = key.split(',').map(Number), l = lamp(); l.scale.setScalar(1.5); l.position.set(lineX(i) + 1.3, 0, lineZ(j) + 1.3); group.add(l);
-      obstacles.push({ x: l.position.x, z: l.position.z, r: 0.3 });
-    }
-  }
-  void ext;
-}
-
-// once a bud's paint has loaded: its home's walls take a soft version of its colors, the roof its brightest
-function colorHome(id, img) {
-  const unit = homeUnits.get(id);
-  if (!unit || !img) return;
-  const c = document.createElement('canvas'); c.width = c.height = 16;
-  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 16, 16);
-  const d = g.getImageData(0, 0, 16, 16).data;
-  let r = 0, gg = 0, b = 0, n = 0, best = null, bestSat = -1;
-  for (let i = 0; i < d.length; i += 4) {
-    r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++;
-    const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]), sat = mx ? (mx - mn) / mx : 0;
-    if (sat * (mx / 255) > bestSat) { bestSat = sat * (mx / 255); best = [d[i], d[i + 1], d[i + 2]]; }
-  }
-  const avg = new THREE.Color(r / n / 255, gg / n / 255, b / n / 255);
-  const soft = avg.clone().lerp(new THREE.Color(1, 1, 1), 0.45);
-  unit.facade.color.copy(soft).convertSRGBToLinear();
-  const pop = new THREE.Color(best[0] / 255, best[1] / 255, best[2] / 255).lerp(new THREE.Color(1, 1, 0.9), 0.25).convertSRGBToLinear();
-  unit.roof.color.copy(pop);   // the roof and mailbox share the material: the bud's brightest color
 }
 
 /* ---------------- the sky follows your clock; Halloween comes and goes on its own ---------------- */
@@ -1016,7 +699,7 @@ function buildSkyAndSeason() {
   // a campfire near the middle: just a fire pit by day, lit at night, and buds gather round
   let spot = { x: 0, z: 0 };
   const fireR = seeded('campfire');
-  for (let i = 0; i < (CITY ? 0 : 40); i++) {   // with a town, the campfire is the middle of the plaza
+  for (let i = 0; i < 40; i++) {
     const a = fireR() * Math.PI * 2, r = fireR() * R * 0.3, p = { x: Math.cos(a) * r, z: Math.sin(a) * r };
     if (obstacles.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + 3)) { spot = p; break; }
   }
@@ -1438,7 +1121,6 @@ function updateSky(dt) {
     scene.environment = k.night > 0.5 ? ENV_NIGHT : ENV_DAY;
     if (skyBits.cloudMat) { skyBits.cloudMat.color.set(mixHex('#FFFFFF', '#59608F', k.night)).convertSRGBToLinear(); skyBits.cloudMat.emissiveIntensity = 0.15 * (1 - k.night); }
     NIGHT = k.night;
-    for (const l of cityGlow) l.mat.emissiveIntensity = l.day + (l.night - l.day) * NIGHT;   // windows and lamps light up
     if (S.setNight) S.setNight(NIGHT > 0.5);
   }
   const n = NIGHT;
@@ -1514,7 +1196,6 @@ async function makeBud(data) {
   const b = setExtents({ r: data.r.map(([x, y]) => ({ x, y })), eyeRel: data.eyeRel, eyeR: data.eyeR });
   const { geom, face } = buildMesh(b);
   const img = await loadImage(data.paint);
-  colorHome(data.id, img);
   const s = BUD_SIZE / Math.max(b.w, b.h);
 
   const paintTex = img ? new THREE.Texture(img) : null;
@@ -3079,7 +2760,6 @@ async function enterGame(id) {
   let v;
   try { v = await api('GET', '/api/game?id=' + encodeURIComponent(id)); }
   catch (e) { const m = myBud(); if (m) say(m, 'hmm, I can’t find that game', 2200); return; }
-  cityGroup.visible = false;
   game = { id, v, board: 'mine', picks: [], yell: false, busy: false, msg: '', hover: null, group: new THREE.Group(), tiles: new Map(), marks: [], key: viewKey(v) };
   game.board = defaultBoard(v);
   scene.add(game.group);
@@ -3109,7 +2789,6 @@ function gameDist() {
 
 function exitGame() {
   if (!game) return;
-  cityGroup.visible = true;
   clearInterval(game.poll);
   clearTimeout(game.flip);
   throws.length = 0;
@@ -3633,7 +3312,6 @@ function showCenter(title, text, linkText, href = '/') {
   document.getElementById('whoAvatar').src = world.me.avatarUrl;
   document.getElementById('who').hidden = false;
 
-  CITY = world.city || null;
   buildIsland(world.buds.length);
   buildSkyAndSeason();
   updateSky(0);
