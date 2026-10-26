@@ -586,7 +586,7 @@ function buildIsland(nBuds) {
     for (let tries = 0; tries < 40; tries++) {
       const a = rnd() * Math.PI * 2, r = R * islandEdge(a, seed) * (minR + rnd() * (maxR - minR));
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (obstacles.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + clear) && noTrees.every((o) => Math.hypot(o.x - x, o.z - z) > o.r)) return { x, z };
+      if (obstacles.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + clear) && outsideTown(x, z)) return { x, z };
     }
     return null;
   };
@@ -615,7 +615,7 @@ function buildIsland(nBuds) {
   const stem = new THREE.MeshStandardMaterial({ color: toLinear('#5FA868') });
   for (let i = 0; i < Math.round(R * 2.5); i++) {
     const fr = seeded('flower:' + i), a = fr() * Math.PI * 2, r = Math.sqrt(fr()) * R * 0.92;
-    if (noTrees.some((o) => Math.hypot(o.x - Math.cos(a) * r, o.z - Math.sin(a) * r) < o.r)) continue;
+    if (!outsideTown(Math.cos(a) * r, Math.sin(a) * r)) continue;
     const f = new THREE.Group();
     const st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 4), stem); st.position.y = 0.11; f.add(st);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), petal[i % petal.length]); head.position.y = 0.24; f.add(head);
@@ -780,125 +780,140 @@ function rowhouses(ids) {
   return g;
 }
 
-// The city in districts around the campfire plaza: neighborhoods of homes, a fun district (arcade, stage,
-// court), and a park with the friendship tree, joined to the plaza by winding stone paths.
-const noTrees = [];   // areas the island's trees, rocks and flowers stay out of (streets and lots)
-function homeDistrict(ids) {
-  // rows of up to 6 houses, each row facing the plaza, with a street in front of every row
-  const g = new THREE.Group(), PER = 6, rows = [];
-  for (let i = 0; i < ids.length; i += PER) rows.push(ids.slice(i, i + PER));
-  const STREET = 3.2, pitch = HOUSE_D + STREET, width = Math.min(ids.length, PER) * HOUSE_W * 1.02;
-  const street = CM('#DCD6CA');
-  const spots = [];
-  rows.forEach((row, k) => {
-    const z = -k * pitch, rg = rowhouses(row); rg.position.z = z; g.add(rg);
-    const st = new THREE.Mesh(new THREE.PlaneGeometry(width + 2, STREET * 0.8), street); st.rotation.x = -Math.PI / 2; st.position.set(0, 0.015, z + HOUSE_D / 2 + STREET / 2); g.add(st);
-    row.forEach((id, i) => spots.push({ x: (i - (row.length - 1) / 2) * HOUSE_W * 1.02, z, r: 1.55 }));
-  });
-  const depth = rows.length * pitch;
-  return { g, spots, w: width + 2, d: depth, front: HOUSE_D / 2 + STREET };
-}
-function funDistrict(list) {
-  // a little square: the court in the middle, the arcade and the stage facing it from either side
-  const g = new THREE.Group(), spots = [];
-  const has = (id) => list.find((b) => b.id === id);
-  let w = 4, d = 6;
-  const c = has('court');
-  if (c) { const ct = court(c.sport); ct.scale.setScalar(1.8); ct.position.set(0, 0, -2.5); g.add(ct); w = 9.5; d = 8; }
-  const a = has('arcade');
-  if (a) { const ar = arcade(); ar.scale.setScalar(1.8); ar.rotation.y = Math.PI / 2; ar.position.set(-w / 2 - 2.2, 0, -1.5); g.add(ar); spots.push({ x: -w / 2 - 2.2, z: -2.6, r: 2.2 }, { x: -w / 2 - 2.2, z: -0.4, r: 2.2 }, { x: -w / 2 - 2.2, z: 1.6, r: 1.6 }); }
-  const s = has('stage');
-  if (s) { const sg = stage(); sg.scale.setScalar(1.6); sg.rotation.y = -Math.PI / 2; sg.position.set(w / 2 + 2, 0, -1.5); g.add(sg); spots.push({ x: w / 2 + 2.6, z: -2.6, r: 1.6 }, { x: w / 2 + 2.6, z: -0.4, r: 1.6 }); }
-  const sq = new THREE.Mesh(new THREE.PlaneGeometry(w + 2, d + 2), CM('#E6DCCB')); sq.rotation.x = -Math.PI / 2; sq.position.set(0, 0.012, -1.5); g.add(sq);
-  return { g, spots, w: w + (a ? 5 : 1) + (s ? 5 : 1), d: d + 3, front: 3 };
-}
-function parkDistrict(tree, extras) {
-  const g = new THREE.Group(), spots = [];
-  const lawn = new THREE.Mesh(new THREE.CircleGeometry(5, 40), CM('#9EDB8E')); lawn.rotation.x = -Math.PI / 2; lawn.position.set(0, 0.01, -2); g.add(lawn);
-  if (tree) { const t = friendTree(tree.hearts); t.scale.setScalar(1.6); t.position.set(0, 0, -2.4); g.add(t); spots.push({ x: 0, z: -2.4, r: 0.9 }); }
-  const beds = ['#FF9EBB', '#FFE07A', '#B9A6FF', '#FFFFFF'];
-  for (let i = 0; i < 10; i++) {
-    const a = i / 10 * Math.PI * 2, f = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), CM(beds[i % 4]));
-    f.position.set(Math.cos(a) * 4.2, 0.18, -2 + Math.sin(a) * 4.2); g.add(f);
-  }
-  if (extras.includes('benches')) for (const a of [0.4, Math.PI - 0.4]) { const b = bench(); b.scale.setScalar(1.4); b.position.set(Math.cos(a) * 3, 0, -2 + Math.sin(a) * 3); b.rotation.y = Math.atan2(-Math.cos(a), -Math.sin(a)) + Math.PI; g.add(b); spots.push({ x: b.position.x, z: b.position.z, r: 0.7 }); }
-  return { g, spots, w: 11, d: 11, front: 3 };
-}
+// The town is a street grid. Blocks sit between straight roads: the campfire plaza in the middle, a park
+// block, downtown blocks for the arcade, stage and court, and house blocks with 8 homes each (4 facing the
+// street on each side, backyards meeting behind them). Homes fill in arrival order, nearest blocks first.
+const LOT_W = 2.8, YARD = 1.4, BLOCK_W = 4 * LOT_W + 0.6, BLOCK_D = 2 * (HOUSE_D + YARD) + 0.8, ROAD = 3.4;
+const PER_BLOCK = 8;
+let townRect = null;   // { x0, x1, z0, z1 }: trees, rocks and flowers stay outside it
+const outsideTown = (x, z) => !townRect || x < townRect.x0 || x > townRect.x1 || z < townRect.z0 || z > townRect.z1;
+const blockXZ = (i, j) => ({ x: i * (BLOCK_W + ROAD), z: j * (BLOCK_D + ROAD) });
+// blocks nearest the plaza first, in a steady spiral, so a house's spot never changes as the town grows
+const BLOCK_ORDER = [[0, -1], [1, -1], [-1, -1], [1, 1], [-1, 1], [2, 0], [-2, 0], [2, -1], [-2, -1], [2, 1], [-2, 1], [0, -2], [1, -2], [-1, -2], [0, 2], [1, 2], [-1, 2], [2, -2], [-2, -2], [2, 2], [-2, 2]];
 
-const PLAZA_R = 5;
-let cityPlanned = null;   // districts with their positions, worked out before the island is shaped
+let cityPlanned = null;
 function planCity() {
   if (!CITY || cityPlanned) return cityPlanned;
-  const districts = [];
-  const homes = CITY.homes, PER_DISTRICT = 18;
-  for (let i = 0; i < homes.length; i += PER_DISTRICT) districts.push({ kind: 'homes', make: () => homeDistrict(homes.slice(i, i + PER_DISTRICT)) });
-  const fun = CITY.buildings.filter((b) => ['arcade', 'stage', 'court'].includes(b.id));
-  if (fun.length) districts.splice(Math.min(1, districts.length), 0, { kind: 'fun', make: () => funDistrict(fun) });
-  const tree = CITY.buildings.find((b) => b.id === 'friendtree');
-  if (tree || CITY.extras.includes('benches')) districts.push({ kind: 'park', make: () => parkDistrict(tree, CITY.extras) });
-  // spread around the plaza; each sits just far enough out to clear it
-  const a0 = seeded('city')() * Math.PI * 2;
-  districts.forEach((d, i) => {
-    d.built = d.make();
-    d.angle = a0 + i / districts.length * Math.PI * 2;
-    const reach = Math.hypot(d.built.w / 2, d.built.d);
-    // far enough that neighbours don't overlap, and out of the plaza
-    const spread = districts.length > 1 ? (d.built.w / 2 + 2) / Math.sin(Math.PI / districts.length) : 0;
-    d.dist = Math.max(PLAZA_R + d.built.front + 1.5, spread);
-    d.reach = d.dist + d.built.d + 1;
-    void reach;
-  });
-  cityPlanned = { districts, needR: Math.max(0, ...districts.map((d) => d.reach + 2)) };
+  const blocks = [{ i: 0, j: 0, use: 'plaza' }];
+  const has = (id) => CITY.buildings.find((b) => b.id === id);
+  const taken = new Set(['0,0']);
+  const take = (i, j, use, extra = {}) => { taken.add(`${i},${j}`); blocks.push({ i, j, use, ...extra }); };
+  // downtown either side of the plaza along the main street, the park just north
+  if (has('court')) take(1, 0, 'court', { sport: has('court').sport });
+  if (has('arcade') || has('stage')) take(-1, 0, 'downtown', { arcade: !!has('arcade'), stage: !!has('stage') });
+  if (has('friendtree') || CITY.extras.includes('benches')) take(0, 1, 'park', { tree: has('friendtree') });
+  const homes = CITY.homes;
+  let k = 0;
+  for (const [i, j] of BLOCK_ORDER) {
+    if (k >= homes.length) break;
+    if (taken.has(`${i},${j}`)) continue;
+    take(i, j, 'homes', { ids: homes.slice(k, k + PER_BLOCK) });
+    k += PER_BLOCK;
+  }
+  const xs = blocks.map((b) => b.i), zs = blocks.map((b) => b.j);
+  const ext = { i0: Math.min(...xs), i1: Math.max(...xs), j0: Math.min(...zs), j1: Math.max(...zs) };
+  const x0 = blockXZ(ext.i0, 0).x - BLOCK_W / 2 - ROAD, x1 = blockXZ(ext.i1, 0).x + BLOCK_W / 2 + ROAD;
+  const z0 = blockXZ(0, ext.j0).z - BLOCK_D / 2 - ROAD, z1 = blockXZ(0, ext.j1).z + BLOCK_D / 2 + ROAD;
+  townRect = { x0, x1, z0, z1 };
+  const needR = Math.max(...[[x0, z0], [x0, z1], [x1, z0], [x1, z1]].map(([x, z]) => Math.hypot(x, z))) + 3;
+  cityPlanned = { blocks, ext, rect: townRect, needR };
   return cityPlanned;
 }
-// how big the island must be to fit the town
 function cityRadius() { const p = planCity(); return p ? p.needR : 0; }
+
+// one block's contents, in block-local space (x along the street, +z toward the north street)
+function houseBlock(ids, spots) {
+  const g = new THREE.Group();
+  ids.forEach((id, n) => {
+    const north = n % 2 === 0, k = Math.floor(n / 2);   // alternate sides so a half-full block looks balanced
+    const x = (k - 1.5) * LOT_W, z = (north ? 1 : -1) * (BLOCK_D / 2 - 0.4 - HOUSE_D / 2);
+    const h = rowhouses([id]); h.position.set(x, 0, z); h.rotation.y = north ? 0 : Math.PI; g.add(h);
+    spots.push({ x, z, r: 1.55 });
+  });
+  // backyards: lawn, a hedge down the middle, a little tree in some
+  const yard = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_W - 0.6, YARD * 2 + 0.6), CM('#9ADB8A')); yard.rotation.x = -Math.PI / 2; yard.position.y = 0.06; g.add(yard);
+  g.add(BOX(BLOCK_W - 0.8, 0.5, 0.35, CM('#5FA868'), 0, 0.3, 0));
+  return g;
+}
+function plazaBlock() {
+  const g = new THREE.Group();
+  const tiles = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_W - 0.4, BLOCK_D - 0.4), CM('#E6DCCB')); tiles.rotation.x = -Math.PI / 2; tiles.position.y = 0.06; g.add(tiles);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(2.2, 2.6, 40), CM('#CFC3AE')); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.07; g.add(ring);
+  return g;
+}
+function parkBlock(tree, spots) {
+  const g = new THREE.Group();
+  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_W - 0.4, BLOCK_D - 0.4), CM('#9EDB8E')); lawn.rotation.x = -Math.PI / 2; lawn.position.y = 0.06; g.add(lawn);
+  const pond = new THREE.Mesh(new THREE.CircleGeometry(1.3, 32), CM('#7FC8F0', { roughness: 0.15, metalness: 0.1 })); pond.rotation.x = -Math.PI / 2; pond.scale.set(1.4, 1, 1); pond.position.set(3.2, 0.07, 1); g.add(pond);
+  if (tree) { const t = friendTree(tree.hearts); t.scale.setScalar(1.4); t.position.set(-2, 0, -0.3); g.add(t); spots.push({ x: -2, z: -0.3, r: 0.9 }); }
+  const beds = ['#FF9EBB', '#FFE07A', '#B9A6FF', '#FFFFFF'];
+  for (let i = 0; i < 14; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), CM(beds[i % 4])); f.position.set(-BLOCK_W / 2 + 0.8 + (i % 7) * 1.6, 0.2, i < 7 ? BLOCK_D / 2 - 0.7 : -BLOCK_D / 2 + 0.7); g.add(f); }
+  if (CITY.extras.includes('benches')) for (const [x, z, r] of [[1, -2, 0], [3.2, -1.6, -0.6]]) { const b = bench(); b.scale.setScalar(1.4); b.position.set(x, 0, z); b.rotation.y = r; g.add(b); spots.push({ x, z, r: 0.7 }); }
+  return g;
+}
+function downtownBlock(d, spots) {
+  // shops facing the main street (south, toward the plaza's row)
+  const g = new THREE.Group();
+  const pave = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_W - 0.4, BLOCK_D - 0.4), CM('#E6DCCB')); pave.rotation.x = -Math.PI / 2; pave.position.y = 0.06; g.add(pave);
+  if (d.arcade) { const a = arcade(); a.scale.setScalar(1.75); a.position.set(d.stage ? -2.9 : 0, 0, -0.2); a.rotation.y = Math.PI; g.add(a); for (const dx of [-1.5, 0, 1.5]) spots.push({ x: (d.stage ? -2.9 : 0) + dx, z: -0.2, r: 1.6 }); }
+  if (d.stage) { const s = stage(); s.scale.setScalar(1.5); s.position.set(d.arcade ? 2.9 : 0, 0, 0.2); s.rotation.y = Math.PI; g.add(s); for (const dx of [-1.6, 1.6]) spots.push({ x: (d.arcade ? 2.9 : 0) + dx, z: 1, r: 1.2 }); }
+  return g;
+}
+function courtBlock(sport) {
+  const g = new THREE.Group();
+  const pave = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_W - 0.4, BLOCK_D - 0.4), CM('#E6DCCB')); pave.rotation.x = -Math.PI / 2; pave.position.y = 0.06; g.add(pave);
+  const c = court(sport); c.scale.setScalar(1.95); c.position.y = 0.05; g.add(c);
+  return g;
+}
 
 function buildCity(island) {
   const plan = planCity();
   if (!plan) return;
   const group = cityGroup; island.add(group);
-  for (const d of plan.districts) {
-    const g = d.built.g, ca = Math.cos(d.angle), sa = Math.sin(d.angle);
-    const cx = ca * d.dist, cz = sa * d.dist;
-    g.position.set(cx, 0, cz);
-    g.rotation.y = Math.atan2(-ca, -sa);   // local +z points back at the plaza
-    group.add(g);
-    // buds walk around buildings, trees stay out of the lots
-    g.updateMatrixWorld(true);
-    for (const s of d.built.spots) { const p = new THREE.Vector3(s.x, 0, s.z).applyMatrix4(g.matrix); obstacles.push({ x: p.x, z: p.z, r: s.r }); }
-    for (let z = 0; z >= -d.built.d; z -= 2.5) for (let x = -d.built.w / 2; x <= d.built.w / 2; x += 2.5) {
-      const p = new THREE.Vector3(x, 0, z + d.built.front - 1).applyMatrix4(g.matrix); noTrees.push({ x: p.x, z: p.z, r: 2 });
-    }
-    // a winding stone path from the plaza to the district
-    if (CITY.extras.includes('paths')) {
-      const start = new THREE.Vector3(ca * PLAZA_R, 0, sa * PLAZA_R), end = new THREE.Vector3(ca * (d.dist + d.built.front - 0.5), 0, sa * (d.dist + d.built.front - 0.5));
-      const bend = (seeded('bend' + d.angle)() - 0.5) * 3, mid = start.clone().lerp(end, 0.5).add(new THREE.Vector3(-sa * bend, 0, ca * bend));
-      const curve = new THREE.QuadraticBezierCurve3(start, mid, end), n = Math.max(3, Math.round(curve.getLength() / 0.75));
-      for (let i = 0; i <= n; i++) {
-        const p = curve.getPoint(i / n), s = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.05, 10), CM('#D8D2C6'));
-        s.position.set(p.x + (Math.random() - 0.5) * 0.15, 0.025, p.z + (Math.random() - 0.5) * 0.15); s.scale.x = 1.25; group.add(s);
-        noTrees.push({ x: p.x, z: p.z, r: 0.8 });
-      }
-      if (CITY.extras.includes('lamps')) {
-        const p = curve.getPoint(0.55), l = lamp(); l.scale.setScalar(1.5); l.position.set(p.x - sa * 0.9, 0, p.z + ca * 0.9); group.add(l);
-        obstacles.push({ x: l.position.x, z: l.position.z, r: 0.3 });
-      }
+  const { ext } = plan;
+  const curb = CM('#CFC8BA'), road = CM('#8C8A99', { roughness: 0.95 }), paint = CM('#F4EFD8');
+  for (const b of plan.blocks) {
+    const { x, z } = blockXZ(b.i, b.j), spots = [];
+    // every block sits on a raised curb, like a city block
+    group.add(BOX(BLOCK_W, 0.12, BLOCK_D, curb, x, 0.06, z));
+    let g = null;
+    if (b.use === 'homes') g = houseBlock(b.ids, spots);
+    else if (b.use === 'plaza') g = plazaBlock();
+    else if (b.use === 'park') g = parkBlock(b.tree, spots);
+    else if (b.use === 'downtown') g = downtownBlock(b, spots);
+    else if (b.use === 'court') g = courtBlock(b.sport);
+    if (!g) continue;
+    g.position.set(x, 0.06, z); group.add(g);
+    for (const s of spots) obstacles.push({ x: x + s.x, z: z + s.z, r: s.r });
+  }
+  // the roads: around every block that's in use (empty lots stay grass), with dashed center lines
+  const hEdges = new Set(), vEdges = new Set(), corners = new Set();
+  for (const b of plan.blocks) {
+    hEdges.add(`${b.i},${b.j}`); hEdges.add(`${b.i},${b.j + 1}`);   // the road below / above block (i, j)
+    vEdges.add(`${b.i},${b.j}`); vEdges.add(`${b.i + 1},${b.j}`);   // the road left / right of it
+    for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]]) corners.add(`${b.i + di},${b.j + dj}`);
+  }
+  const lineX = (i) => blockXZ(i, 0).x - (BLOCK_W + ROAD) / 2, lineZ = (j) => blockXZ(0, j).z - (BLOCK_D + ROAD) / 2;
+  const flat = (w, d, x, z, y = 0.02) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), road); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); group.add(m); };
+  for (const key of hEdges) {
+    const [i, j] = key.split(',').map(Number), cx = blockXZ(i, 0).x, cz = lineZ(j);
+    flat(BLOCK_W, ROAD, cx, cz);
+    for (let x = -BLOCK_W / 2 + 0.6; x < BLOCK_W / 2 - 0.6; x += 2.2) group.add(BOX(1.1, 0.01, 0.12, paint, cx + x + 0.55, 0.03, cz));
+  }
+  for (const key of vEdges) {
+    const [i, j] = key.split(',').map(Number), cx = lineX(i), cz = blockXZ(0, j).z;
+    flat(ROAD, BLOCK_D, cx, cz);
+    for (let z = -BLOCK_D / 2 + 0.6; z < BLOCK_D / 2 - 0.6; z += 2.2) group.add(BOX(0.12, 0.01, 1.1, paint, cx, 0.03, cz + z + 0.55));
+  }
+  for (const key of corners) { const [i, j] = key.split(',').map(Number); flat(ROAD, ROAD, lineX(i), lineZ(j)); }
+  // streetlights on the corners once the island has 10 buds
+  if (CITY.extras.includes('lamps')) {
+    for (const key of corners) {
+      const [i, j] = key.split(',').map(Number), cx = lineX(i), cz = lineZ(j);
+      const l = lamp(); l.scale.setScalar(1.6); l.position.set(cx + ROAD / 2 + 0.3, 0, cz + ROAD / 2 + 0.3); group.add(l);
+      obstacles.push({ x: l.position.x, z: l.position.z, r: 0.3 });
     }
   }
-  // the plaza around the campfire
-  if (CITY.extras.includes('paths')) {
-    const n = Math.round(Math.PI * 2 * PLAZA_R / 0.8);
-    for (let i = 0; i < n; i++) {
-      const t = i / n * Math.PI * 2, s = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, 0.05, 10), CM('#D8D2C6'));
-      s.position.set(Math.cos(t) * PLAZA_R, 0.025, Math.sin(t) * PLAZA_R); s.scale.x = 1.2; s.rotation.y = -t; group.add(s);
-    }
-  }
-  if (CITY.extras.includes('lamps')) for (let i = 0; i < 4; i++) {
-    const t = i / 4 * Math.PI * 2 + Math.PI / 4, l = lamp(); l.scale.setScalar(1.5); l.position.set(Math.cos(t) * (PLAZA_R + 0.7), 0, Math.sin(t) * (PLAZA_R + 0.7)); group.add(l);
-    obstacles.push({ x: l.position.x, z: l.position.z, r: 0.3 });
-  }
-  noTrees.push({ x: 0, z: 0, r: PLAZA_R + 1 });
 }
 
 // once a bud's paint has loaded: its home's walls take a soft version of its colors, the windows its brightest
