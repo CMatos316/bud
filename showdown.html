@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Question Showdown · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="A quick would-you-rather game for your group: everyone picks at once, the signs flip up together, and you see who matched.">
+<meta property="og:title" content="Question Showdown">
+<meta property="og:description" content="Would you rather…? Everyone picks at once, the signs flip, and you see who matched.">
+<meta property="og:image" content="https://bud.oqw.one/img/og.jpg">
+<meta name="theme-color" content="#BFD9FF">
+<style>
+/* One screen, top to bottom: the host bud asking the question, the two answers, a timer, then everyone's
+   buds holding signs. When the signs flip, the buds walk under the answer they picked. Works down to the
+   small picture-in-picture size Discord gives Activities. */
+:root {
+  --sky-top: #BFD9FF; --sky-bottom: #FBE3EF; --ink: #1D1C2B; --muted: #5E5D75;
+  --card: rgba(255, 255, 255, 0.82); --line: rgba(29, 28, 43, 0.08); --shadow: rgba(46, 40, 90, 0.18);
+  --a: #FFB38A; --a-ink: #5A2A12; --b: #8EC5FF; --b-ink: #123A5E;
+  --btn: #1D1C2B; --btn-ink: #FFFFFF; --wood: #C9965F; --paper: #FFFBEF;
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sky-top: #141A3A; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4;
+    --card: rgba(30, 32, 52, 0.8); --line: rgba(255, 255, 255, 0.1); --shadow: rgba(0, 0, 0, 0.45);
+    --btn: #EDECF6; --btn-ink: #15161F; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --sky-top: #141A3A; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4;
+  --card: rgba(30, 32, 52, 0.8); --line: rgba(255, 255, 255, 0.1); --shadow: rgba(0, 0, 0, 0.45);
+  --btn: #EDECF6; --btn-ink: #15161F; color-scheme: dark;
+}
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; overflow: hidden; color: var(--ink); font-family: var(--font);
+  background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
+  -webkit-tap-highlight-color: transparent;
+}
+.app { height: 100%; display: grid; grid-template-rows: auto auto 1fr; max-width: 900px; margin: 0 auto;
+  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+.top { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.top .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; color: inherit; text-decoration: none; }
+.top .brand img { width: 26px; height: 26px; }
+.top .round { margin-left: auto; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.icon-btn { border: 1px solid var(--line); background: var(--card); color: inherit; width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.icon-btn svg { width: 17px; height: 17px; }
+
+/* the host and its question */
+.host { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0 8px; }
+.host img { width: 52px; height: 52px; flex: none; filter: drop-shadow(0 6px 10px var(--shadow)); transform-origin: 50% 100%; }
+.host img.talk { animation: bob .5s ease-in-out 2; }
+@keyframes bob { 50% { transform: translateY(-4px) scaleY(1.05); } }
+.bubble { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 10px 14px; box-shadow: 0 10px 24px -16px var(--shadow); min-height: 44px; flex: 1; }
+.bubble::before { content: ""; position: absolute; left: -7px; top: 16px; width: 12px; height: 12px; background: inherit; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); transform: rotate(45deg); }
+.bubble .kicker { margin: 0; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.bubble .say { margin: 2px 0 0; font-size: clamp(17px, 3.6vw, 22px); font-weight: 600; line-height: 1.25; }
+
+/* the stage */
+.stage { position: relative; min-height: 0; display: grid; grid-template-rows: auto auto 1fr; overflow-y: auto; overflow-x: hidden; }
+.answers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 4px 0; }
+.answer {
+  position: relative; border: 0; border-radius: 20px; padding: 14px 12px 16px; min-height: 92px; cursor: pointer;
+  font: 600 clamp(16px, 3.4vw, 21px)/1.2 var(--font); text-align: center; display: grid; place-items: center; gap: 4px;
+  box-shadow: 0 4px 0 rgba(0,0,0,.12), 0 14px 24px -18px var(--shadow); transition: transform .15s, box-shadow .15s, opacity .2s, filter .2s;
+}
+.answer .emo { font-size: clamp(26px, 6vw, 38px); line-height: 1; }
+.answer.a { background: var(--a); color: var(--a-ink); }
+.answer.b { background: var(--b); color: var(--b-ink); }
+.answer:hover:not(:disabled) { transform: translateY(-2px); }
+.answer:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,.12); }
+.answer.mine { outline: 4px solid var(--ink); outline-offset: 3px; }
+.answer.mine::after { content: "your pick"; position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--card); font-size: 11px; font-weight: 600; letter-spacing: .03em; padding: 2px 9px; border-radius: 999px; }
+.answer:disabled { cursor: default; }
+.answers.locked .answer:not(.mine) { opacity: .55; filter: saturate(.7); }
+.answer .count { position: absolute; right: 10px; bottom: 8px; font-size: 13px; opacity: .85; }
+.timer { height: 8px; border-radius: 999px; background: var(--line); margin: 12px 2px 4px; overflow: hidden; }
+.timer i { display: block; height: 100%; width: 100%; background: var(--ink); border-radius: inherit; transform-origin: left; }
+.timer.low i { background: #E8505B; }
+
+/* everyone's buds */
+.crowd { position: relative; min-height: 150px; }
+.pl { position: absolute; left: 0; top: 0; width: 92px; display: grid; justify-items: center; transition: transform .7s cubic-bezier(.3,1.25,.4,1); will-change: transform; }
+.pl canvas { width: 70px; height: 70px; display: block; }
+.pl .name { margin-top: 2px; font-size: 12px; font-weight: 600; background: var(--card); border: 1px solid var(--line); padding: 1px 8px; border-radius: 999px; max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl.me .name { background: var(--ink); color: var(--card); }
+.pl.away { opacity: .45; }
+.pl.hop canvas { animation: hop .45s ease-out; }
+@keyframes hop { 40% { transform: translateY(-14px) scaleY(1.06); } 70% { transform: translateY(0) scaleY(.9); } }
+/* the sign each bud holds: wood back while picking, flips to the answer */
+.sign { position: relative; width: 64px; height: 40px; perspective: 300px; margin-bottom: -2px; }
+.sign::after { content: ""; position: absolute; left: 50%; bottom: -16px; width: 4px; height: 18px; margin-left: -2px; background: var(--wood); border-radius: 2px; }
+.sign .card { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .55s cubic-bezier(.3,1.4,.5,1); }
+.sign .face { position: absolute; inset: 0; border-radius: 8px; display: grid; place-items: center; backface-visibility: hidden; -webkit-backface-visibility: hidden; font-size: 22px; box-shadow: 0 3px 8px -4px rgba(0,0,0,.35); }
+.sign .back { background: repeating-linear-gradient(90deg, #C9965F 0 9px, #BE8A54 9px 18px); color: #6E4A26; font-weight: 700; font-size: 18px; }
+.sign .front { transform: rotateY(180deg); background: var(--paper); border: 3px solid currentColor; }
+.sign .front.a { color: #E58A5A; } .sign .front.b { color: #4C97E0; }
+.sign.flip .card { transform: rotateY(180deg); }
+.sign.locked .back::after { content: "✓"; position: absolute; right: -6px; top: -8px; width: 20px; height: 20px; border-radius: 50%; background: #3BB273; color: #fff; font-size: 12px; display: grid; place-items: center; }
+.sign.none { visibility: hidden; }
+.match-tag { position: absolute; top: -8px; right: 4px; background: #FFD25A; color: #2B2A3A; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; transform: scale(0); transition: transform .3s .5s cubic-bezier(.3,1.6,.5,1); }
+.pl.matched .match-tag { transform: scale(1); }
+
+/* lobby and results: a card over the stage */
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 16px; box-shadow: 0 18px 40px -26px var(--shadow); margin-top: 6px; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.panel h2 { margin: 0 0 4px; font-size: clamp(22px, 5vw, 30px); line-height: 1.1; }
+.panel p { margin: 0 0 10px; color: var(--muted); font-size: 14.5px; line-height: 1.4; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.btn { font: 600 15px var(--font); border-radius: 999px; padding: 10px 18px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn.primary { background: var(--btn); color: var(--btn-ink); border-color: transparent; }
+.btn:disabled { opacity: .5; cursor: default; }
+.invite { display: flex; gap: 8px; align-items: center; background: rgba(127,127,160,.1); border-radius: 14px; padding: 8px 8px 8px 12px; margin-bottom: 12px; }
+.invite code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.results { display: grid; gap: 8px; margin: 6px 0 12px; }
+.pair { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 16px; background: rgba(127,127,160,.1); }
+.pair.top { background: #FFE98A; color: #2B2A33; }
+.pair canvas { width: 40px; height: 40px; }
+.pair .who { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; }
+.pair .who small { display: block; font-weight: 400; font-size: 12.5px; opacity: .75; }
+.pair .score { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.facts { margin: 0 0 12px; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 14px; }
+.msg { font-size: 13.5px; color: #C2410C; margin: 6px 0 0; min-height: 1em; }
+.count3 { position: absolute; inset: 0; display: grid; place-items: center; font-size: clamp(64px, 18vw, 120px); font-weight: 700; color: var(--ink); text-shadow: 0 8px 24px var(--shadow); pointer-events: none; }
+.count3 span { animation: pop .9s ease-out both; }
+@keyframes pop { from { transform: scale(1.6); opacity: 0; } 30% { transform: scale(1); opacity: 1; } to { opacity: 0; } }
+.center { display: grid; place-items: center; text-align: center; height: 100%; }
+.center .panel { max-width: 420px; }
+
+@media (min-width: 640px) and (min-height: 600px) {
+  .pl { width: 112px; } .pl canvas { width: 90px; height: 90px; } .sign { width: 72px; height: 46px; } .sign .face { font-size: 26px; }
+}
+@media (max-height: 520px) {
+  /* Discord's small Activity window: everything a size down, answers on one line */
+  .app { padding-top: 8px; padding-bottom: 8px; }
+  .host { margin: 6px 0; } .host img { width: 36px; height: 36px; }
+  .bubble { padding: 6px 12px; min-height: 0; } .bubble .kicker { font-size: 10.5px; } .bubble .say { font-size: 16px; }
+  .answer { min-height: 54px; padding: 8px 10px; grid-auto-flow: column; gap: 8px; font-size: 16px; }
+  .answer .emo { font-size: 24px; }
+  .timer { margin: 8px 2px 2px; }
+  .pl { width: 76px; } .pl canvas { width: 50px; height: 50px; } .sign { transform: scale(.8); margin-bottom: -8px; }
+  .panel { padding: 12px 14px; } .panel h2 { font-size: 20px; } .panel p { font-size: 13px; margin-bottom: 8px; }
+  .invite { margin-bottom: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pl, .sign .card { transition-duration: .01s; }
+  .pl.hop canvas, .host img.talk, .count3 span { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <a class="brand" href="/world" id="brand"><img src="/img/favicon.svg" alt=""><span>Question Showdown</span></a>
+    <span class="round" id="roundLabel"></span>
+    <button class="icon-btn" id="soundBtn" type="button"></button>
+  </header>
+
+  <div class="host" id="host" hidden>
+    <img src="/img/favicon.svg" alt="" id="hostImg">
+    <div class="bubble"><p class="kicker" id="kicker"></p><p class="say" id="say" aria-live="polite"></p></div>
+  </div>
+
+  <main class="stage" id="stage">
+    <div id="playArea" hidden>
+      <div class="answers" id="answers">
+        <button class="answer a" id="ansA" type="button"><span class="emo"></span><span class="txt"></span><span class="count"></span></button>
+        <button class="answer b" id="ansB" type="button"><span class="emo"></span><span class="txt"></span><span class="count"></span></button>
+      </div>
+      <div class="timer" id="timer"><i id="timerBar"></i></div>
+    </div>
+    <div id="panelArea"></div>
+    <div class="crowd" id="crowd" aria-label="Players"></div>
+    <div class="count3" id="count3" hidden aria-live="assertive"></div>
+  </main>
+</div>
+<div class="center" id="gate" hidden><div class="panel"><h2 id="gateTitle"></h2><p id="gateText"></p><div class="row" id="gateRow"></div></div></div>
+
+<script src="/js/sound.js"></script>
+<script type="module">
+import { drawEyeStyle } from '/js/bud-core.js';
+
+const APP_ID = '1563361979316445264';
+const params = new URLSearchParams(location.search);
+const IN_DISCORD = params.has('frame_id') && params.has('instance_id');
+const S = window.BudSound || { play() {}, bindToggle() {}, onChange() {}, muted: true };
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+
+let sdk = null, sessionToken = null, room = null, view = null, skew = 0, me = null;
+const buds = {};            // id -> bud data (or null if they don't have one yet)
+const asking = new Set();   // bud ids being fetched
+const players = new Map();  // id -> { el, canvas, sign, ... }
+
+/* ---------- talking to the server ---------- */
+async function api(method, path, body) {
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (sessionToken) headers['x-bud-session'] = sessionToken;
+  const t0 = Date.now();
+  const res = await fetch(path, { method, headers, credentials: 'same-origin', cache: 'no-store', body: body ? JSON.stringify(body) : undefined });
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw Object.assign(new Error(data.error || 'something went wrong'), { status: res.status });
+  if (data.now) skew = data.now - (t0 + Date.now()) / 2;   // the server's clock, so everyone's timer lines up
+  return data;
+}
+const now = () => Date.now() + skew;
+function openLink(url) {
+  if (sdk) sdk.commands.openExternalLink({ url: new URL(url, 'https://bud.oqw.one').href }).catch(() => {});
+  else location.href = url;
+}
+
+/* ---------- drawing a bud flat, from the same outline, paint and eyes as on the island ---------- */
+const paintCache = new Map();
+function loadPaint(src) {
+  if (!src) return Promise.resolve(null);
+  if (!paintCache.has(src)) paintCache.set(src, new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; }));
+  return paintCache.get(src);
+}
+function eyeColor(img, b, box) {
+  if (!img) return '#15161F';
+  const c = document.createElement('canvas'); c.width = c.height = 6;
+  const g = c.getContext('2d', { willReadFrequently: true }), W = img.width, H = img.height, er = b.eyeR;
+  const sx = (b.eyeRel.x - er * 1.2 - box.x0) / box.w * W, sy = (b.eyeRel.y - er * 0.7 - box.y0) / box.h * H;
+  g.drawImage(img, Math.max(0, sx), Math.max(0, sy), Math.max(1, er * 2.4 / box.w * W), Math.max(1, er * 1.4 / box.h * H), 0, 0, 6, 6);
+  const d = g.getImageData(0, 0, 6, 6).data; let l = 0;
+  for (let i = 0; i < d.length; i += 4) l += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+  return l / (d.length / 4) / 255 < 0.42 ? '#F3F4F8' : '#15161F';
+}
+async function drawBud(canvas, b, { happy = false, look = { x: 0, y: 0.2 } } = {}) {
+  const dpr = Math.min(2, devicePixelRatio || 1), size = canvas.clientWidth || 70;
+  canvas.width = canvas.height = Math.round(size * dpr);
+  const g = canvas.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, size, size);
+  if (!b || !b.r || b.r.length < 8) {
+    // no bud yet: a little cloud of a placeholder
+    g.fillStyle = '#D8D6E6'; g.beginPath(); g.ellipse(size / 2, size * 0.58, size * 0.38, size * 0.33, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#5E5D75'; for (const s of [-1, 1]) { g.beginPath(); g.ellipse(size / 2 + s * size * 0.1, size * 0.55, size * 0.035, size * 0.06, 0, 0, Math.PI * 2); g.fill(); }
+    return;
+  }
+  const pts = b.r.map((p) => ({ x: p[0], y: p[1] }));
+  const box = pts.reduce((m, p) => ({ x0: Math.min(m.x0, p.x), y0: Math.min(m.y0, p.y), x1: Math.max(m.x1, p.x), y1: Math.max(m.y1, p.y) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+  box.w = box.x1 - box.x0; box.h = box.y1 - box.y0;
+  const k = (size * 0.9) / Math.max(box.w, box.h), ox = (size - box.w * k) / 2 - box.x0 * k, oy = size - 2 - box.h * k - box.y0 * k;
+  const X = (x) => ox + x * k, Y = (y) => oy + y * k;
+  const path = () => {
+    g.beginPath();
+    pts.forEach((p, i) => {
+      const n = pts[(i + 1) % pts.length], mx = (p.x + n.x) / 2, my = (p.y + n.y) / 2;
+      if (!i) g.moveTo(X((pts[pts.length - 1].x + p.x) / 2), Y((pts[pts.length - 1].y + p.y) / 2));
+      g.quadraticCurveTo(X(p.x), Y(p.y), X(mx), Y(my));
+    });
+    g.closePath();
+  };
+  // shadow, body, paint, a soft highlight, then the eyes
+  g.fillStyle = 'rgba(30,25,60,.16)'; g.beginPath(); g.ellipse(size / 2, size - 3, box.w * k * 0.36, 3.5, 0, 0, Math.PI * 2); g.fill();
+  const img = await loadPaint(b.paint);
+  g.save(); path(); g.clip();
+  g.fillStyle = '#E8E6F2'; g.fillRect(0, 0, size, size);
+  if (img) g.drawImage(img, X(box.x0), Y(box.y0), box.w * k, box.h * k);
+  const hi = g.createRadialGradient(X(box.x0 + box.w * 0.3), Y(box.y0 + box.h * 0.22), 2, X(box.x0 + box.w * 0.45), Y(box.y0 + box.h * 0.5), box.w * k * 0.75);
+  hi.addColorStop(0, 'rgba(255,255,255,.45)'); hi.addColorStop(0.5, 'rgba(255,255,255,0)'); hi.addColorStop(1, 'rgba(20,10,50,.18)');
+  g.fillStyle = hi; g.fillRect(0, 0, size, size);
+  g.restore();
+  try { drawEyeStyle(g, b.eyes || 'classic', X(b.eyeRel.x), Y(b.eyeRel.y), b.eyeR * k, 0, happy, eyeColor(img, b, box), look); } catch (e) {}
+}
+
+/* ---------- players ---------- */
+function playerEl(p) {
+  let pl = players.get(p.id);
+  if (pl) return pl;
+  const root = el('div', 'pl' + (p.id === me ? ' me' : ''));
+  const sign = el('div', 'sign none'), card = el('div', 'card'), back = el('div', 'face back', '?'), front = el('div', 'face front');
+  card.append(back, front); sign.append(card);
+  const canvas = el('canvas'); canvas.setAttribute('aria-hidden', 'true');
+  const name = el('span', 'name', p.name || 'someone');
+  root.append(sign, canvas, name, el('span', 'match-tag', 'same!'));
+  $('crowd').append(root);
+  pl = { root, sign, front, canvas, name, x: 0, y: 0, drawnHappy: null };
+  players.set(p.id, pl);
+  return pl;
+}
+async function ensureBuds(ids) {
+  const want = ids.filter((id) => !(id in buds) && !asking.has(id));
+  if (!want.length) return;
+  want.forEach((id) => asking.add(id));
+  try {
+    const { buds: got } = await api('GET', `/api/game?room=${encodeURIComponent(room)}&buds=${want.join(',')}`);
+    for (const id of want) { buds[id] = got[id] || null; const pl = players.get(id); if (pl) { pl.drawnHappy = null; } }
+    layout();
+  } catch (e) { want.forEach((id) => asking.delete(id)); }
+}
+
+// where everyone stands: a row (or two) while picking, two groups under the answers when the signs flip
+function layout() {
+  if (!view) return;
+  const crowd = $('crowd'), W = crowd.clientWidth, list = view.players, small = innerHeight < 520;
+  const wide = innerWidth >= 640 && innerHeight >= 600;
+  const cw = small ? 76 : wide ? 112 : 92, rowH = small ? 104 : wide ? 162 : 138;
+  const reveal = view.stage === 'reveal' && view.picks;
+  const groups = reveal ? [list.filter((p) => view.picks[p.id] === 0), list.filter((p) => view.picks[p.id] === 1), list.filter((p) => !(p.id in view.picks))] : [list];
+  const spots = new Map();
+  const place = (members, x0, width, yStart) => {
+    const per = Math.max(1, Math.floor(width / cw));
+    members.forEach((p, i) => {
+      const row = Math.floor(i / per), inRow = Math.min(per, members.length - row * per), col = i % per;
+      spots.set(p.id, { x: x0 + width / 2 - (inRow * cw) / 2 + col * cw, y: yStart + row * rowH });
+    });
+  };
+  if (reveal) {
+    const half = W / 2;
+    place(groups[0], 0, half - 4, 6); place(groups[1], half + 4, half - 4, 6);
+    const rowsUsed = Math.max(...[groups[0], groups[1]].map((g, i) => Math.ceil(g.length / Math.max(1, Math.floor((half - 4) / cw)))), 1);
+    place(groups[2], 0, W, 6 + rowsUsed * rowH);
+  } else place(list, 0, W, 6);
+  let maxY = 0;
+  for (const p of list) {
+    const pl = playerEl(p), s = spots.get(p.id) || { x: 0, y: 0 };
+    pl.root.style.transform = `translate(${Math.round(s.x)}px, ${Math.round(s.y)}px)`;
+    pl.root.classList.toggle('away', !p.here);
+    pl.name.textContent = p.id === me ? 'you' : p.name || 'someone';
+    maxY = Math.max(maxY, s.y + rowH);
+    const happy = !!(reveal && view.mine != null && view.picks[p.id] === view.mine && p.id !== me) || (view.phase === 'done');
+    if (pl.drawnHappy !== happy && p.id in buds) { pl.drawnHappy = happy; drawBud(pl.canvas, buds[p.id], { happy }); }
+    else if (!(p.id in buds) && pl.drawnHappy == null) { pl.drawnHappy = 'blank'; drawBud(pl.canvas, null); }
+  }
+  for (const [id, pl] of players) if (!list.some((p) => p.id === id)) { pl.root.remove(); players.delete(id); }
+  crowd.style.height = `${maxY + 10}px`;
+}
+
+function updateSigns() {
+  const v = view;
+  for (const p of v.players) {
+    const pl = players.get(p.id); if (!pl) continue;
+    const playing = v.phase === 'play' && v.stage !== 'ready';
+    pl.sign.classList.toggle('none', !playing);
+    pl.sign.classList.toggle('locked', playing && v.stage === 'pick' && v.locked.includes(p.id));
+    const choice = v.picks ? v.picks[p.id] : undefined;
+    const flip = v.stage === 'reveal' && choice != null;
+    if (flip) { pl.front.className = 'face front ' + (choice ? 'b' : 'a'); pl.front.textContent = emojiOf(v.question[choice]); }
+    if (flip && !pl.sign.classList.contains('flip')) { pl.sign.classList.add('flip'); pl.root.classList.remove('hop'); void pl.root.offsetWidth; pl.root.classList.add('hop'); }
+    if (!flip) pl.sign.classList.remove('flip');
+    pl.root.classList.toggle('matched', flip && p.id !== me && v.mine != null && choice === v.mine);
+  }
+}
+
+/* ---------- the round on screen ---------- */
+const splitAnswer = (s) => { const m = String(s).match(/^(\p{Extended_Pictographic}[️‍\p{Extended_Pictographic}]*)\s*(.*)$/u); return m ? [m[1], m[2]] : ['', s]; };
+const emojiOf = (s) => splitAnswer(s)[0] || (s || '').slice(0, 2);
+let lastKey = '', lastStage = '', ticked = -1;
+
+function render() {
+  const v = view; if (!v) return;
+  $('gate').hidden = true; $('app').hidden = false;
+  $('roundLabel').textContent = v.phase === 'play' ? `round ${v.round + 1} of ${v.rounds}` : '';
+  const key = `${v.phase}|${v.round}|${v.stage}|${v.game}`;
+  const changed = key !== lastKey; lastKey = key;
+  $('host').hidden = false;
+  if (v.phase === 'lobby') renderLobby();
+  else if (v.phase === 'done') renderDone(changed);
+  else renderPlay(changed);
+  layout(); updateSigns();
+  if (changed && v.stage !== lastStage) onStage(v.stage);
+  lastStage = v.stage;
+}
+function hostSays(kicker, text) {
+  if ($('say').textContent !== text) { const h = $('hostImg'); h.classList.remove('talk'); void h.offsetWidth; h.classList.add('talk'); }
+  $('kicker').textContent = kicker; $('say').textContent = text;
+}
+
+function renderLobby() {
+  $('playArea').hidden = true;
+  const here = view.players.filter((p) => p.here).length;
+  hostSays('Question Showdown', here < 2 ? 'waiting for one more player…' : `${here} players! ready when you are`);
+  const area = $('panelArea'); area.textContent = '';
+  const panel = el('div', 'panel');
+  panel.append(el('h2', null, 'Would you rather…?'));
+  panel.append(el('p', null, `${view.rounds} quick questions. Everyone picks at the same time, then the signs flip and you see who matched. At the end: who’s most in sync.`));
+  if (!IN_DISCORD) {
+    const inv = el('div', 'invite'), url = `${location.origin}/showdown?room=${room}`;
+    inv.append(el('code', null, url));
+    const copy = el('button', 'btn', 'Copy link'); copy.type = 'button';
+    copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(url); copy.textContent = 'Copied!'; S.play('pop'); } catch (e) { copy.textContent = 'Copy it from the address bar'; } });
+    inv.append(copy); panel.append(inv);
+    panel.append(el('p', null, 'Share it with people in your call. Anyone in the server can join.'));
+  } else panel.append(el('p', null, 'Everyone in this call can join: start the Activity and you’ll land right here.'));
+  const r = el('div', 'row'), go = el('button', 'btn primary', here < 2 ? 'Waiting for players…' : 'Start!'); go.type = 'button';
+  go.disabled = here < 2;
+  go.addEventListener('click', async () => { go.disabled = true; try { view = await api('POST', '/api/game', { action: 'sd-start', room }); render(); } catch (e) { msg.textContent = e.message; go.disabled = false; } });
+  const msg = el('p', 'msg');
+  r.append(go); panel.append(r, msg);
+  area.append(panel);
+}
+
+function renderPlay(changed) {
+  const v = view;
+  $('panelArea').textContent = '';
+  $('playArea').hidden = v.stage === 'ready';
+  const [ea, ta] = splitAnswer(v.question[0]), [eb, tb] = splitAnswer(v.question[1]);
+  const A = $('ansA'), B = $('ansB');
+  A.querySelector('.emo').textContent = ea; A.querySelector('.txt').textContent = ta;
+  B.querySelector('.emo').textContent = eb; B.querySelector('.txt').textContent = tb;
+  const picking = v.stage === 'pick';
+  A.disabled = B.disabled = !picking || pickBusy;
+  A.classList.toggle('mine', v.mine === 0); B.classList.toggle('mine', v.mine === 1);
+  $('answers').classList.toggle('locked', v.mine != null || v.stage === 'reveal');
+  const counts = [0, 0];
+  if (v.picks) for (const c of Object.values(v.picks)) counts[c]++;
+  A.querySelector('.count').textContent = v.stage === 'reveal' ? `${counts[0]}` : '';
+  B.querySelector('.count').textContent = v.stage === 'reveal' ? `${counts[1]}` : '';
+  if (v.stage === 'ready') hostSays(`round ${v.round + 1}`, v.round === 0 ? 'here we go!' : pick(['next one!', 'ooh, this one’s good', 'ready?']));
+  else if (picking) {
+    const waiting = v.players.filter((p) => p.here && !v.locked.includes(p.id)).length;
+    hostSays(v.mine == null ? 'would you rather…' : waiting ? `waiting on ${waiting}…` : 'everyone’s in!', `${ta}, or ${tb}?`);
+  } else if (v.stage === 'reveal' && changed) hostSays('the signs are up!', revealLine(v, counts));
+}
+function revealLine(v, counts) {
+  const answered = counts[0] + counts[1], names = (ids) => ids.map((id) => (id === me ? 'you' : (v.players.find((p) => p.id === id) || {}).name || 'someone'));
+  if (!answered) return '…hello? anybody?';
+  const same = v.mine == null ? [] : Object.keys(v.picks).filter((id) => id !== me && v.picks[id] === v.mine);
+  let line;
+  if (answered >= 2 && (counts[0] === 0 || counts[1] === 0)) line = pick(['everyone agrees!! 🤝', 'unanimous! the island has spoken', 'all on the same side!']);
+  else if (counts[0] === counts[1]) line = pick(['a perfect split!', 'right down the middle!']);
+  else {
+    const lone = Object.keys(v.picks).filter((id) => Object.values(v.picks).filter((c) => c === v.picks[id]).length === 1);
+    line = lone.length === 1 && answered >= 3 ? `${names(lone)[0] === 'you' ? 'you’re' : names(lone)[0] + ' is'} all alone on this one!` : `${Math.max(...counts)} to ${Math.min(...counts)}!`;
+  }
+  if (v.mine != null && same.length && !(counts[0] === 0 || counts[1] === 0)) line += ` you matched ${names(same).slice(0, 3).join(', ')}${same.length > 3 ? ` +${same.length - 3}` : ''}`;
+  if (v.mine == null) line += ' (you didn’t pick!)';
+  return line;
+}
+
+function renderDone(changed) {
+  $('playArea').hidden = true;
+  if (!changed && $('panelArea').firstChild) return;
+  const v = view, s = v.summary || { pairs: [] }, nameOf = (id) => (id === me ? 'you' : (v.players.find((p) => p.id === id) || {}).name || 'someone');
+  const top = s.pairs[0];
+  hostSays('that’s the game!', top ? `${nameOf(top.a)} and ${nameOf(top.b)} are the most in sync!` : 'thanks for playing!');
+  const area = $('panelArea'); area.textContent = '';
+  const panel = el('div', 'panel');
+  panel.append(el('h2', null, 'Most in sync'));
+  const list = el('div', 'results');
+  for (const [i, p] of s.pairs.slice(0, 4).entries()) {
+    const row = el('div', 'pair' + (i === 0 ? ' top' : ''));
+    const ca = el('canvas'), cb = el('canvas');
+    row.append(ca, cb);
+    const who = el('div', 'who', `${nameOf(p.a)} & ${nameOf(p.b)}`);
+    who.append(el('small', null, p.same === p.both ? 'agreed on everything!' : `agreed on ${p.same} of ${p.both}`));
+    row.append(who, el('span', 'score', `${Math.round(p.same / p.both * 100)}%`));
+    list.append(row);
+    requestAnimationFrame(() => { drawBud(ca, buds[p.a], { happy: true }); drawBud(cb, buds[p.b], { happy: true }); });
+  }
+  if (!s.pairs.length) list.append(el('p', null, 'Not enough answers to compare. Rematch?'));
+  panel.append(list);
+  const facts = el('ul', 'facts');
+  if (s.together) facts.append(el('li', null, `🤝 Everyone agreed ${s.together} ${s.together === 1 ? 'time' : 'times'}.`));
+  if (s.loneWolf) facts.append(el('li', null, `🐺 Lone wolf: ${nameOf(s.loneWolf.id)}, on their own ${s.loneWolf.rounds} times.`));
+  const mine = s.pairs.filter((p) => p.a === me || p.b === me)[0];
+  if (mine) {
+    const other = mine.a === me ? mine.b : mine.a;
+    facts.append(el('li', null, `💛 Your best match: ${nameOf(other)} (${mine.same} of ${mine.both}).`));
+  }
+  if (facts.childNodes.length) panel.append(facts);
+  const r = el('div', 'row');
+  const again = el('button', 'btn primary', 'Play again'); again.type = 'button';
+  again.addEventListener('click', async () => { again.disabled = true; try { view = await api('POST', '/api/game', { action: 'sd-start', room }); render(); } catch (e) { msg.textContent = e.message; again.disabled = false; } });
+  r.append(again);
+  if (mine) {
+    const other = mine.a === me ? mine.b : mine.a;
+    if (buds[other]) { const visit = el('button', 'btn', `Visit ${nameOf(other)}’s bud`); visit.type = 'button'; visit.addEventListener('click', () => openLink(`/world?bud=${other}`)); r.append(visit); }
+  }
+  const msg = el('p', 'msg');
+  panel.append(r, msg);
+  area.append(panel);
+  S.play('sparkle');
+}
+
+// sounds and little moments when the stage changes
+function onStage(stage) {
+  if (stage === 'ready') {
+    const c = $('count3'); c.hidden = false; c.textContent = '';
+    const until = view.roundAt;
+    const step = () => {
+      const left = Math.ceil((until - now()) / 1000);
+      if (left <= 0 || view.stage !== 'ready') { c.hidden = true; return; }
+      if (c.dataset.n !== String(left)) { c.dataset.n = left; c.textContent = ''; c.append(el('span', null, left)); S.play('tick', { rate: 1 + (3 - left) * 0.1 }); }
+      requestAnimationFrame(step);
+    };
+    step();
+  } else $('count3').hidden = true;
+  if (stage === 'pick') { S.play('pop', { rate: 1.2 }); ticked = -1; }
+  if (stage === 'reveal') {
+    S.play('whoosh', { gain: 0.6 });
+    const counts = [0, 0]; if (view.picks) for (const c of Object.values(view.picks)) counts[c]++;
+    setTimeout(() => S.play(counts[0] + counts[1] >= 2 && (!counts[0] || !counts[1]) ? 'chime' : view.mine != null && Object.keys(view.picks).some((id) => id !== me && view.picks[id] === view.mine) ? 'ding' : 'boing'), 450);
+  }
+}
+
+// the timer bar, smooth between check-ins
+function frame() {
+  if (view && view.phase === 'play' && view.stage === 'pick') {
+    const total = view.pickEnds - view.roundAt, left = Math.max(0, view.pickEnds - now());
+    $('timerBar').style.transform = `scaleX(${(left / total).toFixed(3)})`;
+    $('timer').classList.toggle('low', left < 3000);
+    const s = Math.ceil(left / 1000);
+    if (s <= 3 && s > 0 && s !== ticked && view.mine == null) { ticked = s; S.play('tick', { gain: 0.6 }); }
+    if (left <= 0 && !polling) poll(0);
+  } else if (view && view.stage === 'reveal') {
+    $('timerBar').style.transform = 'scaleX(0)';
+    if (now() > view.revealEnds && !polling) poll(0);
+  } else if (view && view.stage === 'ready' && now() > view.roundAt && !polling) poll(0);
+  requestAnimationFrame(frame);
+}
+
+let pickBusy = false;
+async function choose(i) {
+  if (!view || view.stage !== 'pick' || pickBusy || view.mine === i) return;
+  pickBusy = true;
+  view.mine = i; if (!view.locked.includes(me)) view.locked.push(me);
+  S.play('pop', { rate: i ? 1.15 : 0.95 }); render();
+  try { view = await api('POST', '/api/game', { action: 'sd-pick', room, choice: i }); }
+  catch (e) { if (e.status !== 409) hostSays('hmm', e.message); }
+  pickBusy = false; render();
+}
+$('ansA').addEventListener('click', () => choose(0));
+$('ansB').addEventListener('click', () => choose(1));
+addEventListener('keydown', (e) => { if (e.key === '1' || e.key === 'ArrowLeft') choose(0); if (e.key === '2' || e.key === 'ArrowRight') choose(1); });
+addEventListener('resize', () => { for (const pl of players.values()) pl.drawnHappy = null; layout(); });
+
+/* ---------- checking in ---------- */
+let polling = false, pollTimer = null;
+async function poll(delay) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(async () => {
+    if (polling) return;
+    polling = true;
+    try {
+      const v = await api('GET', `/api/game?room=${encodeURIComponent(room)}`);
+      if (!pickBusy) { view = v; render(); }
+      ensureBuds(v.players.map((p) => p.id));
+    } catch (e) {
+      if (e.status === 404) return gate('This game ended', 'Start a new one?', [['New game', () => { location.href = '/showdown'; }, true]]);
+    } finally { polling = false; }
+    poll(view && view.phase === 'lobby' ? 1500 : view && view.phase === 'done' ? 2500 : 900);
+  }, delay);
+}
+
+function gate(title, text, buttons = []) {
+  $('app').hidden = true; $('gate').hidden = false;
+  $('gateTitle').textContent = title; $('gateText').textContent = text;
+  const row = $('gateRow'); row.textContent = '';
+  for (const [label, fn, primary] of buttons) { const b = el('button', 'btn' + (primary ? ' primary' : ''), label); b.type = 'button'; b.addEventListener('click', fn); row.append(b); }
+}
+
+/* ---------- start: inside Discord, or from a link ---------- */
+async function startInDiscord() {
+  const { DiscordSDK } = await import('/js/vendor/discord-sdk.js');
+  sdk = new DiscordSDK(APP_ID);
+  await sdk.ready();
+  const { code } = await sdk.commands.authorize({ client_id: APP_ID, response_type: 'code', state: '', prompt: 'none', scope: ['identify'] });
+  const auth = await api('POST', '/api/auth/activity', { code });
+  sessionToken = auth.session; me = auth.user.id;
+  try { await sdk.commands.authenticate({ access_token: auth.access_token }); } catch (e) {}
+  room = ('dc-' + sdk.instanceId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+  $('brand').addEventListener('click', (e) => { e.preventDefault(); openLink('/world'); });
+}
+async function startFromLink() {
+  room = params.get('room');
+  if (room && !/^[A-Za-z0-9_-]{6,80}$/.test(room)) room = null;
+  const v = await api('POST', '/api/game', room ? { action: 'sd-join', room } : { action: 'sd-new' });
+  room = v.id;
+  if (params.get('room') !== room) history.replaceState(null, '', `/showdown?room=${room}`);
+  return v;
+}
+
+(async () => {
+  S.bindToggle($('soundBtn'));
+  if (!window.BudSound) $('soundBtn').hidden = true;
+  try {
+    if (IN_DISCORD) { await startInDiscord(); view = await api('POST', '/api/game', { action: 'sd-join', room }); }
+    else view = await startFromLink();
+    me = view.me;
+    render();
+    ensureBuds(view.players.map((p) => p.id));
+    poll(900);
+    requestAnimationFrame(frame);
+  } catch (e) {
+    if (e.status === 401 && !IN_DISCORD) {
+      const next = encodeURIComponent(location.pathname + location.search);
+      return gate('Sign in to play', 'Question Showdown is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', () => { location.href = `/api/auth/login?next=${next}`; }, true]]);
+    }
+    if (e.status === 403) return gate('Members only', 'This game is for members of The Buddie System server.', []);
+    gate('Couldn’t start the game', IN_DISCORD ? 'Something went wrong connecting to Discord. Try closing and reopening the Activity.' : e.message, IN_DISCORD ? [] : [['Try again', () => location.reload(), true]]);
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>

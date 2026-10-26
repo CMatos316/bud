@@ -368,6 +368,10 @@ body { transition: background 2s linear; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 5h12v14H6a2 2 0 0 1-2-2V8"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M8 9h6M8 12.5h6M8 16h4"/></svg>
       <span class="label">News</span><span class="newdot" id="newsDot" hidden></span>
     </button>
+    <a class="pill" href="/showdown" id="showdownLink" aria-label="Question Showdown: a would-you-rather game for your group">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><path d="M7 11v8M17 11v8"/></svg>
+      <span class="label">Showdown</span>
+    </a>
     <button class="pill" id="photoBtn" type="button" hidden aria-label="Photo booth">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
       <span class="label">Photo</span>
@@ -2986,8 +2990,13 @@ function showCenter(title, text, linkText, href = '/') {
     document.getElementById('titleSub').textContent = 'Your bud just moved in.';
     setTimeout(() => { mine.heading = Math.atan2(camera.position.x - mine.x, camera.position.z - mine.z); say(mine, 'wheeeee!', 1500); }, 200);
   }
-  if (mine && !DROP && !GAME_ID) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
+  if (mine && !DROP && !GAME_ID && !params.get('bud')) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
   if (GAME_ID && mine) setTimeout(() => enterGame(GAME_ID), 700);
+  const OPEN_BUD = /^\d{5,25}$/.test(params.get('bud') || '') ? buds.find((b) => b.data.id === params.get('bud')) : null;
+  if (OPEN_BUD && !GAME_ID) {
+    history.replaceState(null, '', location.pathname);
+    setTimeout(() => { cam.follow = OPEN_BUD; cam.followUntil = T + 5; camGoal.dist = Math.max(9, R * 0.85); OPEN_BUD.syv -= 0.12; say(OPEN_BUD, pick(HELLOS), 1500); openCard(OPEN_BUD); }, 1500);
+  }
   setTimeout(() => document.getElementById('title').classList.add('fade'), DROP ? 9000 : 6000);
   requestAnimationFrame(frame);
 })();
