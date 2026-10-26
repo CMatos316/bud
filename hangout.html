@@ -21,14 +21,14 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --sky-top: #141A3A; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4;
+    --sky-top: #2F3A78; --sky-bottom: #9A6F98; --ink: #EDECF6; --muted: #A9A7C4;
     --card: rgba(30, 32, 52, 0.84); --line: rgba(255, 255, 255, 0.1); --shadow: rgba(0, 0, 0, 0.45);
     --you: #EDECF6; --you-ink: #15161F; --btn: #EDECF6; --btn-ink: #15161F;
     --help: #1E3A2B; --help-ink: #D6F2E1; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --sky-top: #141A3A; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4;
+  --sky-top: #2F3A78; --sky-bottom: #9A6F98; --ink: #EDECF6; --muted: #A9A7C4;
   --card: rgba(30, 32, 52, 0.84); --line: rgba(255, 255, 255, 0.1); --shadow: rgba(0, 0, 0, 0.45);
   --you: #EDECF6; --you-ink: #15161F; --btn: #EDECF6; --btn-ink: #15161F;
   --help: #1E3A2B; --help-ink: #D6F2E1; color-scheme: dark;
@@ -55,7 +55,8 @@ body {
 .pill { border: 1px solid var(--line); background: var(--card); color: inherit; border-radius: 999px; padding: 7px 12px; font: 600 13.5px var(--font); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; flex: none; }
 
 /* your bud, and its clipboard once the bit starts */
-.stage { position: relative; height: clamp(150px, 30vh, 250px); display: grid; place-items: center; }
+.stage { position: relative; height: clamp(170px, 34vh, 290px); display: grid; place-items: center; margin: 0 -16px; }
+.scene3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; -webkit-mask-image: linear-gradient(180deg, #000 78%, transparent); mask-image: linear-gradient(180deg, #000 78%, transparent); }
 .budwrap { position: relative; width: clamp(120px, 24vh, 190px); aspect-ratio: 1; transition: transform .6s cubic-bezier(.3,1.3,.5,1); }
 .budwrap canvas { width: 100%; height: 100%; display: block; transform-origin: 50% 100%; }
 .budwrap.talk canvas { animation: bob .45s ease-in-out 3; }
@@ -64,7 +65,7 @@ body {
 @keyframes hop { 40% { transform: translateY(-18px) scaleY(1.06); } 70% { transform: translateY(0) scaleY(.92); } }
 .stage.bit .budwrap { transform: translateX(-28%); }
 .clipboard {
-  position: absolute; right: max(2%, calc(50% - 250px)); top: 50%; width: clamp(130px, 34vw, 200px); transform: translate(140%, -50%) rotate(8deg);
+  position: absolute; right: max(18px, calc(50% - 234px)); top: 50%; width: clamp(130px, 34vw, 200px); transform: translate(140%, -50%) rotate(8deg);
   opacity: 0; transition: transform .7s cubic-bezier(.3,1.25,.5,1), opacity .3s; pointer-events: none;
 }
 .stage.bit .clipboard { transform: translate(0, -50%) rotate(4deg); opacity: 1; pointer-events: auto; }
@@ -142,7 +143,7 @@ body {
   .under .muted:empty { display: none; }
 }
 @media (max-height: 560px) {
-  .stage { height: 124px; } .budwrap { width: 100px; } .clipboard { width: 128px; }
+  .stage { height: 150px; } .budwrap { width: 100px; } .clipboard { width: 128px; }
   .clipboard .board { padding: 12px 6px 6px; }
   .clipboard .sheet { min-height: 0; font-size: 12px; }
   .clipboard .sheet p:not(:last-of-type) { display: none; }
@@ -163,6 +164,7 @@ body {
     <button class="icon-btn" id="soundBtn" type="button"></button>
   </header>
   <section class="stage" id="stage">
+    <canvas class="scene3d" id="scene3d" aria-hidden="true"></canvas>
     <div class="budwrap" id="budwrap"><canvas id="budCanvas" aria-hidden="true"></canvas></div>
     <div class="clipboard" id="clipboard" aria-hidden="true">
       <div class="board" id="board" title="Peek at the notebook">
@@ -192,9 +194,11 @@ body {
 <div class="overlay" id="gate" hidden><div class="panel center" id="gatePanel"></div></div>
 <div class="overlay" id="sheetPanel" hidden><div class="panel" id="sheetBody"></div></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
 <script src="/js/sound.js"></script>
 <script type="module">
-import { drawEyeStyle, SPACING } from '/js/bud-core.js';
+import { drawEyeStyle, SPACING, buildMesh, setExtents } from '/js/bud-core.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -279,6 +283,7 @@ function paintBud(g, b, size, { blink = 0, withGlasses = false } = {}) {
 }
 let blinkT = 0;
 function drawMain(blink = 0) {
+  if (G3) { glasses3D(glasses); return; }
   const c = $('budCanvas'), dpr = Math.min(2, devicePixelRatio || 1), size = c.clientWidth || 160;
   if (!bud) return;
   c.width = c.height = Math.round(size * dpr);
@@ -292,7 +297,202 @@ function blinkLoop() {
     if (!document.hidden) step(); else blinkLoop();
   }, 2500 + Math.random() * 3500);
 }
-function anim(cls, ms) { const w = $('budwrap'); w.classList.remove(cls); void w.offsetWidth; w.classList.add(cls); setTimeout(() => w.classList.remove(cls), ms); }
+function anim(cls, ms) {
+  if (G3?.bud) { if (cls === 'hop') G3.bud.vy = 6.5; else G3.bud.talkUntil = performance.now() + ms; return; } const w = $('budwrap'); w.classList.remove(cls); void w.offsetWidth; w.classList.add(cls); setTimeout(() => w.classList.remove(cls), ms); }
+
+/* ---------- your bud in 3D, on its own little patch of island (the same look as on the island) ---------- */
+const FACE_W = 256, FACE_H = 175, BUD_SIZE = 1.9;
+let G3 = null;   // { renderer, scene, camera, world, bud }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function setup3D() {
+  const THREE = window.THREE;
+  if (!THREE || !window.Delaunator) return false;
+  const canvas = $('scene3d');
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true }); } catch (e) { return false; }
+  renderer.setClearColor(0x000000, 0); renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8d96b8, 0.45));
+  const sun = new THREE.DirectionalLight(0xfff6ea, 0.8); sun.position.set(-8, 16, 10); scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.22); fill.position.set(10, 4, -6); scene.add(fill);
+  // the same soft studio light the island uses, so paint looks the same here
+  const env = new THREE.Scene(), sg = new THREE.SphereGeometry(10, 32, 16), sp = sg.attributes.position, cols = [];
+  for (let i = 0; i < sp.count; i++) { const t = (sp.getY(i) / 10 + 1) / 2; cols.push(0.32 + 0.68 * t, 0.35 + 0.65 * t, (0.42 + 0.58 * t) * 1.15); }
+  sg.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  env.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const panel = (x, y, z, w, h, k) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(k, k, k), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); env.add(m); };
+  panel(-5, 6, 6, 6, 3, 4); panel(7, 1, 3, 2, 6, 2.2); panel(0, -3, -8, 8, 2, 1.2);
+  const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(env, 0.03).texture; pm.dispose();
+  const world = new THREE.Group(); scene.add(world);
+  world.add(miniIsland(THREE));
+  const clouds = new THREE.Group(); scene.add(clouds);
+  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: 0.92, emissive: 0xffffff, emissiveIntensity: 0.35 });
+  for (const [x, y, z, s] of [[-4.2, 2.9, -7, 1], [3.8, 3.4, -9, 1.3], [6.5, 1.2, -11, 0.9], [-7.5, 0.6, -12, 1.1]]) {
+    const c = new THREE.Group();
+    for (const [dx, dy, r] of [[0, 0, 0.55], [0.55, 0.1, 0.42], [-0.5, -0.05, 0.4], [0.2, 0.3, 0.38]]) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), cloudMat); m.position.set(dx, dy, 0); m.scale.y = 0.75; c.add(m); }
+    c.position.set(x, y, z); c.scale.setScalar(s); c.userData.speed = 0.04 + Math.random() * 0.05; clouds.add(c);
+  }
+  G3 = { THREE, renderer, scene, camera, world, clouds, bud: null, shift: 0 };
+  return true;
+}
+function miniIsland(THREE) {
+  const g = new THREE.Group(), lin = (h) => new THREE.Color(h).convertSRGBToLinear();
+  const R = 2.5, edge = (a) => 1 + 0.05 * Math.sin(3 * a + 2.1) + 0.035 * Math.sin(5 * a + 4.8);
+  const shape = new THREE.Shape();
+  for (let i = 0; i <= 72; i++) { const a = i / 72 * Math.PI * 2, r = R * edge(a); i ? shape.lineTo(Math.cos(a) * r, Math.sin(a) * r) : shape.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+  const top = new THREE.ExtrudeGeometry(shape, { depth: 0.3, bevelEnabled: true, bevelThickness: 0.22, bevelSize: 0.25, bevelSegments: 4, curveSegments: 48 });
+  top.rotateX(-Math.PI / 2); top.translate(0, -0.52, 0);
+  g.add(new THREE.Mesh(top, [new THREE.MeshStandardMaterial({ color: lin('#86CF86'), roughness: 0.95, envMapIntensity: 0.35 }), new THREE.MeshStandardMaterial({ color: lin('#6DB774'), roughness: 0.95, envMapIntensity: 0.35 })]));
+  const h = 2.1, cone = new THREE.ConeGeometry(R, h, 22, 5, true); cone.rotateX(Math.PI);
+  const pos = cone.attributes.position, colors = [], a1 = new THREE.Color('#C9A27A'), a2 = new THREE.Color('#7F6250');
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), t = (h / 2 - y) / h, a = Math.atan2(z, x), rr = Math.hypot(x, z);
+    const j = t > 0.02 ? 1 + 0.12 * Math.sin(a * 7 + t * 9) : 1;
+    pos.setXYZ(i, Math.cos(a) * rr * edge(a) * j, y, Math.sin(a) * rr * edge(a) * j);
+    const c = a1.clone().lerp(a2, t); colors.push(c.r, c.g, c.b);
+  }
+  cone.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const rock = cone.toNonIndexed(); rock.computeVertexNormals();
+  const under = new THREE.Mesh(rock, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
+  under.position.y = -0.52 - h / 2 + 0.03; g.add(under);
+  // a tree, a rock and a few flowers, like the big island
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 0.9, 8), new THREE.MeshStandardMaterial({ color: lin('#A47551'), roughness: 1 }));
+  trunk.position.set(-1.9, 0.45, -1.5); g.add(trunk);
+  for (const [dx, dy, r, c] of [[0, 1.05, 0.55, '#7FCB8A'], [0.25, 1.35, 0.4, '#A6E3A1'], [-0.22, 1.3, 0.36, '#6BBF7A']]) {
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), new THREE.MeshStandardMaterial({ color: lin(c), roughness: 0.9, flatShading: true }));
+    m.position.set(-1.9 + dx, dy, -1.5); g.add(m);
+  }
+  const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0), new THREE.MeshStandardMaterial({ color: lin('#B7B5C6'), roughness: 1, flatShading: true }));
+  stone.position.set(1.7, 0.08, -0.6); stone.scale.y = 0.6; g.add(stone);
+  const stem = new THREE.MeshStandardMaterial({ color: lin('#4E9A5A'), roughness: 1 });
+  [['#FF9EBB', 1.25, 0.9], ['#FFE07A', -1.05, 0.95], ['#B9A6FF', 1.9, 0.35], ['#FFFFFF', -2.0, 0.1], ['#FF9EBB', 0.6, -1.5]].forEach(([c, x, z]) => {
+    const s = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.18, 4), stem); s.position.set(x, 0.09, z); g.add(s);
+    const f = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshStandardMaterial({ color: lin(c), roughness: 0.8 })); f.position.set(x, 0.19, z); g.add(f);
+  });
+  return g;
+}
+function eyeColorFor(img, b) {
+  if (!img) return '#15161F';
+  const c = document.createElement('canvas'); c.width = c.height = 8;
+  const g = c.getContext('2d', { willReadFrequently: true }), W = img.width, H = img.height, er = b.eyeR;
+  const sx = (b.eyeRel.x - er * 1.2 - b.minX) / b.w * W, sy = (b.eyeRel.y - er * 0.7 - b.minY) / b.h * H;
+  g.drawImage(img, clamp(sx, 0, W - 1), clamp(sy, 0, H - 1), Math.max(1, er * 2.4 / b.w * W), Math.max(1, er * 1.4 / b.h * H), 0, 0, 8, 8);
+  const d = g.getImageData(0, 0, 8, 8).data; let l = 0;
+  for (let i = 0; i < d.length; i += 4) l += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+  return l / (d.length / 4) / 255 < 0.42 ? '#F3F4F8' : '#15161F';
+}
+function makeBud3D(data) {
+  const { THREE } = G3;
+  const b = setExtents({ r: data.r.map(([x, y]) => ({ x, y })), eyeRel: data.eyeRel, eyeR: data.eyeR });
+  const { geom, face } = buildMesh(b);
+  const s = BUD_SIZE / Math.max(b.w, b.h);
+  let map = null;
+  if (paintImg) { map = new THREE.Texture(paintImg); map.encoding = THREE.sRGBEncoding; map.anisotropy = 4; map.needsUpdate = true; }
+  const body = new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: map ? 0xffffff : new THREE.Color('#EEE8DF').convertSRGBToLinear(), map, roughness: 0.58, clearcoat: 0.3, clearcoatRoughness: 0.42, envMapIntensity: 0.55 }));
+  const fc = document.createElement('canvas'); fc.width = FACE_W; fc.height = FACE_H;
+  const faceTex = new THREE.CanvasTexture(fc); faceTex.encoding = THREE.sRGBEncoding;
+  const faceMesh = new THREE.Mesh(face, new THREE.MeshStandardMaterial({ map: faceTex, transparent: true, depthWrite: false, roughness: 0.55, envMapIntensity: 0.12, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  faceMesh.renderOrder = 2;
+  const root = new THREE.Group(), hop = new THREE.Group(), squash = new THREE.Group(), inner = new THREE.Group();
+  root.add(hop); hop.add(squash); squash.add(inner);
+  inner.scale.setScalar(s); inner.position.y = b.maxY * s;
+  inner.add(body, faceMesh);
+  const sh = document.createElement('canvas'); sh.width = sh.height = 64;
+  const sg = sh.getContext('2d'), gr = sg.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(20,20,40,0.35)'); gr.addColorStop(1, 'rgba(20,20,40,0)'); sg.fillStyle = gr; sg.fillRect(0, 0, 64, 64);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sh), transparent: true, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.01; shadow.scale.set(b.w * s * 1.1, b.w * s * 0.75, 1);
+  root.add(shadow);
+  root.position.set(0, 0, 0.3);
+  G3.world.add(root);
+  const bud3 = { b, s, root, hop, squash, inner, body, shadow, faceTex, fctx: fc.getContext('2d'), eyeCol: eyeColorFor(paintImg, b),
+    y: 0, vy: 0, talkUntil: 0, blinkAt: 2, blinkStart: -9, lx: 0, ly: 0, faceKey: '', glasses: null, glassesDrop: 1, sway: Math.random() * 6 };
+  bud3.glasses = makeGlasses(bud3); bud3.glasses.visible = false; inner.add(bud3.glasses);
+  G3.bud = bud3;
+}
+// little round glasses that sit on the face: two rings, lenses, a bridge, and arms that tuck into the body
+function makeGlasses(bud3) {
+  const { THREE } = G3, b = bud3.b, r = b.eyeR, sp = r * (SPACING[data3().eyes] || 0.75), lr = Math.max(r * 1.12, sp * 0.86);
+  const probe = new THREE.Raycaster(), surf = (x, y) => { probe.set(new THREE.Vector3(x, -y, 1e4), new THREE.Vector3(0, 0, -1)); const h = probe.intersectObject(bud3.body, false)[0]; return h ? h.point.z : r; };
+  const ex = b.eyeRel.x, ey = b.eyeRel.y, tube = Math.max(r * 0.11, 1.2);
+  const frame = new THREE.MeshStandardMaterial({ color: new THREE.Color('#2A2238').convertSRGBToLinear(), roughness: 0.35, metalness: 0.1 });
+  const lens = new THREE.MeshPhysicalMaterial({ color: 0xdff0ff, transparent: true, opacity: 0.25, roughness: 0.05, clearcoat: 1, envMapIntensity: 1.2, depthWrite: false });
+  const g = new THREE.Group();
+  let zMax = 0;
+  for (const s of [-1, 1]) for (const [dx, dy] of [[0, 0], [lr * 0.7, 0], [-lr * 0.7, 0], [0, lr * 0.7], [0, -lr * 0.7]]) zMax = Math.max(zMax, surf(ex + s * sp + dx, ey + dy));
+  const z = zMax + tube * 1.5;
+  for (const s of [-1, 1]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(lr, tube, 10, 40), frame); ring.position.set(ex + s * sp, -ey, z); g.add(ring);
+    const l = new THREE.Mesh(new THREE.CircleGeometry(lr * 0.97, 32), lens); l.position.set(ex + s * sp, -ey, z - tube * 0.3); l.renderOrder = 3; g.add(l);
+    const outX = ex + s * (sp + lr), back = surf(ex + s * (sp + lr * 1.9), ey);
+    const arm = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(new THREE.Vector3(outX, -ey + lr * 0.15, z), new THREE.Vector3(ex + s * (sp + lr * 1.9), -ey + lr * 0.3, Math.min(z - lr * 0.4, back))), 1, tube * 0.8, 8), frame);
+    g.add(arm);
+  }
+  if (2 * sp - 2 * lr > -lr * 0.5) {
+    const bridge = new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(ex - sp + lr * 0.95, -ey + lr * 0.25, z), new THREE.Vector3(ex, -ey + lr * 0.65, z + tube), new THREE.Vector3(ex + sp - lr * 0.95, -ey + lr * 0.25, z)), 12, tube * 0.8, 8), frame);
+    g.add(bridge);
+  }
+  return g;
+}
+const data3 = () => bud;
+function drawFace3D(t) {
+  const B = G3.bud;
+  if (t > B.blinkAt) { B.blinkStart = t; B.blinkAt = t + 2.5 + Math.random() * 3.5; }
+  const bt = (t - B.blinkStart) / 0.15, blink = bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0;
+  const want = mood === 'thinking' ? { x: -0.6, y: -0.7 } : mood === 'sleepy' ? { x: 0, y: 0.5 } : { x: Math.sin(t * 0.37) * 0.15, y: 0.1 };
+  B.lx += (want.x - B.lx) * 0.12; B.ly += (want.y - B.ly) * 0.12;
+  const happy = (mood === 'happy' || mood === 'excited') && !glasses;
+  const key = [Math.round(B.lx * 20), Math.round(B.ly * 20), Math.round(blink * 8), happy].join('|');
+  if (key === B.faceKey) return;
+  B.faceKey = key;
+  const r = B.b.eyeR, sc = FACE_W / (r * 4.4), g = B.fctx;
+  g.clearRect(0, 0, FACE_W, FACE_H);
+  drawEyeStyle(g, bud.eyes || 'classic', FACE_W / 2, FACE_H / 2, r * sc, blink, happy, B.eyeCol, { x: B.lx, y: B.ly });
+  B.faceTex.needsUpdate = true;
+}
+function resize3D() {
+  const c = $('scene3d'), w = c.clientWidth || 300, h = c.clientHeight || 200;
+  G3.renderer.setSize(w, h, false);
+  const cam = G3.camera, aspect = w / h; cam.aspect = aspect;
+  // keep the bud and its patch of grass in view, whatever the shape of the stage
+  const half = Math.tan(cam.fov / 2 * Math.PI / 180), dist = Math.max(2.05 / half, 2.9 / (half * aspect));
+  cam.position.set(0, 0.55 + dist * 0.2, dist); cam.lookAt(0, 0.55, 0); cam.updateProjectionMatrix();
+  G3.halfW = half * aspect * dist;
+}
+let last3 = 0;
+function frame3D(ms) {
+  requestAnimationFrame(frame3D);
+  if (document.hidden || !G3?.bud) return;
+  const t = ms / 1000, dt = Math.min(0.05, last3 ? t - last3 : 0.016); last3 = t;
+  const B = G3.bud;
+  // move over to make room for the clipboard during the bit
+  const want = glasses ? -G3.halfW * 0.24 : 0;
+  G3.shift += (want - G3.shift) * Math.min(1, dt * 4); G3.world.position.x = G3.shift;
+  // hops, talking, breathing
+  B.vy -= 22 * dt; B.y = Math.max(0, B.y + B.vy * dt); if (B.y === 0 && B.vy < 0) B.vy = 0;
+  B.hop.position.y = B.y;
+  const talking = performance.now() < B.talkUntil;
+  const sq = talking ? 1 + Math.sin(t * 18) * 0.04 : 1 + Math.sin(t * 2.2) * 0.015;
+  B.squash.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
+  B.root.rotation.y = Math.sin(t * 0.5 + B.sway) * 0.12 + (glasses ? 0.18 : 0);
+  // glasses drop onto the face
+  if (B.glasses.visible && B.glassesDrop < 1) {
+    B.glassesDrop = Math.min(1, B.glassesDrop + dt / 0.6);
+    const k = B.glassesDrop, bounce = k < 0.7 ? 1 - (k / 0.7) ** 2 : Math.abs(Math.sin((k - 0.7) / 0.3 * Math.PI)) * 0.08 * (1 - k) / 0.3;
+    B.glasses.position.y = bounce * B.b.h * 0.9;
+  }
+  G3.clouds.children.forEach((c) => { c.position.x += c.userData.speed * dt; if (c.position.x > 10) c.position.x = -10; });
+  drawFace3D(t);
+  G3.renderer.render(G3.scene, G3.camera);
+}
+function glasses3D(on) {
+  if (!G3?.bud) return;
+  const g = G3.bud.glasses;
+  if (on && !g.visible) { g.visible = true; G3.bud.glassesDrop = 0; g.position.y = G3.bud.b.h; }
+  if (!on) g.visible = false;
+}
 
 /* ---------- the chat ---------- */
 const log = $('log');
@@ -494,8 +694,27 @@ async function drawCard(card) {
   // the bud, with glasses, in the corner
   const bs = 120, bc = document.createElement('canvas'); bc.width = bc.height = bs * 2;
   const bg = bc.getContext('2d'); bg.scale(2, 2);
-  const saveMood = mood; mood = 'thinking'; paintBud(bg, bud, bs, { withGlasses: true }); mood = saveMood;
-  g.drawImage(bc, W - 24 - bs - 18, 30, bs, bs);
+  if (G3?.bud) {
+    // a snapshot of the real 3D bud, glasses on
+    const B = G3.bud, THREE = G3.THREE, c3 = $('scene3d');
+    glasses3D(true); B.glassesDrop = 1; B.glasses.position.y = 0;
+    // just the bud: hide the island and clouds for this one frame
+    const island = G3.world.children[0], shift = G3.world.position.x;
+    island.visible = false; G3.clouds.visible = false; G3.world.position.x = 0; B.shadow.visible = false;
+    G3.renderer.render(G3.scene, G3.camera);
+    const p = new THREE.Vector3(); B.root.getWorldPosition(p); p.y += B.b.h * B.s * 0.5;
+    const top = p.clone(); top.y += B.b.h * B.s * 0.75; p.project(G3.camera); top.project(G3.camera);
+    const cw = c3.width, ch = c3.height, cx = (p.x + 1) / 2 * cw, cy = (1 - p.y) / 2 * ch, half = Math.abs((1 - top.y) / 2 * ch - cy);
+    const snap = document.createElement('canvas'); snap.width = snap.height = 240;
+    snap.getContext('2d').drawImage(c3, cx - half, cy - half, half * 2, half * 2, 0, 0, 240, 240);
+    island.visible = true; G3.clouds.visible = true; G3.world.position.x = shift; B.shadow.visible = true;
+    G3.renderer.render(G3.scene, G3.camera);
+    g.drawImage(snap, W - 24 - bs - 18, 30, bs, bs);
+    glasses3D(glasses);
+  } else {
+    const saveMood = mood; mood = 'thinking'; paintBud(bg, bud, bs, { withGlasses: true }); mood = saveMood;
+    g.drawImage(bc, W - 24 - bs - 18, 30, bs, bs);
+  }
   g.fillStyle = '#FFFFFF'; g.font = '700 34px Fredoka, Nunito, system-ui, sans-serif'; g.textBaseline = 'alphabetic';
   g.fillText(`Dr. ${budName()}`, 52, 82);
   g.font = '500 16px Fredoka, Nunito, system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,.9)';
@@ -577,8 +796,14 @@ async function boot() {
   if (!bud) return gate('Make your bud first', 'You need a bud to hang out with.', [['Make your bud', '/', true]]);
   if (bud.paint) paintImg = await new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = bud.paint; });
   $('sheetTitle').textContent = `Dr. ${budName()} · notes`;
-  $('app').hidden = false; drawMain(); blinkLoop();
-  addEventListener('resize', () => drawMain());
+  $('app').hidden = false;
+  if (setup3D()) {
+    $('budwrap').hidden = true; makeBud3D(bud); resize3D(); requestAnimationFrame(frame3D);
+    addEventListener('resize', resize3D);
+  } else {
+    $('scene3d').hidden = true; drawMain(); blinkLoop();
+    addEventListener('resize', () => drawMain());
+  }
   typing(true);
   try {
     const r = await api('POST', '/api/interview', { action: 'hangout-start' });
