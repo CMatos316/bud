@@ -11,6 +11,7 @@ import { games as gamesRef } from '../lib/peekaboo.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
 import { waitUntil } from '@vercel/functions';
+import { cityPlan } from '../lib/city.js';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const MAX_BUDS = 200;
@@ -25,7 +26,7 @@ export async function GET(request) {
   try {
     const me = session.id;
     const buds = db().collection('guilds').doc(GUILD_ID).collection('buds');
-    const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news, gameSnap, profileSnap] = await Promise.all([
+    const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news, gameSnap, profileSnap, allFriends] = await Promise.all([
       buds.select(...FIELDS).limit(MAX_BUDS).get(),
       // every unanswered note on the island: anyone can see that a bud has notes on it, not what they say
       refs.notes().where('status', '==', 'pending').select('from', 'to', 'color', 'text', 'createdAt').limit(2000).get(),
@@ -39,6 +40,8 @@ export async function GET(request) {
       gamesRef().where('players', 'array-contains', me).get().catch(() => ({ docs: [] })),
       // everyone's tagged interests: for the props buds wear and what you have in common (never sent as-is)
       db().collection('guilds').doc(GUILD_ID).collection('profiles').select('tags', 'shareInterests').get(),
+      // how many friendships the island has (the friendship tree grows a heart for each)
+      refs.friends().select().get().catch(() => ({ size: 0, docs: [] })),
     ]);
     const tagsOf = new Map(profileSnap.docs.map((d) => [d.id, cleanTags(d.get('tags'))]));
     const sharing = new Set(profileSnap.docs.filter((d) => d.get('shareInterests') !== false).map((d) => d.id));
@@ -126,7 +129,15 @@ export async function GET(request) {
     const avatarUrl = session.avatar
       ? `https://cdn.discordapp.com/avatars/${session.id}/${session.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(session.id) >> 22n) % 6}.png`;
+    // The city grows from who lives here and what they're into (lib/city.js has the rules).
+    const city = cityPlan({
+      homes: [...snap.docs].sort((a, b) => (a.get('createdAt')?.toMillis() ?? 0) - (b.get('createdAt')?.toMillis() ?? 0)).map((d) => d.id),
+      tagLists: [...tagsOf.values()],
+      friendships: allFriends.size ?? allFriends.docs.length,
+    });
+
     return json({
+      city,
       me: {
         id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists, dms: !meDoc.get?.('questionsOff'),
         // what your bud knows about you (only you see this), for your bud's card

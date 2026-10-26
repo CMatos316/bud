@@ -575,6 +575,9 @@ function buildIsland(nBuds) {
   under.position.y = -(depth + bevel) - h / 2 + 0.05;
   group.add(under);
 
+  // the city goes in first, so trees and rocks fit around it
+  buildCity(group);
+
   // trees and rocks near the rim
   const trunkMat = new THREE.MeshStandardMaterial({ color: toLinear('#A47551'), roughness: 1 });
   const leafCols = ['#7FCB8A', '#A6E3A1', '#6BBF7A', '#B9E8B0'].map((c) => new THREE.MeshStandardMaterial({ color: toLinear(c), roughness: 0.9, flatShading: true }));
@@ -635,6 +638,200 @@ function buildIsland(nBuds) {
   }
 
   scene.add(group);
+}
+
+/* ---------------- the bud city (lib/city.js on the server decides what's built) ---------------- */
+// A ring of buildings around the middle: rowhouses with a home for every bud (its windows lit in that bud's
+// colors), and special buildings when enough people share an interest. Paths, lamps and benches appear as
+// the island grows.
+let CITY = null;                 // { homes: [bud ids, oldest first], buildings: [{ id, ... }], extras: [...] }
+const cityGroup = new THREE.Group();   // hidden during Peekaboo, so the board is clear
+const homeUnits = new Map();     // bud id -> { facade, win, roof } materials, colored once its paint loads
+const cityGlow = [];             // { mat, day, night }: windows and lamps that light up at night
+const CM = (hex, o = {}) => new THREE.MeshStandardMaterial({ color: toLinear(hex), roughness: 0.8, ...o });
+function glowMat(hex, day = 0.15, night = 1.1) {
+  const m = new THREE.MeshStandardMaterial({ color: toLinear(hex), emissive: toLinear(hex), emissiveIntensity: day, roughness: 0.4 });
+  cityGlow.push({ mat: m, day, night }); return m;
+}
+function signTexture(text, bg, fg, w = 256, h = 64, font = 'bold 40px Fredoka, Nunito, system-ui, sans-serif') {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+  x.fillStyle = bg; x.fillRect(0, 0, w, h); x.fillStyle = fg; x.font = font; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(text, w / 2, h / 2 + 2);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t;
+}
+const BOX = (w, h, d, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); return m; };
+
+// a row of narrow houses, one per bud; front faces +z
+function rowhouses(ids) {
+  const g = new THREE.Group(), W = 1.2, D = 1.3, n = ids.length;
+  const roofCols = ['#C96A5A', '#5A7FC9', '#6BAF7A', '#C99A4A', '#9A6AC9'];
+  ids.forEach((id, i) => {
+    const r = seeded('home:' + id), h = 1.7 + r() * 0.8, x = (i - (n - 1) / 2) * W * 1.02;
+    const facade = CM('#EDE6DA'), win = glowMat('#FFE9A8', 0.25, 1.3), roof = CM(roofCols[i % roofCols.length]);
+    g.add(BOX(W, h, D, facade, x, h / 2, 0));
+    const top = new THREE.Mesh(new THREE.ConeGeometry(W * 0.78, 0.55, 4), roof); top.rotation.y = Math.PI / 4; top.scale.z = D / W; top.position.set(x, h + 0.27, 0); g.add(top);
+    g.add(BOX(0.32, 0.56, 0.06, CM('#7A5236'), x - 0.24, 0.28, D / 2 + 0.02));                 // door
+    g.add(BOX(0.05, 0.05, 0.04, CM('#FFC93C', { metalness: 0.6 }), x - 0.14, 0.3, D / 2 + 0.06));
+    for (const [wx, wy] of [[0.26, 0.62], [-0.26, h - 0.5], [0.26, h - 0.5]]) {
+      g.add(BOX(0.34, 0.38, 0.05, CM('#FFFFFF'), x + wx, wy, D / 2 + 0.015));                 // frame
+      g.add(BOX(0.27, 0.31, 0.06, win, x + wx, wy, D / 2 + 0.02));                            // lit window
+    }
+    homeUnits.set(id, { facade, win, roof });
+  });
+  g.userData.len = n * W * 1.02;
+  return g;
+}
+function arcade() {
+  const g = new THREE.Group();
+  g.add(BOX(3, 2.1, 2, CM('#5B3FA8'), 0, 1.05, 0));
+  g.add(BOX(3.2, 0.18, 2.2, CM('#3B2A75'), 0, 2.19, 0));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshStandardMaterial({ map: signTexture('ARCADE', '#1E1240', '#FF6FD0'), emissive: toLinear('#FFFFFF'), emissiveMap: signTexture('ARCADE', '#1E1240', '#FF6FD0'), emissiveIntensity: 0.6 }));
+  sign.position.set(0, 1.75, 1.02); g.add(sign);
+  cityGlow.push({ mat: sign.material, day: 0.5, night: 1.4 });
+  g.add(BOX(0.8, 1.1, 0.06, CM('#1E1240'), 0, 0.55, 1.01));
+  for (const s of [-1, 1]) {
+    g.add(BOX(0.45, 0.95, 0.45, CM(s < 0 ? '#2FB6E8' : '#E8394B'), s * 1.05, 0.48, 1.25));
+    g.add(BOX(0.34, 0.26, 0.04, glowMat('#8EFFC1', 0.6, 1.5), s * 1.05, 0.72, 1.48));
+  }
+  g.userData.len = 3.4; return g;
+}
+function stage() {
+  const g = new THREE.Group();
+  g.add(BOX(3.4, 0.35, 2, CM('#B07A45'), 0, 0.175, 0));
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.13, 10, 32, Math.PI), CM('#E8394B')); arch.position.set(0, 0.35, -0.85); g.add(arch);
+  g.add(BOX(3.1, 1.7, 0.06, CM('#7A2A3A'), 0, 1.2, -0.9));
+  for (const s of [-1, 1]) {
+    g.add(BOX(0.45, 0.75, 0.4, CM('#2B2D42'), s * 1.35, 0.72, -0.4));
+    const cone = new THREE.Mesh(new THREE.CircleGeometry(0.15, 16), CM('#5E5D75')); cone.position.set(s * 1.35, 0.78, -0.19); g.add(cone);
+  }
+  const note = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshStandardMaterial({ map: signTexture('♪', '#7A2A3A', '#FFE07A', 64, 64, 'bold 52px serif'), transparent: true }));
+  note.position.set(0, 2.15, -0.86); g.add(note);
+  g.add(BOX(0.06, 0.5, 0.06, CM('#B7B5C6'), 0, 0.6, 0.3));
+  const mic = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), CM('#2B2D42')); mic.position.set(0, 0.88, 0.3); g.add(mic);
+  for (const s of [-1.1, 0, 1.1]) { const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), glowMat(['#FF6F91', '#FFE07A', '#7FD3FF'][Math.round(s / 1.1) + 1], 0.4, 1.6)); bulb.position.set(s, 1.95, -0.6); g.add(bulb); }
+  g.userData.len = 3.8; return g;
+}
+function court(sport) {
+  const g = new THREE.Group(), W = 4.6, L = 2.8;
+  const c = document.createElement('canvas'); c.width = 256; c.height = 160; const x = c.getContext('2d');
+  const field = sport === 'basketball' || sport === 'volleyball' || sport === 'tennis' ? '#D9895A' : '#5FB06A';
+  x.fillStyle = field; x.fillRect(0, 0, 256, 160); x.strokeStyle = '#FFFFFF'; x.lineWidth = 4;
+  x.strokeRect(8, 8, 240, 144); x.beginPath(); x.moveTo(128, 8); x.lineTo(128, 152); x.stroke();
+  x.beginPath(); x.arc(128, 80, 24, 0, Math.PI * 2); x.stroke();
+  if (sport === 'basketball') { x.beginPath(); x.arc(8, 80, 40, -Math.PI / 2, Math.PI / 2); x.stroke(); x.beginPath(); x.arc(248, 80, 40, Math.PI / 2, Math.PI * 1.5); x.stroke(); }
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, L), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 })); floor.rotation.x = -Math.PI / 2; floor.position.y = 0.02; g.add(floor);
+  for (const s of [-1, 1]) {
+    if (sport === 'basketball') {
+      g.add(BOX(0.08, 1.8, 0.08, CM('#B7B5C6'), s * (W / 2 + 0.1), 0.9, 0));
+      g.add(BOX(0.06, 0.55, 0.8, CM('#FFFFFF'), s * (W / 2 - 0.02), 1.75, 0));
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.02, 6, 20), CM('#F08A24')); rim.rotation.x = Math.PI / 2; rim.position.set(s * (W / 2 - 0.25), 1.55, 0); g.add(rim);
+    } else if (sport === 'volleyball' || sport === 'tennis') {
+      if (s < 0) { g.add(BOX(0.05, sport === 'tennis' ? 0.5 : 1.3, L, CM('#FFFFFF', { transparent: true, opacity: 0.7 }), 0, sport === 'tennis' ? 0.25 : 0.8, 0)); }
+    } else {
+      // goals for soccer and everything else
+      const frame = CM('#FFFFFF');
+      g.add(BOX(0.06, 0.8, 0.06, frame, s * (W / 2), 0.4, -0.55)); g.add(BOX(0.06, 0.8, 0.06, frame, s * (W / 2), 0.4, 0.55));
+      g.add(BOX(0.06, 0.06, 1.16, frame, s * (W / 2), 0.8, 0));
+      g.add(BOX(0.4, 0.8, 1.1, CM('#FFFFFF', { transparent: true, opacity: 0.25 }), s * (W / 2 + 0.2), 0.4, 0));
+    }
+  }
+  g.userData.len = W + 0.6; g.userData.flat = true; return g;
+}
+function friendTree(hearts) {
+  const g = new THREE.Group(), s = 1.5;
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2 * s, 0.3 * s, 1.4 * s, 8), CM('#8A5A3C')).translateY(0.7 * s));
+  const blossoms = ['#FFC2D6', '#FFB0C8', '#FFD6E4'];
+  for (let k = 0; k < 5; k++) {
+    const b = new THREE.Mesh(new THREE.IcosahedronGeometry((0.9 - k * 0.08) * s, 1), CM(blossoms[k % 3], { flatShading: true }));
+    b.position.set(Math.cos(k * 1.3) * 0.45 * s, (1.7 + (k % 3) * 0.35) * s, Math.sin(k * 1.3) * 0.45 * s); g.add(b);
+  }
+  // a heart for every friendship on the island
+  const heart = new THREE.Shape(); heart.moveTo(0, -0.1); heart.bezierCurveTo(-0.16, 0.02, -0.12, 0.16, 0, 0.08); heart.bezierCurveTo(0.12, 0.16, 0.16, 0.02, 0, -0.1);
+  const hg = new THREE.ExtrudeGeometry(heart, { depth: 0.03, bevelEnabled: false }), hm = glowMat('#FF4F7B', 0.25, 0.9), r = seeded('hearts');
+  for (let i = 0; i < hearts; i++) {
+    const a = r() * Math.PI * 2, y = (1.4 + r() * 1.3) * s, rad = (0.95 + r() * 0.25) * s;
+    const h = new THREE.Mesh(hg, hm); h.position.set(Math.cos(a) * rad, y, Math.sin(a) * rad); h.lookAt(Math.cos(a) * rad * 3, y, Math.sin(a) * rad * 3); g.add(h);
+  }
+  g.userData.len = 3; return g;
+}
+function lamp() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 1.5, 6), CM('#3B3F52')).translateY(0.75));
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), glowMat('#FFE9A8', 0.2, 1.8)).translateY(1.58));
+  return g;
+}
+function bench() {
+  const g = new THREE.Group(), wood = CM('#B07A45');
+  g.add(BOX(1, 0.07, 0.35, wood, 0, 0.38, 0)); g.add(BOX(1, 0.3, 0.06, wood, 0, 0.6, -0.16));
+  for (const s of [-0.42, 0.42]) g.add(BOX(0.06, 0.38, 0.3, CM('#3B3F52'), s, 0.19, 0));
+  return g;
+}
+
+function buildCity(island) {
+  if (!CITY) return;
+  const group = cityGroup; island.add(group);
+  const rows = [];
+  for (let i = 0; i < CITY.homes.length; i += 5) rows.push(rowhouses(CITY.homes.slice(i, i + 5)));
+  const specials = CITY.buildings.map((b) => (b.id === 'arcade' ? arcade() : b.id === 'stage' ? stage() : b.id === 'court' ? court(b.sport) : b.id === 'friendtree' ? friendTree(b.hearts) : null)).filter(Boolean);
+  // neighborhoods with the special buildings between them
+  const pieces = [];
+  for (let i = 0; i < Math.max(rows.length, specials.length); i++) { if (rows[i]) pieces.push(rows[i]); if (specials[i]) pieces.push(specials[i]); }
+  if (!pieces.length) return;
+  const gap = 1.8, total = pieces.reduce((s, p) => s + p.userData.len + gap, 0);
+  const ringR = clamp(Math.max(R * 0.58, total / (Math.PI * 2 * 0.92)), 4, R * 0.74);
+  let a = seeded('city')() * Math.PI * 2;
+  const step = Math.min(1 / ringR, (Math.PI * 2) / total);   // packed together like a little town, squeezed if it's crowded
+  for (const p of pieces) {
+    const arc = (p.userData.len + gap) * step, mid = a + arc / 2;
+    const x = Math.cos(mid) * ringR, z = Math.sin(mid) * ringR;
+    p.position.set(x, 0, z);
+    p.rotation.y = Math.atan2(-x, -z);   // the front faces the middle of the island
+    group.add(p);
+    if (!p.userData.flat) {
+      // buds walk around buildings, not through them
+      const n = Math.ceil(p.userData.len / 1.1);
+      for (let k = 0; k < n; k++) {
+        const off = (k - (n - 1) / 2) * 1.1, ta = mid + off / ringR;
+        obstacles.push({ x: Math.cos(ta) * (ringR + 0.1), z: Math.sin(ta) * (ringR + 0.1), r: 1.0 });
+      }
+    } else obstacles.push({ x, z, r: 0.01 });   // a court is walkable, but keep trees off it
+    a += arc;
+  }
+  // paths, lamps and benches as the island grows
+  const pathR = ringR - 1.9;
+  if (CITY.extras.includes('paths') && pathR > 2.5) {
+    const stone = CM('#D8D2C6'), n = Math.round(Math.PI * 2 * pathR / 0.8);
+    for (let i = 0; i < n; i++) {
+      const t = i / n * Math.PI * 2, s = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.05, 10), stone);
+      s.position.set(Math.cos(t) * pathR, 0.025, Math.sin(t) * pathR); s.scale.x = 1.2; s.rotation.y = -t; group.add(s);
+    }
+  }
+  if (CITY.extras.includes('lamps') && pathR > 2.5) {
+    for (let i = 0; i < 8; i++) { const t = i / 8 * Math.PI * 2 + 0.2, l = lamp(); l.position.set(Math.cos(t) * (pathR + 0.55), 0, Math.sin(t) * (pathR + 0.55)); group.add(l); obstacles.push({ x: l.position.x, z: l.position.z, r: 0.25 }); }
+  }
+  if (CITY.extras.includes('benches') && pathR > 2.5) {
+    for (let i = 0; i < 4; i++) { const t = i / 4 * Math.PI * 2 + 0.6, b = bench(); b.position.set(Math.cos(t) * (pathR - 0.6), 0, Math.sin(t) * (pathR - 0.6)); b.rotation.y = Math.atan2(Math.cos(t), Math.sin(t)); group.add(b); obstacles.push({ x: b.position.x, z: b.position.z, r: 0.6 }); }
+  }
+}
+// once a bud's paint has loaded: its home's walls take a soft version of its colors, the windows its brightest
+function colorHome(id, img) {
+  const unit = homeUnits.get(id);
+  if (!unit || !img) return;
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 16, 16);
+  const d = g.getImageData(0, 0, 16, 16).data;
+  let r = 0, gg = 0, b = 0, n = 0, best = null, bestSat = -1;
+  for (let i = 0; i < d.length; i += 4) {
+    r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++;
+    const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]), sat = mx ? (mx - mn) / mx : 0;
+    if (sat * (mx / 255) > bestSat) { bestSat = sat * (mx / 255); best = [d[i], d[i + 1], d[i + 2]]; }
+  }
+  const avg = new THREE.Color(r / n / 255, gg / n / 255, b / n / 255);
+  const soft = avg.clone().lerp(new THREE.Color(1, 1, 1), 0.45);
+  unit.facade.color.copy(soft).convertSRGBToLinear();
+  const pop = new THREE.Color(best[0] / 255, best[1] / 255, best[2] / 255).lerp(new THREE.Color(1, 1, 0.9), 0.25).convertSRGBToLinear();
+  unit.win.color.copy(pop); unit.win.emissive.copy(pop);
 }
 
 /* ---------------- the sky follows your clock; Halloween comes and goes on its own ---------------- */
@@ -1121,6 +1318,7 @@ function updateSky(dt) {
     scene.environment = k.night > 0.5 ? ENV_NIGHT : ENV_DAY;
     if (skyBits.cloudMat) { skyBits.cloudMat.color.set(mixHex('#FFFFFF', '#59608F', k.night)).convertSRGBToLinear(); skyBits.cloudMat.emissiveIntensity = 0.15 * (1 - k.night); }
     NIGHT = k.night;
+    for (const l of cityGlow) l.mat.emissiveIntensity = l.day + (l.night - l.day) * NIGHT;   // windows and lamps light up
     if (S.setNight) S.setNight(NIGHT > 0.5);
   }
   const n = NIGHT;
@@ -1196,6 +1394,7 @@ async function makeBud(data) {
   const b = setExtents({ r: data.r.map(([x, y]) => ({ x, y })), eyeRel: data.eyeRel, eyeR: data.eyeR });
   const { geom, face } = buildMesh(b);
   const img = await loadImage(data.paint);
+  colorHome(data.id, img);
   const s = BUD_SIZE / Math.max(b.w, b.h);
 
   const paintTex = img ? new THREE.Texture(img) : null;
@@ -2760,6 +2959,7 @@ async function enterGame(id) {
   let v;
   try { v = await api('GET', '/api/game?id=' + encodeURIComponent(id)); }
   catch (e) { const m = myBud(); if (m) say(m, 'hmm, I can’t find that game', 2200); return; }
+  cityGroup.visible = false;
   game = { id, v, board: 'mine', picks: [], yell: false, busy: false, msg: '', hover: null, group: new THREE.Group(), tiles: new Map(), marks: [], key: viewKey(v) };
   game.board = defaultBoard(v);
   scene.add(game.group);
@@ -2789,6 +2989,7 @@ function gameDist() {
 
 function exitGame() {
   if (!game) return;
+  cityGroup.visible = true;
   clearInterval(game.poll);
   clearTimeout(game.flip);
   throws.length = 0;
@@ -3312,6 +3513,7 @@ function showCenter(title, text, linkText, href = '/') {
   document.getElementById('whoAvatar').src = world.me.avatarUrl;
   document.getElementById('who').hidden = false;
 
+  CITY = world.city || null;
   buildIsland(world.buds.length);
   buildSkyAndSeason();
   updateSky(0);
