@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Games · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#BFD9FF">
+<style>
+/* bud's game picker for the Discord Activity: pick a game, and you land in that game's room for this call */
+:root { --sky-top: #BFD9FF; --sky-bottom: #FBE3EF; --ink: #1D1C2B; --muted: #5E5D75; --card: rgba(255,255,255,.86); --line: rgba(29,28,43,.08); --shadow: rgba(46,40,90,.2);
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+@media (prefers-color-scheme: dark) { :root { --sky-top: #141A3A; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4; --card: rgba(30,32,52,.84); --line: rgba(255,255,255,.1); --shadow: rgba(0,0,0,.45); color-scheme: dark; } }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; color: var(--ink); font-family: var(--font); background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)); display: grid; place-items: center; padding: 16px; }
+main { width: min(640px, 100%); }
+.head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.head img { width: 40px; height: 40px; }
+h1 { margin: 0; font-size: clamp(20px, 5vw, 26px); }
+p.sub { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.games { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.game { text-align: left; border: 1px solid var(--line); background: var(--card); color: inherit; border-radius: 20px; padding: 16px; cursor: pointer; font: inherit; box-shadow: 0 16px 30px -22px var(--shadow); transition: transform .15s; display: grid; gap: 4px; }
+.game:hover { transform: translateY(-3px); }
+.game .ic { font-size: 34px; line-height: 1; }
+.game b { font-size: 19px; }
+.game span { color: var(--muted); font-size: 14px; line-height: 1.4; }
+.game small { color: var(--muted); font-size: 12.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; margin-top: 4px; }
+.note { margin-top: 12px; color: var(--muted); font-size: 13px; text-align: center; }
+@media (max-height: 520px) { .game { padding: 10px 12px; } .game .ic { font-size: 24px; } .game span { font-size: 13px; } .head { margin-bottom: 8px; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="head"><img src="/img/favicon.svg" alt=""><div><h1>What are we playing?</h1><p class="sub">Everyone in the call picks the same game to play together.</p></div></div>
+  <div class="games">
+    <button class="game" type="button" data-go="/prankster"><span class="ic">😈</span><b>Prankster</b><span>Someone’s a secret Prankster. Talk it out, vote, and catch them before they prank the whole island.</span><small>4 to 12 players</small></button>
+    <button class="game" type="button" data-go="/showdown"><span class="ic">🪧</span><b>Question Showdown</b><span>Rapid would-you-rathers. Everyone picks at once, the signs flip, and you see who matched.</span><small>2 to 12 players</small></button>
+  </div>
+  <p class="note">You can switch games any time from the top of the screen.</p>
+</main>
+<script type="module">
+// keep Discord's launch parameters, so the game knows which call it's in
+for (const b of document.querySelectorAll('[data-go]')) b.addEventListener('click', () => { location.href = b.dataset.go + location.search; });
+// say hello to Discord so the Activity finishes loading (nothing else is needed here)
+if (/[?&]frame_id=/.test(location.search)) {
+  import('/js/vendor/discord-sdk.js').then(({ DiscordSDK }) => new DiscordSDK('1563361979316445264').ready()).catch(() => {});
+}
+</script>
+</body>
+</html>

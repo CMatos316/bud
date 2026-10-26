@@ -157,6 +157,7 @@ body {
   <header class="top">
     <a class="brand" href="/world" id="brand"><img src="/img/favicon.svg" alt=""><span>Question Showdown</span></a>
     <span class="round" id="roundLabel"></span>
+    <button class="icon-btn games-btn" id="gamesBtn" type="button" hidden aria-label="Other games" title="Other games"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
     <button class="icon-btn" id="soundBtn" type="button"></button>
   </header>
 
@@ -569,6 +570,9 @@ async function startInDiscord() {
   try { await sdk.commands.authenticate({ access_token: auth.access_token }); } catch (e) {}
   room = ('dc-' + sdk.instanceId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
   $('brand').addEventListener('click', (e) => { e.preventDefault(); openLink('/world'); });
+  // back to the game picker (Prankster, Showdown), keeping Discord's launch parameters
+  $('gamesBtn').hidden = false;
+  $('gamesBtn').addEventListener('click', () => { location.href = '/play' + location.search; });
 }
 async function startFromLink() {
   room = params.get('room');
