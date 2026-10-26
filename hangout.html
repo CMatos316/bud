@@ -218,6 +218,7 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const S = window.BudSound || { play() {}, babble() {}, bindToggle() {}, muted: true };
 
+let msgsLeft = 99;
 let me = null, bud = null, sid = null, skew = 0, closeAt = 0, wrapAt = 0, busy = false, ended = false, finishing = false;
 let glasses = false, serious = false, mood = 'happy', look = { x: 0, y: 0.15 };
 const history = [], jots = [];
@@ -627,9 +628,11 @@ function tickClock() {
   if (!closeAt || ended) return;
   const left = Math.max(0, closeAt - now()), m = Math.floor(left / 60e3), s = Math.floor((left % 60e3) / 1000);
   const c = $('clock');
-  c.hidden = left > COUNTDOWN_MS;
-  c.textContent = left > 0 ? `${m}:${String(s).padStart(2, '0')}` : 'time’s up';
-  c.classList.toggle('soon', left <= 60e3);
+  // the last few messages of the day count down too (also only near the end)
+  const fewMsgs = msgsLeft <= 3 && left > COUNTDOWN_MS;
+  c.hidden = left > COUNTDOWN_MS && !fewMsgs;
+  c.textContent = fewMsgs ? `${msgsLeft} message${msgsLeft === 1 ? '' : 's'} left` : left > 0 ? `${m}:${String(s).padStart(2, '0')}` : 'time’s up';
+  c.classList.toggle('soon', fewMsgs ? msgsLeft <= 1 : left <= 60e3);
   if (left <= 0 && !busy && !ended && now() > closeAt + 5e3) finish();   // time's up and they went quiet
 }
 
@@ -652,12 +655,13 @@ async function send(text) {
     }
     if (r.glassesOn) setTimeout(() => putOnGlasses(r.jot), 1200);
     else if (r.jot && glasses) setTimeout(() => jot(r.jot), 900);
+    if (typeof r.left === 'number') { msgsLeft = r.left; tickClock(); }
     if (r.done) setTimeout(finish, r.glassesOn ? 4200 : 2200);
   } catch (e) {
     typing(false);
     if (e.status === 410) { ended = true; addMsg('act', 'this hangout ended.', { keep: false }); return endedPanel(null); }
     budSays(e.data?.say || 'hm, i got a little tongue-tied. say that again?', 'thinking');
-    if (e.status === 429) { ended = true; lockInput(); }
+    if (e.status === 429) { lockInput(); setTimeout(finish, 2000); }   // out of messages for today: still end properly, card and all
   } finally {
     busy = false; if (!ended) { $('send').disabled = false; }
   }
@@ -865,7 +869,7 @@ async function boot() {
   typing(true);
   try {
     const r = await api('POST', '/api/interview', { action: 'hangout-start' });
-    sid = r.sid; closeAt = r.closeAt; wrapAt = r.wrapAt; remembers = r.remembers?.map((x) => x.t) || [];
+    sid = r.sid; closeAt = r.closeAt; wrapAt = r.wrapAt; msgsLeft = r.left ?? 99; remembers = r.remembers?.map((x) => x.t) || [];
     typing(false); anim('hop', 520); S.play('boing');
     budSays(r.say, r.mood);
     setInterval(tickClock, 1000); tickClock();
