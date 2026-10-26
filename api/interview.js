@@ -1,10 +1,7 @@
 // bud's getting-to-know-you chat. POST { action: 'turn' | 'finish', history: [{ role: 'bud' | 'you', text }] }
-// Also hanging out with your bud (lib/hangout.js): POST { action: 'hangout-start' }, then
-// { action: 'hangout-turn', sid, history } each message, and { action: 'hangout-end', sid } for the card.
 import { readSession, sameOrigin } from '../lib/session.js';
 import { db, refs, Timestamp } from '../lib/firebase.js';
 import { budPersona, nextLine, writeProfile, validHistory } from '../lib/interview.js';
-import { startSession, turn, endSession, validHangoutHistory } from '../lib/hangout.js';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const DAILY_CALLS = 80;   // plenty for a couple of chats a day, and keeps the AI bill tiny
@@ -29,7 +26,6 @@ export async function POST(request) {
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
   const { action, history = [] } = body || {};
-  if (typeof action === 'string' && action.startsWith('hangout-')) return hangout(session, body);
   if (!['turn', 'finish'].includes(action) || !validHistory(history)) return json({ error: 'bad chat' }, 400);
 
   try {
@@ -53,23 +49,3 @@ export async function POST(request) {
   }
 }
 
-async function hangout(session, body) {
-  const { action, sid, history = [] } = body;
-  if (action !== 'hangout-start' && (typeof sid !== 'string' || !/^[A-Za-z0-9_-]{6,40}$/.test(sid))) return json({ error: 'which hangout?' }, 400);
-  if (action === 'hangout-turn' && !validHangoutHistory(history)) return json({ error: 'bad chat' }, 400);
-  try {
-    const budSnap = await refs.bud(session.id).get();
-    if (!budSnap.exists) return json({ error: 'make your bud first' }, 409);
-    const persona = budPersona(budSnap.data(), session.id, { fresh: false });
-    if (action === 'hangout-start') return json(await startSession(persona, session.id));
-    if (action === 'hangout-turn') return json(await turn(persona, session.id, sid, history));
-    if (action === 'hangout-end') return json(await endSession(persona, session.id, sid));
-    return json({ error: 'unknown move' }, 400);
-  } catch (err) {
-    if (err.status === 429) return json({ error: 'tired', say: 'the office is closed for today. i have a nap appointment. come back tomorrow!' }, 429);
-    if (err.status) return json({ error: err.message }, err.status);
-    if (err.code === 'no-key') return json({ error: 'no-voice', say: 'i can’t really talk yet… my voice isn’t set up. ask whoever made this place!' }, 503);
-    console.error('hangout failed:', err);
-    return json({ error: 'hiccup', say: 'hm, i got a little tongue-tied. say that again?' }, 502);
-  }
-}
