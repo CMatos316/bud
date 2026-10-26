@@ -18,6 +18,8 @@ export async function GET(request) {
       user: { id: session.id, name: session.name, avatarUrl },
       bud: snap.exists ? budForClient(snap.data()) : null,
       hasProfile: profile.exists,
+      // how many interview questions they've answered (the first chat is 3; "Keep chatting" goes up to 10)
+      answered: profile.exists ? profile.get('answered') ?? ((profile.get('interests') || []).length ? 3 : 0) : 0,
     });
   } catch (err) {
     console.error('loading bud failed:', err);

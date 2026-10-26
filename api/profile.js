@@ -3,7 +3,7 @@ import { readSession, sameOrigin } from '../lib/session.js';
 import { refs, Timestamp } from '../lib/firebase.js';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
-const FIELDS = ['interests', 'lookingFor', 'around', 'vibe', 'summary', 'matchable'];
+const FIELDS = ['interests', 'lookingFor', 'around', 'vibe', 'summary', 'matchable', 'tags', 'answered', 'shareInterests'];
 const tidy = (s, max) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
 const tagList = (v, n, max) => (Array.isArray(v) ? [...new Set(v.map((t) => tidy(t, max).toLowerCase()).filter(Boolean))].slice(0, n) : null);
 
@@ -21,7 +21,9 @@ export async function GET(request) {
   const dms = !(user.exists && user.get('questionsOff'));
   if (!snap.exists) return json({ profile: null, dms });
   const d = snap.data();
-  return json({ profile: Object.fromEntries(FIELDS.map((k) => [k, d[k] ?? null])), dms });
+  const profile = Object.fromEntries(FIELDS.map((k) => [k, d[k] ?? null]));
+  profile.shareInterests = d.shareInterests !== false;
+  return json({ profile, dms });
 }
 
 // Edits only narrow what bud learned (remove things) or flip matching; new facts come from the chat.
@@ -36,11 +38,12 @@ export async function PUT(request) {
   if (!snap.exists) return typeof body?.dms === 'boolean' ? json({ saved: true }) : json({ error: 'chat with your bud first' }, 404);
   const cur = snap.data(), patch = { updatedAt: Timestamp.now() };
   const keep = (list, old) => (list ? list.filter((t) => (old || []).includes(t)) : undefined);
-  const interests = keep(tagList(body?.interests, 12, 32), cur.interests);
+  const interests = keep(tagList(body?.interests, 40, 32), cur.interests);
   const lookingFor = keep(tagList(body?.lookingFor, 4, 60), cur.lookingFor);
-  if (interests) patch.interests = interests;
+  if (interests) { patch.interests = interests; patch.tags = (cur.tags || []).filter((t) => interests.includes(t.label)); }
   if (lookingFor) patch.lookingFor = lookingFor;
   if (typeof body?.matchable === 'boolean') patch.matchable = body.matchable;
+  if (typeof body?.shareInterests === 'boolean') patch.shareInterests = body.shareInterests;   // "you have this in common" on others' cards
   await ref.set(patch, { merge: true });
   return json({ saved: true });
 }

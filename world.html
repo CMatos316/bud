@@ -207,6 +207,17 @@ body { transition: background 2s linear; }
 .composer-error { margin: 0; color: #C4385E; font-size: 13.5px; text-align: center; }
 .composer .row { justify-content: flex-end; width: 100%; }
 .flying { position: fixed; z-index: 7; margin: 0; pointer-events: none; }
+.about { margin: 4px 0 10px; }
+.about-row { gap: 10px; margin-bottom: 8px; }
+.about-row .muted { font-size: 13px; }
+.knows summary { cursor: pointer; font-size: 14px; font-weight: 600; padding: 4px 0; }
+.knows .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
+.knows .chip { display: inline-flex; align-items: center; gap: 2px; background: rgba(127,127,160,.13); border-radius: 999px; padding: 3px 4px 3px 11px; font-size: 13.5px; }
+.knows .chip button { border: 0; background: none; color: inherit; opacity: .6; cursor: pointer; width: 22px; height: 22px; border-radius: 50%; font-size: 15px; }
+.knows .chip button:hover { opacity: 1; background: rgba(127,127,160,.2); }
+.share-row { justify-content: space-between; gap: 8px; }
+.share-row .muted { font-size: 13px; }
+.share-row .btn { padding: 7px 12px; font-size: 13px; }
 .dm-row { justify-content: space-between; border-top: 1px solid var(--chip-line); padding-top: 10px; }
 .dm-row .muted { font-size: 13px; }
 .dm-row .btn { padding: 7px 12px; font-size: 13px; }
@@ -1606,6 +1617,8 @@ let inbox = [];        // notes stuck on my bud: { from, fromName, fromBud, text
 let diary = [];        // what my bud got up to: { at, kind, text, with?, fresh }
 let hasProfile = true; // false until you've done the getting-to-know-you chat
 let dmsOn = true;      // bud's question DMs every couple of days
+let myProfile = null;  // what your bud knows about you: { interests, answered, shareInterests }
+const MAX_TOTAL = 10;  // interview questions in all (3 when you make your bud, then "Keep chatting")
 let cardBud = null;
 const nameOf = (bud) => bud.data.nickname || bud.data.trueName;
 const myBud = () => buds.find((b) => b.data.isMe);
@@ -1701,6 +1714,7 @@ function renderCardBody() {
     }
     if (!inbox.length) {
       if (!diary.length) cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
+      renderAboutMe(bud);
       renderGamesList();
       renderDiary(bud);
       renderDmToggle(bud);
@@ -1718,6 +1732,7 @@ function renderCardBody() {
       r.append(yes, no); note.append(r);
       cardBody.append(note);
     }
+    renderAboutMe(bud);
     renderGamesList();
     renderDiary(bud);
     renderDmToggle(bud);
@@ -1768,6 +1783,43 @@ function whenLabel(ms) {
   if (ms >= dayStart - 864e5) return h < 5 || h >= 21 ? 'last night' : 'yesterday';
   return `${Math.round((dayStart - ms) / 864e5) + 1} days ago`;
 }
+// "Keep chatting" (the interview, up to 10 questions whenever you like) and what your bud knows about you
+function renderAboutMe(bud) {
+  if (!hasProfile || !myProfile) return;
+  const p = myProfile, box = el('section', 'about');
+  const top = el('div', 'row about-row');
+  if (p.answered < MAX_TOTAL) {
+    const go = el('a', 'btn primary', `Keep chatting with ${nameOf(bud)}`); go.href = '/?chat=1';
+    top.append(go, el('span', 'muted', `${p.answered} of ${MAX_TOTAL} questions`));
+  } else top.append(el('span', 'muted', `${nameOf(bud)} knows you pretty well!`));
+  box.append(top);
+  const det = el('details', 'knows');
+  det.append(el('summary', null, `What ${nameOf(bud)} knows about you${p.interests.length ? ` (${p.interests.length})` : ''}`));
+  const chips = el('div', 'chips');
+  if (!p.interests.length) chips.append(el('span', 'muted', 'Nothing yet.'));
+  for (const t of p.interests) {
+    const c = el('span', 'chip', t), x = el('button', null, '×'); x.type = 'button'; x.setAttribute('aria-label', `Forget “${t}”`);
+    x.addEventListener('click', async () => {
+      const keep = p.interests.filter((i) => i !== t);
+      try { await api('PUT', '/api/profile', { interests: keep }); p.interests = keep; S.play('click'); renderCardBody(); openAbout = true; } catch (e) {}
+    });
+    c.append(x); chips.append(c);
+  }
+  det.append(chips);
+  const sh = el('div', 'row share-row');
+  sh.append(el('span', 'muted', `Show what you have in common on other buds’ cards: ${p.shareInterests ? 'on' : 'off'}`));
+  const t = el('button', 'btn', p.shareInterests ? 'Turn off' : 'Turn on'); t.type = 'button';
+  t.addEventListener('click', async () => {
+    t.disabled = true;
+    try { await api('PUT', '/api/profile', { shareInterests: !p.shareInterests }); p.shareInterests = !p.shareInterests; S.play('click'); } catch (e) {}
+    openAbout = true; renderCardBody();
+  });
+  sh.append(t); det.append(sh);
+  if (openAbout) { det.open = true; openAbout = false; }
+  box.append(det);
+  cardBody.append(box);
+}
+let openAbout = false;
 function renderDmToggle(bud) {
   const r = el('div', 'row dm-row');
   r.append(el('span', 'muted', `${nameOf(bud)}’s questions in your Discord DMs: ${dmsOn ? 'on' : 'off'}`));
@@ -2946,6 +2998,7 @@ function showCenter(title, text, linkText, href = '/') {
   }
   hasProfile = world.me.hasProfile !== false;
   dmsOn = world.me.dms !== false;
+  myProfile = world.me.profile || null;
   for (const d of world.buds) {
     try { buds.push(await makeBud(d)); } catch (e) { console.error('could not build bud', d.id, e); }
   }

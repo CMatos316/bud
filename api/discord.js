@@ -6,6 +6,7 @@ import {
   SITE_URL, WELCOME_CHANNEL_ID, BUDS_CHANNEL_ID, APP_ID, linkButton, button, row,
 } from '../lib/discord.js';
 import { sendQuestions, handleQuestionInteraction } from '../lib/questions.js';
+import { topWishes } from '../lib/interests.js';
 import { publishIssue } from '../lib/newsletter.js';
 
 const json = (data, status = 200) => Response.json(data, { status });
@@ -72,6 +73,18 @@ export async function POST(request) {
         await discordApi(`/webhooks/${APP_ID}/${interaction.token}/messages/@original`, { method: 'PATCH', body: { content } }).catch(console.error);
       })());
       return json({ type: ResponseType.DEFERRED_CHANNEL_MESSAGE, data: { flags: EPHEMERAL } });
+    }
+
+    if (name === 'bud-props') {
+      try {
+        const wishes = await topWishes(15);
+        if (!wishes.length) return privately('No wishes yet: every interest so far has a prop.');
+        const lines = wishes.map((w, i) => `${i + 1}. **${w.label}** (${w.cat}) · ${w.count} ${w.count === 1 ? 'person' : 'people'}`);
+        return privately(`**Interests without a prop yet**, most wanted first:\n${lines.join('\n')}`);
+      } catch (err) {
+        console.error(err);
+        return privately('Couldn’t load the prop wishlist. Check the Vercel logs.');
+      }
     }
 
     if (name === 'bud-setup') {

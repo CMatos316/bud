@@ -393,8 +393,9 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
       <h2 id="learnedTitle">Here’s what I’ll remember</h2>
       <div class="tags" id="learnedTags"></div>
       <label class="check"><input type="checkbox" id="learnedDms" checked><span id="learnedDmsText">Ask me a new question in my Discord DMs every couple of days</span></label>
-      <label class="check"><input type="checkbox" id="learnedMatch"><span>Suggest people here who are into the same stuff</span></label>
-      <p class="fine">Only you see this. You can change any of it later from your bud’s card on the island.</p>
+      <label class="check" id="learnedMatchRow"><input type="checkbox" id="learnedMatch"><span>Suggest people here who are into the same stuff</span></label>
+      <label class="check"><input type="checkbox" id="learnedShare" checked><span>Show what we have in common on other buds’ cards</span></label>
+      <p class="fine" id="learnedFine">Others only ever see what you have in common with them. You can change any of it later from your bud’s card on the island.</p>
       <div class="row"><button class="btn primary" id="learnedDone" type="button" disabled>Done</button></div>
     </div>
   </section>
@@ -1845,7 +1846,8 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     if (s === 'meet') {
       const nm = nickname || trueName;
       const ask = document.getElementById('chatAgain');
-      ask.textContent = hasProfile ? 'Chat' : 'Answer its questions';
+      ask.textContent = !hasProfile ? 'Answer its questions' : answered >= MAX_TOTAL ? `${nm} knows you well` : 'Keep chatting';
+      ask.disabled = hasProfile && answered >= MAX_TOTAL;
       ask.classList.toggle('primary', !hasProfile);
       document.getElementById('toWorld').classList.toggle('primary', hasProfile);
       setPrompt(`Meet ${esc(nm)}`, nickname && nickname !== trueName ? '' : 'Drag to spin it, tap to say hi.', true);
@@ -2005,19 +2007,25 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   else document.getElementById('soundBtn').hidden = true;
 
   /* ---------- getting to know you: bud asks, you answer (Claude Haiku on the server) ---------- */
-  let hasProfile = false, chat = null, learnedProfile = null;
+  let hasProfile = false, chat = null, learnedProfile = null, answered = 0;
+  const MAX_TOTAL = 10;   // questions in all: 3 when you make your bud, then more whenever you want
   const chatLog = document.getElementById('chatLog'), chatChips = document.getElementById('chatChips');
   const chatForm = document.getElementById('chatForm'), chatInput = document.getElementById('chatInput');
   const chatSend = document.getElementById('chatSend');
 
   const youSaid = document.getElementById('youSaid'), chatDots = document.getElementById('chatDots');
   function updateDots() {
-    const n = chat ? chat.history.filter((m) => m.role === 'you').length : 0;
+    const mine = chat ? chat.history.filter((m) => m.role === 'you').length : 0;
+    const total = chat && chat.more ? MAX_TOTAL : 3, n = (chat && chat.more ? chat.before : 0) + mine;
+    if (chatDots.children.length !== total) chatDots.innerHTML = '<i></i>'.repeat(total);
     chatDots.querySelectorAll('i').forEach((d, i) => { d.className = i < n ? 'done' : i === n ? 'now' : ''; });
-    chatDots.setAttribute('aria-label', n >= 3 ? 'All done' : `Question ${n + 1} of 3`);
+    chatDots.setAttribute('aria-label', n >= total ? 'All done' : `Question ${n + 1} of ${total}`);
   }
   function startChat() {
-    chat = { history: [], busy: false, done: false };
+    // a bud that already knows you catches up one topic at a time ("Keep chatting"), up to 10 questions in all
+    const more = hasProfile;
+    chat = { history: [], busy: false, done: false, more, asked: [], before: more ? answered : 0 };
+    document.getElementById('chatLater').textContent = more ? 'That’s enough for now' : 'Skip for now';
     chatLog.textContent = ''; chatChips.textContent = ''; chatInput.value = '';
     youSaid.hidden = true; chatForm.hidden = false;
     goStep('chat');
@@ -2039,7 +2047,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   async function talk(action) {
     const res = await fetch('/api/interview', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, history: chat.history }),
+      body: JSON.stringify({ action, history: chat.history, more: chat.more, asked: chat.asked }),
     });
     const data = await res.json().catch(() => ({}));
     return { ok: res.ok, status: res.status, data };
@@ -2063,6 +2071,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
         return;
       }
       chat.history.push({ role: 'bud', text: data.say });
+      if (data.topic && !chat.asked.includes(data.topic)) chat.asked.push(data.topic);
       addLog('bud', data.say); say(data.say, 0); budReacts(data.mood);
       youSaid.hidden = true; updateDots();
       showChips(data.done ? [] : data.chips);
@@ -2107,7 +2116,8 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     try { const r = await talk('finish'); data = r.ok ? r.data : {}; } catch (e) {}
     thinkUntil = 0;
     if (!data.profile) { say('oops, my notes got smudged. let’s chat again another time!', 3000); setTimeout(() => endChat(), 3200); return; }
-    learnedProfile = data.profile; hasProfile = true;
+    learnedProfile = data.profile; hasProfile = true; answered = data.profile.answered ?? answered;
+    learnedProfile.more = !!data.more; learnedProfile.newLabels = (data.newTags || []).map((t) => t.label);
     S.play('sparkle');
     say(data.profile.summary || 'got it! I’ll remember.', 0);
     eyes.happyUntil = T + 2; body.syv -= 0.12;
@@ -2124,25 +2134,33 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
       x.addEventListener('click', () => { p[listName] = p[listName].filter((v) => v !== text); renderLearned(); });
       t.append(x); box.append(t);
     };
-    p.interests.forEach((t) => addTag(t, 'interests', false));
-    p.lookingFor.forEach((t) => addTag(t, 'lookingFor', true));
-    if (!p.interests.length && !p.lookingFor.length) box.append('Nothing to remember. That’s okay too.');
+    const shown = p.more ? p.interests.filter((t) => p.newLabels.includes(t)) : p.interests;
+    shown.forEach((t) => addTag(t, 'interests', false));
+    if (!p.more) p.lookingFor.forEach((t) => addTag(t, 'lookingFor', true));
+    if (!shown.length && (p.more || !p.lookingFor.length)) box.append(p.more ? 'Nothing new this time. That’s okay too.' : 'Nothing to remember. That’s okay too.');
+    document.getElementById('learnedTitle').textContent = p.more ? 'New things I’ll remember' : 'Here’s what I’ll remember';
+    // catching up: question DMs and friend suggestions were already chosen; they live on the bud's card
+    document.getElementById('learnedDms').closest('label').hidden = !!p.more;
+    document.getElementById('learnedMatchRow').hidden = !!p.more;
+    document.getElementById('learnedShare').checked = p.shareInterests !== false;
     document.getElementById('learnedDmsText').textContent = `${nickname || trueName} can ask me a new question in my Discord DMs every couple of days`;
     document.getElementById('learnedDone').disabled = false;
     fitSoon();
   }
   async function saveLearned() {
     const done = document.getElementById('learnedDone');
-    const matchable = document.getElementById('learnedMatch').checked, dms = document.getElementById('learnedDms').checked;
+    const more = !!learnedProfile.more, shareInterests = document.getElementById('learnedShare').checked;
+    const matchable = more ? !!learnedProfile.matchable : document.getElementById('learnedMatch').checked;
+    const dms = more ? null : document.getElementById('learnedDms').checked;
     done.disabled = true;
     try {
       await fetch('/api/profile', {
         method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interests: learnedProfile.interests, lookingFor: learnedProfile.lookingFor, matchable, dms }),
+        body: JSON.stringify({ interests: learnedProfile.interests, lookingFor: learnedProfile.lookingFor, matchable, shareInterests, ...(dms === null ? {} : { dms }) }),
       });
     } catch (e) {}
     S.play(matchable ? 'chime' : 'pop');
-    say(matchable ? 'yay! I’ll keep an eye out for you.' : dms ? 'okay! talk soon.' : 'okay! see you on the island.', 2000);
+    say(more ? (answered >= MAX_TOTAL ? 'I feel like I really know you now!' : 'thanks for catching up!') : matchable ? 'yay! I’ll keep an eye out for you.' : dms ? 'okay! talk soon.' : 'okay! see you on the island.', 2000);
     eyes.happyUntil = T + 2; body.syv -= 0.1;
     chat = null;
     setTimeout(() => { goStep('meet'); leaveForWorld(); }, 1800);
@@ -2155,6 +2173,13 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   }
   document.getElementById('chatLater').addEventListener('click', () => {
     if (!chat) return;
+    if (chat.more && chat.history.some((m) => m.role === 'you') && !chat.busy) {
+      // "that's enough for now": keep what they already answered
+      chat.done = true; chatForm.hidden = true; chatChips.textContent = '';
+      say('okay! let me write that down.', 1200);
+      setTimeout(finishChat, 900);
+      return;
+    }
     say('okay! another time then.', 1500);
     chat = null; chatForm.hidden = false; thinkUntil = 0;
     setTimeout(() => { goStep('meet'); leaveForWorld(); }, 1200);
@@ -2267,7 +2292,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
       return;
     }
 
-    hasProfile = !!me.hasProfile;
+    hasProfile = !!me.hasProfile; answered = me.answered || 0;
     const who = document.getElementById('who');
     document.getElementById('whoName').textContent = me.user.name;
     document.getElementById('whoAvatar').src = me.user.avatarUrl;
@@ -2284,7 +2309,9 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
       }));
       const openChat = new URLSearchParams(location.search).get('chat') === '1';
       if (openChat) history.replaceState(null, '', location.pathname);
-      if (openChat) {
+      if (openChat && hasProfile && answered >= MAX_TOTAL) {
+        setTimeout(() => say('I feel like I already know you pretty well! more questions some other time.', 3200), 700);
+      } else if (openChat) {
         setTimeout(() => say(hasProfile ? 'ooh, catch-up time!' : `yay! okay, a few questions…`, 1600), 700);
         setTimeout(startChat, 2100);
       } else {

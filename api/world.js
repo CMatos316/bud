@@ -110,7 +110,15 @@ export async function GET(request) {
       ? `https://cdn.discordapp.com/avatars/${session.id}/${session.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(session.id) >> 22n) % 6}.png`;
     return json({
-      me: { id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists, dms: !meDoc.get?.('questionsOff') },
+      me: {
+        id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists, dms: !meDoc.get?.('questionsOff'),
+        // what your bud knows about you (only you see this), for your bud's card
+        profile: profileDoc.exists ? {
+          interests: profileDoc.get('interests') || [],
+          answered: profileDoc.get('answered') ?? ((profileDoc.get('interests') || []).length ? 3 : 0),
+          shareInterests: profileDoc.get('shareInterests') !== false,
+        } : null,
+      },
       buds: list,
       diary,
       games: gameSnap.docs.map((d) => d.data()).filter((g) => ['setup', 'playing'].includes(g.status)).map((g) => {

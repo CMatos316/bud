@@ -7,6 +7,7 @@ import { GUILD_ID } from '../../lib/discord.js';
 import { sendQuestions } from '../../lib/questions.js';
 import { publishIssue } from '../../lib/newsletter.js';
 import { removeHangoutData } from '../../lib/upkeep.js';
+import { retagProfiles } from '../../lib/interests.js';
 
 export async function GET(request) {
   const secret = (process.env.CRON_SECRET || '').trim();
@@ -21,7 +22,10 @@ export async function GET(request) {
     });
     if (!free) return Response.json({ ran: false, why: 'ran less than an hour ago' });
     const questions = await sendQuestions();
-    const upkeep = { hangoutCleared: await removeHangoutData().catch((err) => { console.error('hangout cleanup failed:', err); return -1; }) };
+    const upkeep = {
+      hangoutCleared: await removeHangoutData().catch((err) => { console.error('hangout cleanup failed:', err); return -1; }),
+      retagged: await retagProfiles().catch((err) => { console.error('retagging failed:', err); return -1; }),
+    };
     // Sundays: this week's Island Times in #buds
     const news = new Date().getUTCDay() === 0 ? await publishIssue().catch((err) => { console.error('newsletter failed:', err); return { published: false }; }) : null;
     return Response.json({ ran: true, ...questions, news, upkeep });
