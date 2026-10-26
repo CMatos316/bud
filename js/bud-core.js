@@ -314,4 +314,4 @@ function buildMesh(b) {
   return { geom, face };
 }
 
-export { area, centroid, bbox, inPoly, distToPoly, pathLen, resample, drawEyeStyle, buildMesh };
+export { area, centroid, bbox, inPoly, distToPoly, pathLen, resample, drawEyeStyle, buildMesh, SPACING };

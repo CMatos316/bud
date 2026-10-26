@@ -19,9 +19,12 @@ export async function GET(request) {
   if (session instanceof Response) return session;
   const [snap, user] = await Promise.all([refs.profile(session.id).get(), refs.user(session.id).get()]);
   const dms = !(user.exists && user.get('questionsOff'));
-  if (!snap.exists) return json({ profile: null, dms });
+  // small things your bud remembers from hanging out (lib/hangout.js)
+  const rem = user.exists ? user.get('budRemembers') : null;
+  const remembers = Array.isArray(rem) ? rem.map((r) => r?.t).filter((t) => typeof t === 'string') : [];
+  if (!snap.exists) return json({ profile: null, dms, remembers });
   const d = snap.data();
-  return json({ profile: Object.fromEntries(FIELDS.map((k) => [k, d[k] ?? null])), dms });
+  return json({ profile: Object.fromEntries(FIELDS.map((k) => [k, d[k] ?? null])), dms, remembers });
 }
 
 // Edits only narrow what bud learned (remove things) or flip matching; new facts come from the chat.
@@ -32,8 +35,15 @@ export async function PUT(request) {
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
   // bud's question DMs on or off (works even before there's a profile)
   if (typeof body?.dms === 'boolean') await refs.user(session.id).set({ questionsOff: !body.dms }, { merge: true });
+  // what your bud remembers from hanging out: remove-only, like the rest ([] forgets everything)
+  if (Array.isArray(body?.remembers)) {
+    const u = await refs.user(session.id).get(), cur = u.exists && Array.isArray(u.get('budRemembers')) ? u.get('budRemembers') : [];
+    const keep = new Set(body.remembers.filter((t) => typeof t === 'string'));
+    await refs.user(session.id).set({ budRemembers: cur.filter((r) => keep.has(r?.t)) }, { merge: true });
+    if (typeof body?.dms !== 'boolean' && !('interests' in body) && !('lookingFor' in body) && !('matchable' in body)) return json({ saved: true });
+  }
   const ref = refs.profile(session.id), snap = await ref.get();
-  if (!snap.exists) return typeof body?.dms === 'boolean' ? json({ saved: true }) : json({ error: 'chat with your bud first' }, 404);
+  if (!snap.exists) return typeof body?.dms === 'boolean' || Array.isArray(body?.remembers) ? json({ saved: true }) : json({ error: 'chat with your bud first' }, 404);
   const cur = snap.data(), patch = { updatedAt: Timestamp.now() };
   const keep = (list, old) => (list ? list.filter((t) => (old || []).includes(t)) : undefined);
   const interests = keep(tagList(body?.interests, 12, 32), cur.interests);

@@ -76,6 +76,7 @@
     paint: (v) => noise({ dur: 0.12, gain: 0.05 * v.gain, f0: 2600, f1: 1800, q: 0.7, attack: 0.03 }),
     splash: (v) => { noise({ dur: 0.4, gain: 0.22 * v.gain, f0: 1800, f1: 500, q: 0.9 }); tone({ f0: 300, f1: 90, dur: 0.25, gain: 0.18 * v.gain }); },
     sparkle: (v) => [0, 0.06, 0.12, 0.2].forEach((at, i) => tone({ f0: [1319, 1568, 1976, 2637][i] * v.rate, dur: 0.18, gain: 0.07 * v.gain, at })),
+    scribble: (v) => [0, 0.07, 0.15, 0.24, 0.31, 0.4].forEach((at, i) => noise({ dur: 0.05, gain: 0.05 * v.gain, f0: 2800 + (i % 3) * 500, q: 3, at })),
     alert: (v) => { tone({ f0: 700 * v.rate, f1: 1200 * v.rate, dur: 0.08, gain: 0.16 * v.gain }); tone({ f0: 900 * v.rate, f1: 1500 * v.rate, dur: 0.1, gain: 0.14 * v.gain, at: 0.09 }); },
   };
 

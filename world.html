@@ -210,6 +210,8 @@ body { transition: background 2s linear; }
 .dm-row { justify-content: space-between; border-top: 1px solid var(--chip-line); padding-top: 10px; }
 .dm-row .muted { font-size: 13px; }
 .dm-row .btn { padding: 7px 12px; font-size: 13px; }
+.hang-row { margin-bottom: 10px; }
+.hang-row .muted { font-size: 13px; }
 /* ---------- The Island Times ---------- */
 .pill .newdot { width: 8px; height: 8px; border-radius: 50%; background: #E2557A; margin-left: -2px; }
 .paper-wrap {
@@ -1689,6 +1691,11 @@ function renderCardBody() {
   if (!bud) return;
   const d = bud.data;
   if (d.isMe) {
+    // a longer chat, just the two of you (hangout.html)
+    const hang = el('div', 'row hang-row'), go = el('a', 'btn primary', 'Hang out');
+    go.href = '/hangout';
+    hang.append(go, el('span', 'muted', `Chat with ${nameOf(bud)} for a few minutes.`));
+    cardBody.append(hang);
     if (!hasProfile) {
       // it hasn't had its getting-to-know-you chat with you yet
       const ask = el('div', 'note small');

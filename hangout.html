@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>Hang out · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="Hang out with your bud for a few minutes. It listens, it jots things down, it is not a real doctor.">
+<meta name="theme-color" content="#BFD9FF">
+<style>
+/* Hanging out with your bud: your bud up top (with glasses and a clipboard once the bit starts), the chat
+   underneath, and a box to type in. Ends with a silly card. */
+:root {
+  --sky-top: #BFD9FF; --sky-bottom: #FBE3EF; --ink: #1D1C2B; --muted: #5E5D75;
+  --card: rgba(255, 255, 255, 0.84); --line: rgba(29, 28, 43, 0.09); --shadow: rgba(46, 40, 90, 0.18);
+  --you: #1D1C2B; --you-ink: #FFFFFF; --btn: #1D1C2B; --btn-ink: #FFFFFF;
+  --paper: #FFFBEF; --paper-line: #C9DDF3; --paper-ink: #2A2A3A; --wood: #B07A45; --help: #E8F4EC; --help-ink: #1E4D33;
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --hand: "Comic Neue", "Bradley Hand", "Segoe Print", "Chalkboard SE", "Marker Felt", cursive;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sky-top: #141A3A; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4;
+    --card: rgba(30, 32, 52, 0.84); --line: rgba(255, 255, 255, 0.1); --shadow: rgba(0, 0, 0, 0.45);
+    --you: #EDECF6; --you-ink: #15161F; --btn: #EDECF6; --btn-ink: #15161F;
+    --help: #1E3A2B; --help-ink: #D6F2E1; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --sky-top: #141A3A; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4;
+  --card: rgba(30, 32, 52, 0.84); --line: rgba(255, 255, 255, 0.1); --shadow: rgba(0, 0, 0, 0.45);
+  --you: #EDECF6; --you-ink: #15161F; --btn: #EDECF6; --btn-ink: #15161F;
+  --help: #1E3A2B; --help-ink: #D6F2E1; color-scheme: dark;
+}
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; overflow: hidden; color: var(--ink); font-family: var(--font);
+  background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
+  -webkit-tap-highlight-color: transparent;
+}
+.app { height: 100%; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr auto; max-width: 720px; margin: 0 auto;
+  padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+.top { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.top .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; color: inherit; text-decoration: none; min-width: 0; }
+.top .brand img { width: 26px; height: 26px; }
+.top .brand span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top .spacer { flex: 1; }
+.clock { font: 600 13px var(--font); cursor: pointer; animation: rise .4s ease-out; color: var(--muted); font-variant-numeric: tabular-nums; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.clock.soon { color: #B4532A; }
+.icon-btn { border: 1px solid var(--line); background: var(--card); color: inherit; width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; cursor: pointer; padding: 0; flex: none; }
+.icon-btn svg { width: 17px; height: 17px; }
+.pill { border: 1px solid var(--line); background: var(--card); color: inherit; border-radius: 999px; padding: 7px 12px; font: 600 13.5px var(--font); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; flex: none; }
+
+/* your bud, and its clipboard once the bit starts */
+.stage { position: relative; height: clamp(150px, 30vh, 250px); display: grid; place-items: center; }
+.budwrap { position: relative; width: clamp(120px, 24vh, 190px); aspect-ratio: 1; transition: transform .6s cubic-bezier(.3,1.3,.5,1); }
+.budwrap canvas { width: 100%; height: 100%; display: block; transform-origin: 50% 100%; }
+.budwrap.talk canvas { animation: bob .45s ease-in-out 3; }
+.budwrap.hop canvas { animation: hop .5s ease-out; }
+@keyframes bob { 50% { transform: translateY(-5px) scaleY(1.04); } }
+@keyframes hop { 40% { transform: translateY(-18px) scaleY(1.06); } 70% { transform: translateY(0) scaleY(.92); } }
+.stage.bit .budwrap { transform: translateX(-28%); }
+.clipboard {
+  position: absolute; right: max(2%, calc(50% - 250px)); top: 50%; width: clamp(130px, 34vw, 200px); transform: translate(140%, -50%) rotate(8deg);
+  opacity: 0; transition: transform .7s cubic-bezier(.3,1.25,.5,1), opacity .3s; pointer-events: none;
+}
+.stage.bit .clipboard { transform: translate(0, -50%) rotate(4deg); opacity: 1; pointer-events: auto; }
+.clipboard .board { background: var(--wood); border-radius: 12px; padding: 16px 8px 8px; box-shadow: 0 14px 26px -14px rgba(0,0,0,.45); position: relative; cursor: pointer; }
+.clipboard .board::before { content: ""; position: absolute; top: -6px; left: 50%; width: 46px; height: 16px; margin-left: -23px; background: #9AA0AE; border-radius: 5px; box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); }
+.clipboard .sheet { background: var(--paper); color: var(--paper-ink); border-radius: 4px; min-height: 96px; padding: 6px 8px 8px;
+  background-image: repeating-linear-gradient(180deg, transparent 0 17px, var(--paper-line) 17px 18px); font: 13px/18px var(--hand); }
+.clipboard .sheet h4 { margin: 0; font: 700 11px/18px var(--font); letter-spacing: .06em; text-transform: uppercase; color: #B4532A; }
+.clipboard .sheet p { margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.clipboard .sheet p.new { animation: write 1.1s steps(18) both; clip-path: inset(0 100% 0 0); }
+@keyframes write { to { clip-path: inset(0 0 0 0); } }
+.pencil { position: absolute; right: -10px; bottom: 6px; font-size: 26px; transform-origin: 20% 80%; opacity: 0; }
+.pencil.go { opacity: 1; animation: scribble 1.1s ease-in-out; }
+@keyframes scribble { 0%,100% { transform: rotate(0) translate(0,0); } 15% { transform: rotate(-12deg) translate(-12px,-2px); } 30% { transform: rotate(6deg) translate(-4px,1px); } 45% { transform: rotate(-10deg) translate(-16px,-1px); } 60% { transform: rotate(4deg) translate(-6px,2px); } 80% { transform: rotate(-8deg) translate(-10px,0); } }
+.peek { position: absolute; left: 50%; bottom: -26px; transform: translateX(-50%); white-space: nowrap; font-size: 12px; }
+
+/* the chat */
+.log { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 18px); mask-image: linear-gradient(180deg, transparent 0, #000 18px); overflow-y: auto; padding: 18px 2px 10px; display: flex; flex-direction: column; gap: 8px; min-height: 0; scroll-behavior: smooth; }
+.msg { max-width: 82%; padding: 9px 14px; border-radius: 18px; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; animation: rise .25s ease-out; }
+@keyframes rise { from { transform: translateY(6px); opacity: 0; } }
+.msg.bud { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 6px; box-shadow: 0 8px 20px -16px var(--shadow); }
+.msg.you { align-self: flex-end; background: var(--you); color: var(--you-ink); border-bottom-right-radius: 6px; }
+.msg.act { align-self: center; background: none; color: var(--muted); font-size: 13.5px; font-style: italic; padding: 2px 8px; }
+.msg.typing { color: var(--muted); letter-spacing: .2em; }
+.msg.typing span { animation: blink 1.2s infinite both; } .msg.typing span:nth-child(2) { animation-delay: .2s; } .msg.typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
+.help { align-self: stretch; background: var(--help); color: var(--help-ink); border-radius: 16px; padding: 12px 14px; font-size: 14.5px; line-height: 1.45; }
+.help strong { display: block; font-size: 15.5px; margin-bottom: 2px; }
+.help a { color: inherit; font-weight: 600; }
+.remembered { align-self: flex-start; font-size: 12.5px; color: var(--muted); padding: 0 6px; margin-top: -4px; }
+.disclaimer { text-align: center; font-size: 12px; color: var(--muted); margin: 2px 0 0; }
+
+/* typing */
+.composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding-top: 6px; }
+.composer textarea { resize: none; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 20px; padding: 11px 14px; font: 16px/1.3 var(--font); min-height: 46px; max-height: 120px; outline: none; }
+.composer textarea:focus { border-color: var(--muted); }
+.send { border: 0; background: var(--btn); color: var(--btn-ink); border-radius: 999px; width: 46px; height: 46px; display: grid; place-items: center; cursor: pointer; align-self: end; }
+.send svg { width: 20px; height: 20px; }
+.send:disabled { opacity: .45; cursor: default; }
+.under { flex-wrap: nowrap; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-top: 6px; min-height: 30px; }
+.under .muted { font-size: 12.5px; color: var(--muted); min-width: 0; }
+.under .row { flex-wrap: nowrap; }
+
+/* panels: the notebook, the end card, sign-in */
+.overlay { position: fixed; inset: 0; background: rgba(20, 18, 40, .38); display: grid; place-items: center; padding: 16px; z-index: 10; animation: fade .2s; }
+@keyframes fade { from { opacity: 0; } }
+.panel { background: var(--card); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--line); border-radius: 22px; padding: 18px; width: min(440px, 100%); max-height: 100%; overflow: auto; box-shadow: 0 24px 60px -30px rgba(0,0,0,.5); }
+.panel h2 { margin: 0 0 4px; font-size: 24px; line-height: 1.15; }
+.panel h3 { margin: 16px 0 6px; font-size: 15px; }
+.panel p { margin: 0 0 10px; color: var(--muted); font-size: 14.5px; line-height: 1.45; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.btn { font: 600 15px var(--font); border-radius: 999px; padding: 10px 18px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn.primary { background: var(--btn); color: var(--btn-ink); border-color: transparent; }
+.btn.small { padding: 6px 12px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.notebook { background: var(--paper); color: var(--paper-ink); border-radius: 10px; padding: 0 14px 0 34px; position: relative;
+  background-image: linear-gradient(90deg, transparent 24px, #F2A7A7 24px 25px, transparent 25px), repeating-linear-gradient(180deg, transparent 0 25px, var(--paper-line) 25px 26px);
+  font: 16px/26px var(--hand); min-height: 130px; padding-top: 26px; background-position: 0 0, 0 0; }
+.notebook p::before { content: "– "; color: #B4532A; }
+.notebook p.doodle::before, .notebook .empty::before { content: none; }
+.notebook p { margin: 0; }
+.notebook p.doodle { color: #8A8AA0; }
+.notebook .empty { color: #8A8AA0; }
+.facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.facts li { display: inline-flex; align-items: center; gap: 4px; background: rgba(127,127,160,.13); border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 14px; }
+.facts button { border: 0; background: none; color: var(--muted); cursor: pointer; width: 22px; height: 22px; border-radius: 50%; font-size: 15px; line-height: 1; }
+.facts button:hover { background: rgba(127,127,160,.2); color: var(--ink); }
+.cardimg { width: 100%; height: auto; display: block; border-radius: 10px; box-shadow: 0 16px 34px -20px rgba(0,0,0,.5); margin: 4px 0 14px; }
+.center { display: grid; place-items: center; text-align: center; }
+
+@media (max-width: 400px) {
+  .under { flex-wrap: wrap; row-gap: 4px; }
+  .under .row { margin-left: auto; }
+  .under .muted { order: 2; flex-basis: 100%; text-align: center; }
+  .under .muted:empty { display: none; }
+}
+@media (max-height: 560px) {
+  .stage { height: 124px; } .budwrap { width: 100px; } .clipboard { width: 128px; }
+  .clipboard .board { padding: 12px 6px 6px; }
+  .clipboard .sheet { min-height: 0; font-size: 12px; }
+  .clipboard .sheet p:not(:last-of-type) { display: none; }
+  .peek { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .budwrap, .clipboard { transition-duration: .01s; }
+  .budwrap.talk canvas, .budwrap.hop canvas, .pencil.go, .msg, .clipboard .sheet p.new { animation: none; clip-path: none; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app" hidden>
+  <header class="top">
+    <a class="brand" href="/world"><img src="/img/favicon.svg" alt=""><span id="title">Hanging out</span></a>
+    <span class="spacer"></span>
+    <button class="clock" id="clock" type="button" hidden aria-label="Time left in this hangout"></button>
+    <button class="icon-btn" id="soundBtn" type="button"></button>
+  </header>
+  <section class="stage" id="stage">
+    <div class="budwrap" id="budwrap"><canvas id="budCanvas" aria-hidden="true"></canvas></div>
+    <div class="clipboard" id="clipboard" aria-hidden="true">
+      <div class="board" id="board" title="Peek at the notebook">
+        <div class="sheet" id="sheet"><h4 id="sheetTitle">Notes</h4></div>
+        <span class="pencil" id="pencil">✏️</span>
+      </div>
+      <button class="pill peek" id="peekBtn" type="button">Peek at the notebook</button>
+    </div>
+  </section>
+  <div class="log" id="log" aria-live="polite"></div>
+  <div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" maxlength="500" placeholder="say something…" aria-label="Your message" autocomplete="off"></textarea>
+      <button class="send" id="send" type="submit" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+      </button>
+    </form>
+    <div class="under">
+      <span class="muted" id="underNote"></span>
+      <span class="row">
+        <button class="pill" id="memBtn" type="button">What I remember</button>
+        <button class="pill" id="doneBtn" type="button">Done</button>
+      </span>
+    </div>
+  </div>
+</div>
+<div class="overlay" id="gate" hidden><div class="panel center" id="gatePanel"></div></div>
+<div class="overlay" id="sheetPanel" hidden><div class="panel" id="sheetBody"></div></div>
+
+<script src="/js/sound.js"></script>
+<script type="module">
+import { drawEyeStyle, SPACING } from '/js/bud-core.js';
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const S = window.BudSound || { play() {}, babble() {}, bindToggle() {}, muted: true };
+
+let me = null, bud = null, sid = null, skew = 0, closeAt = 0, wrapAt = 0, busy = false, ended = false, finishing = false;
+let glasses = false, serious = false, mood = 'happy', look = { x: 0, y: 0.15 };
+const history = [], jots = [];
+let remembers = [];
+
+async function api(method, path, body) {
+  const t0 = Date.now();
+  const res = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, credentials: 'same-origin', cache: 'no-store', body: body ? JSON.stringify(body) : undefined });
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (data.now) skew = data.now - (t0 + Date.now()) / 2;
+  if (!res.ok) throw Object.assign(new Error(data.error || 'something went wrong'), { status: res.status, data });
+  return data;
+}
+const now = () => Date.now() + skew;
+const budName = () => (bud && (bud.nickname || bud.trueName)) || 'your bud';
+
+/* ---------- drawing your bud, glasses and all ---------- */
+let paintImg = null;
+function eyeColor(img, b, box) {
+  if (!img) return '#15161F';
+  const c = document.createElement('canvas'); c.width = c.height = 6;
+  const g = c.getContext('2d', { willReadFrequently: true }), W = img.width, H = img.height, er = b.eyeR;
+  const sx = (b.eyeRel.x - er * 1.2 - box.x0) / box.w * W, sy = (b.eyeRel.y - er * 0.7 - box.y0) / box.h * H;
+  g.drawImage(img, Math.max(0, sx), Math.max(0, sy), Math.max(1, er * 2.4 / box.w * W), Math.max(1, er * 1.4 / box.h * H), 0, 0, 6, 6);
+  const d = g.getImageData(0, 0, 6, 6).data; let l = 0;
+  for (let i = 0; i < d.length; i += 4) l += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+  return l / (d.length / 4) / 255 < 0.42 ? '#F3F4F8' : '#15161F';
+}
+function paintBud(g, b, size, { blink = 0, withGlasses = false } = {}) {
+  const pts = b.r.map((p) => ({ x: p[0], y: p[1] }));
+  const box = pts.reduce((m, p) => ({ x0: Math.min(m.x0, p.x), y0: Math.min(m.y0, p.y), x1: Math.max(m.x1, p.x), y1: Math.max(m.y1, p.y) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+  box.w = box.x1 - box.x0; box.h = box.y1 - box.y0;
+  const k = (size * 0.86) / Math.max(box.w, box.h), ox = (size - box.w * k) / 2 - box.x0 * k, oy = size - 4 - box.h * k - box.y0 * k;
+  const X = (x) => ox + x * k, Y = (y) => oy + y * k;
+  const path = () => {
+    g.beginPath();
+    pts.forEach((p, i) => {
+      const n = pts[(i + 1) % pts.length];
+      if (!i) g.moveTo(X((pts[pts.length - 1].x + p.x) / 2), Y((pts[pts.length - 1].y + p.y) / 2));
+      g.quadraticCurveTo(X(p.x), Y(p.y), X((p.x + n.x) / 2), Y((p.y + n.y) / 2));
+    });
+    g.closePath();
+  };
+  g.fillStyle = 'rgba(30,25,60,.16)'; g.beginPath(); g.ellipse(size / 2, size - 4, box.w * k * 0.36, size * 0.022, 0, 0, Math.PI * 2); g.fill();
+  g.save(); path(); g.clip();
+  g.fillStyle = '#E8E6F2'; g.fillRect(0, 0, size, size);
+  if (paintImg) g.drawImage(paintImg, X(box.x0), Y(box.y0), box.w * k, box.h * k);
+  const hi = g.createRadialGradient(X(box.x0 + box.w * 0.3), Y(box.y0 + box.h * 0.22), 2, X(box.x0 + box.w * 0.45), Y(box.y0 + box.h * 0.5), box.w * k * 0.75);
+  hi.addColorStop(0, 'rgba(255,255,255,.45)'); hi.addColorStop(0.5, 'rgba(255,255,255,0)'); hi.addColorStop(1, 'rgba(20,10,50,.18)');
+  g.fillStyle = hi; g.fillRect(0, 0, size, size);
+  g.restore();
+  const cx = X(b.eyeRel.x), cy = Y(b.eyeRel.y), r = b.eyeR * k, col = eyeColor(paintImg, b, box);
+  const happy = mood === 'happy' || mood === 'excited';
+  try { drawEyeStyle(g, b.eyes || 'classic', cx, cy, r, blink, happy && !withGlasses, col, mood === 'thinking' ? { x: -0.6, y: -0.7 } : mood === 'sleepy' ? { x: 0, y: 0.5 } : look); } catch (e) {}
+  if (withGlasses) {
+    // little round glasses over the eyes, with arms off to the sides
+    const sp = r * (SPACING[b.eyes] || 0.75), lr = Math.max(r * 1.12, sp * 0.86), w = Math.max(2, r * 0.19);
+    g.save();
+    g.strokeStyle = '#2A2238'; g.lineWidth = w; g.lineCap = 'round';
+    for (const s of [-1, 1]) {
+      g.fillStyle = 'rgba(210,235,255,.22)';
+      g.beginPath(); g.arc(cx + s * sp, cy, lr, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,.7)'; g.lineWidth = w * 0.55;
+      g.beginPath(); g.arc(cx + s * sp, cy, lr * 0.62, Math.PI * 1.1, Math.PI * 1.45); g.stroke();
+      g.strokeStyle = '#2A2238'; g.lineWidth = w;
+    }
+    const gap = 2 * sp - 2 * lr;
+    g.beginPath();
+    if (gap > -lr * 0.4) { g.moveTo(cx - sp + lr * 0.96, cy - lr * 0.25); g.quadraticCurveTo(cx, cy - lr * 0.6, cx + sp - lr * 0.96, cy - lr * 0.25); }
+    g.moveTo(cx - sp - lr, cy - lr * 0.1); g.lineTo(cx - sp - lr * 1.9, cy - lr * 0.35);
+    g.moveTo(cx + sp + lr, cy - lr * 0.1); g.lineTo(cx + sp + lr * 1.9, cy - lr * 0.35);
+    g.stroke();
+    g.restore();
+  }
+}
+let blinkT = 0;
+function drawMain(blink = 0) {
+  const c = $('budCanvas'), dpr = Math.min(2, devicePixelRatio || 1), size = c.clientWidth || 160;
+  if (!bud) return;
+  c.width = c.height = Math.round(size * dpr);
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, size, size);
+  paintBud(g, bud, size, { blink, withGlasses: glasses });
+}
+function blinkLoop() {
+  setTimeout(() => {
+    let t = 0;
+    const step = () => { t += 1; drawMain(t < 3 ? t / 3 : Math.max(0, (6 - t) / 3)); if (t < 6) requestAnimationFrame(step); else blinkLoop(); };
+    if (!document.hidden) step(); else blinkLoop();
+  }, 2500 + Math.random() * 3500);
+}
+function anim(cls, ms) { const w = $('budwrap'); w.classList.remove(cls); void w.offsetWidth; w.classList.add(cls); setTimeout(() => w.classList.remove(cls), ms); }
+
+/* ---------- the chat ---------- */
+const log = $('log');
+function scrollDown() { requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; }); }
+function addMsg(role, text, { keep = true } = {}) {
+  const m = el('div', 'msg ' + role, text);
+  log.append(m); scrollDown();
+  if (keep && (role === 'bud' || role === 'you')) history.push({ role, text });
+  return m;
+}
+function budSays(text, m = 'curious') {
+  mood = m; drawMain();
+  addMsg('bud', text);
+  anim('talk', 1400);
+  S.babble(text, bud?.trueName || 'bud');
+}
+let typingEl = null, typingTimer = 0;
+function typing(on) {
+  clearTimeout(typingTimer);
+  if (on && !typingEl) { typingEl = el('div', 'msg bud typing'); typingEl.innerHTML = '<span>•</span><span>•</span><span>•</span>'; log.append(typingEl); scrollDown(); }
+  if (!on && typingEl) { typingEl.remove(); typingEl = null; }
+}
+
+/* the clipboard */
+function renderSheet(newest = false) {
+  const sheet = $('sheet');
+  sheet.querySelectorAll('p').forEach((p) => p.remove());
+  const show = jots.slice(-3);
+  show.forEach((j, i) => { const p = el('p', newest && i === show.length - 1 ? 'new' : null, j); sheet.append(p); });
+}
+function jot(text) {
+  jots.push(text);
+  renderSheet(true);
+  const p = $('pencil'); p.classList.remove('go'); void p.offsetWidth; p.classList.add('go');
+  S.play('scribble');
+}
+const BIT_LINES = [
+  'hmm. hmm hmm. go on.',
+  'fascinating. i’m going to need to write that down.',
+  'interesting. very interesting. please, continue.',
+  'ahem. and how did that make you feel?',
+];
+function putOnGlasses(firstJot) {
+  glasses = true;
+  $('title').textContent = `Dr. ${budName()}’s office`;
+  addMsg('act', `${budName()} puts on a tiny pair of glasses and pulls out a clipboard`, { keep: false });
+  anim('hop', 520); S.play('boing');
+  setTimeout(() => {
+    $('stage').classList.add('bit'); drawMain(); S.play('whoosh');
+    setTimeout(() => {
+      const line = pick(BIT_LINES);
+      budSays(line, 'thinking');
+      if (firstJot) setTimeout(() => jot(firstJot), 700);
+      $('underNote').textContent = 'Not a real doctor. Just a bud.';
+    }, 650);
+  }, 450);
+}
+function takeOffGlasses() {
+  if (glasses) addMsg('act', `${budName()} takes off the glasses and puts the clipboard away`, { keep: false });
+  glasses = false; jots.length = 0; renderSheet();
+  $('stage').classList.remove('bit'); $('title').textContent = 'Hanging out'; $('underNote').textContent = '';
+  drawMain();
+}
+function showHelp() {
+  const h = el('div', 'help');
+  h.innerHTML = '<strong>You deserve real support.</strong>In the US, you can call or text <a href="tel:988">988</a> any time, free, day or night. Somewhere else? <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a> lists free lines near you. Talking to someone you trust helps too. If you’re in danger right now, call your local emergency number.';
+  log.append(h); scrollDown();
+}
+
+/* the timer */
+// No clock for most of the hangout: it only shows up for the last 3 minutes, so nobody feels timed.
+const COUNTDOWN_MS = 3 * 60e3;
+function tickClock() {
+  if (!closeAt || ended) return;
+  const left = Math.max(0, closeAt - now()), m = Math.floor(left / 60e3), s = Math.floor((left % 60e3) / 1000);
+  const c = $('clock');
+  c.hidden = left > COUNTDOWN_MS;
+  c.textContent = left > 0 ? `${m}:${String(s).padStart(2, '0')}` : 'time’s up';
+  c.classList.toggle('soon', left <= 60e3);
+  if (left <= 0 && !busy && !ended && now() > closeAt + 5e3) finish();   // time's up and they went quiet
+}
+
+/* talking */
+async function send(text) {
+  if (busy || ended || !text) return;
+  busy = true; $('send').disabled = true;
+  addMsg('you', text);
+  S.play('pop');
+  typingTimer = setTimeout(() => { typingTimer = 0; if (busy) typing(true); }, 350);
+  try {
+    const r = await api('POST', '/api/interview', { action: 'hangout-turn', sid, history: history.slice(-40) });
+    typing(false);
+    if (r.seriousNow) { serious = true; takeOffGlasses(); }
+    budSays(r.say, r.mood);
+    if (r.seriousNow) showHelp();
+    if (r.remembered?.length) {
+      for (const t of r.remembered) if (!remembers.includes(t)) remembers.push(t);
+      log.append(el('div', 'remembered', `${budName()} will remember: ${r.remembered.join(', ')}`)); scrollDown();
+    }
+    if (r.glassesOn) setTimeout(() => putOnGlasses(r.jot), 1200);
+    else if (r.jot && glasses) setTimeout(() => jot(r.jot), 900);
+    if (r.done) setTimeout(finish, r.glassesOn ? 4200 : 2200);
+  } catch (e) {
+    typing(false);
+    if (e.status === 410) { ended = true; addMsg('act', 'this hangout ended.', { keep: false }); return endedPanel(null); }
+    budSays(e.data?.say || 'hm, i got a little tongue-tied. say that again?', 'thinking');
+    if (e.status === 429) { ended = true; lockInput(); }
+  } finally {
+    busy = false; if (!ended) { $('send').disabled = false; }
+  }
+}
+function lockInput() { $('input').disabled = true; $('send').disabled = true; $('doneBtn').disabled = true; }
+
+async function finish() {
+  if (finishing || !sid) return;
+  finishing = true; ended = true; lockInput(); $('clock').hidden = true;
+  if (glasses) addMsg('act', `Dr. ${budName()} closes the notebook`, { keep: false });
+  let res = null;
+  try { res = await api('POST', '/api/interview', { action: 'hangout-end', sid }); } catch (e) {}
+  sid = null;
+  endedPanel(res?.card || null);
+}
+
+/* ---------- panels ---------- */
+function openSheet(build) {
+  const body = $('sheetBody'); body.textContent = '';
+  build(body);
+  $('sheetPanel').hidden = false;
+}
+$('sheetPanel').addEventListener('click', (e) => { if (e.target === $('sheetPanel')) $('sheetPanel').hidden = true; });
+addEventListener('keydown', (e) => { if (e.key === 'Escape') $('sheetPanel').hidden = true; });
+
+function notebookPanel() {
+  openSheet((body) => {
+    body.append(el('h2', null, `Dr. ${budName()}’s notebook`));
+    body.append(el('p', null, 'Scribbles from today. They go away when you’re done.'));
+    const nb = el('div', 'notebook');
+    if (!jots.length) nb.append(el('p', 'empty', '(blank. suspiciously blank.)'));
+    jots.forEach((j, i) => { nb.append(el('p', null, j)); if (i % 3 === 2) nb.append(el('p', 'doodle', pick(['(a little frog doodle)', '(a doodle of a snack)', '(a spiral. it keeps going.)', '(a drawing of the glasses)']))); });
+    body.append(nb);
+    const r = el('div', 'row'); r.style.marginTop = '14px';
+    const close = el('button', 'btn primary', 'Close'); close.type = 'button'; close.onclick = () => { $('sheetPanel').hidden = true; };
+    r.append(close); body.append(r);
+  });
+}
+function memoryPanel() {
+  openSheet((body) => {
+    body.append(el('h2', null, `What ${budName()} remembers`));
+    body.append(el('p', null, 'Small things from hanging out, so it can bring them up next time. Only you and your bud see these. Remove anything.'));
+    const ul = el('ul', 'facts');
+    const render = () => {
+      ul.textContent = '';
+      if (!remembers.length) { body.querySelector('.forget')?.remove(); ul.append(el('li', null, 'nothing yet')); return; }
+      for (const t of remembers) {
+        const li = el('li', null, t), x = el('button', null, '×'); x.type = 'button'; x.setAttribute('aria-label', `Forget “${t}”`);
+        x.onclick = async () => {
+          const keep = remembers.filter((r) => r !== t);
+          try { await api('PUT', '/api/profile', { remembers: keep }); remembers = keep; S.play('click'); render(); } catch (e) {}
+        };
+        li.append(x); ul.append(li);
+      }
+    };
+    body.append(ul); render();
+    const r = el('div', 'row'); r.style.marginTop = '16px';
+    const close = el('button', 'btn primary', 'Close'); close.type = 'button'; close.onclick = () => { $('sheetPanel').hidden = true; };
+    const forget = el('button', 'btn forget', 'Forget everything'); forget.type = 'button';
+    forget.onclick = async () => {
+      if (forget.dataset.sure !== '1') { forget.dataset.sure = '1'; forget.textContent = 'Sure? Tap again'; return; }
+      try { await api('PUT', '/api/profile', { remembers: [] }); remembers = []; S.play('squish'); render(); forget.remove(); } catch (e) {}
+    };
+    r.append(close); if (remembers.length) r.append(forget);
+    body.append(r);
+  });
+}
+$('peekBtn').onclick = notebookPanel;
+$('board').onclick = notebookPanel;
+$('memBtn').onclick = memoryPanel;
+$('clock').onclick = () => openSheet((body) => {
+  body.append(el('h2', null, 'Go touch some grass 🌱'));
+  body.append(el('p', null, `${budName()} is fun, but there’s a whole world out there: friends to text, snacks to find, actual sky to look at. Hangouts are short on purpose.`));
+  body.append(el('p', null, `${budName()} will be right here on the island when you get back.`));
+  const r = el('div', 'row'), ok = el('button', 'btn primary', 'Okay okay'); ok.type = 'button';
+  ok.onclick = () => { $('sheetPanel').hidden = true; };
+  r.append(ok); body.append(r);
+  S.play('pop');
+});
+$('doneBtn').onclick = () => { if (!ended && sid && !busy) finish(); };
+
+/* the silly card at the end, drawn on a canvas so it can be saved */
+async function drawCard(card) {
+  const W = 600, H = 780, c = document.createElement('canvas'); c.width = W * 2; c.height = H * 2;
+  const g = c.getContext('2d'); g.scale(2, 2);
+  try { await document.fonts.ready; } catch (e) {}
+  // the pad
+  g.fillStyle = '#F4F0E4'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#FFFDF6'; g.beginPath(); g.roundRect(24, 24, W - 48, H - 48, 18); g.fill();
+  g.strokeStyle = 'rgba(40,40,70,.12)'; g.lineWidth = 2; g.stroke();
+  g.fillStyle = '#7FB2E5'; g.beginPath(); g.roundRect(24, 24, W - 48, 118, [18, 18, 0, 0]); g.fill();
+  // the bud, with glasses, in the corner
+  const bs = 120, bc = document.createElement('canvas'); bc.width = bc.height = bs * 2;
+  const bg = bc.getContext('2d'); bg.scale(2, 2);
+  const saveMood = mood; mood = 'thinking'; paintBud(bg, bud, bs, { withGlasses: true }); mood = saveMood;
+  g.drawImage(bc, W - 24 - bs - 18, 30, bs, bs);
+  g.fillStyle = '#FFFFFF'; g.font = '700 34px Fredoka, Nunito, system-ui, sans-serif'; g.textBaseline = 'alphabetic';
+  g.fillText(`Dr. ${budName()}`, 52, 82);
+  g.font = '500 16px Fredoka, Nunito, system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,.9)';
+  g.fillText('Certified bud. Certificate drawn by hand.', 52, 112);
+  const label = (t, y) => { g.fillStyle = '#B4532A'; g.font = '700 14px Fredoka, Nunito, system-ui, sans-serif'; g.fillText(t.toUpperCase(), 56, y); };
+  const lines = (t, y, size = 30, x = 56) => {
+    g.fillStyle = '#2A2A3A'; g.font = `${size}px "Comic Neue", "Bradley Hand", "Segoe Print", "Chalkboard SE", "Marker Felt", cursive`;
+    const words = String(t).split(' '); let line = '', yy = y;
+    for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > W - 64 - x && line) { g.fillText(line, x, yy); line = w; yy += size * 1.3; } else line = test; }
+    if (line) g.fillText(line, x, yy);
+    return yy;
+  };
+  label('Patient', 186); lines(me?.name || 'a very good patient', 222, 28);
+  g.strokeStyle = 'rgba(40,40,70,.1)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(52, 248); g.lineTo(W - 52, 248); g.stroke();
+  label('Diagnosis', 286); let y = lines(card.diagnosis, 326, 34);
+  g.fillStyle = '#7FB2E5'; g.font = '700 58px Georgia, serif'; g.fillText('℞', 50, y + 96);
+  y = lines(card.prescription, y + 84, 28, 116); y = Math.max(y, 480);
+  label('Follow-up', y + 54); lines(card.followUp, y + 90, 26);
+  g.fillStyle = '#2A2238'; g.font = '30px "Bradley Hand", "Segoe Print", cursive'; g.fillText(`~ Dr. ${budName()}`, W - 290, H - 104);
+  g.strokeStyle = 'rgba(40,40,70,.35)'; g.beginPath(); g.moveTo(W - 300, H - 92); g.lineTo(W - 56, H - 92); g.stroke();
+  g.fillStyle = '#8A8AA0'; g.font = '500 13px Fredoka, Nunito, system-ui, sans-serif';
+  g.fillText('Not a real doctor. A bud. · bud.oqw.one', 56, H - 52);
+  return c;
+}
+async function endedPanel(card) {
+  $('title').textContent = card ? `Dr. ${budName()}’s office` : 'Hanging out';
+  if (!card) {
+    openSheet((body) => {
+      body.append(el('h2', null, serious ? 'Thanks for telling me' : 'That was nice'));
+      body.append(el('p', null, serious
+        ? 'I’m just a little bud, but I’m glad you talked to me. Please reach out to someone who can really help: in the US, call or text 988 any time.'
+        : `${budName()} had fun. Come back and hang out again later.`));
+      const r = el('div', 'row'), back = el('a', 'btn primary', 'Back to the island'); back.href = '/world';
+      r.append(back); body.append(r);
+    });
+    return;
+  }
+  S.play('sparkle');
+  const canvas = await drawCard(card), url = canvas.toDataURL('image/png');
+  openSheet((body) => {
+    body.append(el('h2', null, 'Your diagnosis'));
+    body.append(el('p', null, `Dr. ${budName()} tears a page off the pad and hands it to you.`));
+    const img = el('img', 'cardimg'); img.src = url; img.alt = `Diagnosis: ${card.diagnosis}. Prescription: ${card.prescription}. Follow-up: ${card.followUp}.`;
+    body.append(img);
+    const r = el('div', 'row');
+    const save = el('a', 'btn', 'Save'); save.href = url; save.download = 'dr-bud.png';
+    const back = el('a', 'btn primary', 'Back to the island'); back.href = '/world';
+    r.append(back, save); body.append(r);
+  });
+}
+
+function gate(title, text, actions) {
+  const p = $('gatePanel'); p.textContent = '';
+  p.append(el('h2', null, title), el('p', null, text));
+  const r = el('div', 'row'); r.style.justifyContent = 'center';
+  for (const [label, href, primary] of actions) { const a = el('a', 'btn' + (primary ? ' primary' : ''), label); a.href = href; r.append(a); }
+  p.append(r); $('gate').hidden = false;
+}
+
+/* typing box */
+const input = $('input');
+input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(120, input.scrollHeight) + 'px'; });
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('composer').requestSubmit(); } });
+$('composer').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const t = input.value.trim(); if (!t || busy || ended) return;
+  input.value = ''; input.style.height = 'auto';
+  send(t);
+});
+
+/* ---------- start ---------- */
+async function boot() {
+  S.bindToggle($('soundBtn')); if (!window.BudSound) $('soundBtn').hidden = true;
+  try { const r = await api('GET', '/api/me'); me = r.user; bud = r.bud; }
+  catch (e) {
+    if (e.status === 401) return gate('Sign in to hang out', 'Hanging out is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', '/api/auth/login?next=/hangout', true]]);
+    return gate('Hmm, something went wrong', 'Try again in a moment?', [['Back to the island', '/world', true]]);
+  }
+  if (!bud) return gate('Make your bud first', 'You need a bud to hang out with.', [['Make your bud', '/', true]]);
+  if (bud.paint) paintImg = await new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = bud.paint; });
+  $('sheetTitle').textContent = `Dr. ${budName()} · notes`;
+  $('app').hidden = false; drawMain(); blinkLoop();
+  addEventListener('resize', () => drawMain());
+  typing(true);
+  try {
+    const r = await api('POST', '/api/interview', { action: 'hangout-start' });
+    sid = r.sid; closeAt = r.closeAt; wrapAt = r.wrapAt; remembers = r.remembers?.map((x) => x.t) || [];
+    typing(false); anim('hop', 520); S.play('boing');
+    budSays(r.say, r.mood);
+    setInterval(tickClock, 1000); tickClock();
+    input.focus({ preventScroll: true });
+  } catch (e) {
+    typing(false);
+    budSays(e.data?.say || 'hm, i can’t hang out right now. try again in a bit?', 'sleepy');
+    ended = true; lockInput();
+    try { const p = await api('GET', '/api/profile'); remembers = p.remembers || []; } catch (er) {}
+    $('memBtn').disabled = false;
+  }
+}
+boot();
+</script>
+</body>
+</html>
