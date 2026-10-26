@@ -1,6 +1,8 @@
 // What bud learned about you: read it, edit it (remove tags, turn friend suggestions on or off), or delete it.
 import { readSession, sameOrigin } from '../lib/session.js';
 import { refs, Timestamp } from '../lib/firebase.js';
+import { wear } from '../lib/wardrobe.js';
+import { cleanTags } from '../lib/interests.js';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const FIELDS = ['interests', 'lookingFor', 'around', 'vibe', 'summary', 'matchable', 'tags', 'answered', 'shareInterests'];
@@ -32,6 +34,12 @@ export async function PUT(request) {
   if (session instanceof Response) return session;
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+  // what your bud wears: { wear: { head, hand } }, a prop you own or 'none' (works without a profile too)
+  if (body?.wear && typeof body.wear === 'object') {
+    const [p, u] = await Promise.all([refs.profile(session.id).get(), refs.user(session.id).get()]);
+    try { return json({ wear: await wear(session.id, cleanTags(p.exists ? p.get('tags') : []), u.exists ? u.get('wardrobe') : null, body.wear) }); }
+    catch (err) { return json({ error: err.message }, err.status || 500); }
+  }
   // bud's question DMs on or off (works even before there's a profile)
   if (typeof body?.dms === 'boolean') await refs.user(session.id).set({ questionsOff: !body.dms }, { merge: true });
   const ref = refs.profile(session.id), snap = await ref.get();

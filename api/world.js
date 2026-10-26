@@ -8,6 +8,9 @@ import { latestIssue } from '../lib/newsletter.js';
 import { sameOrigin } from '../lib/session.js';
 import { lifeDiary, hobbyOf, HOBBY_LABEL } from '../lib/life.js';
 import { games as gamesRef } from '../lib/peekaboo.js';
+import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
+import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
+import { waitUntil } from '@vercel/functions';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const MAX_BUDS = 200;
@@ -22,7 +25,7 @@ export async function GET(request) {
   try {
     const me = session.id;
     const buds = db().collection('guilds').doc(GUILD_ID).collection('buds');
-    const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news, gameSnap] = await Promise.all([
+    const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news, gameSnap, profileSnap] = await Promise.all([
       buds.select(...FIELDS).limit(MAX_BUDS).get(),
       // every unanswered note on the island: anyone can see that a bud has notes on it, not what they say
       refs.notes().where('status', '==', 'pending').select('from', 'to', 'color', 'text', 'createdAt').limit(2000).get(),
@@ -34,7 +37,17 @@ export async function GET(request) {
       refs.profile(me).get(),
       latestIssue().catch(() => null),
       gamesRef().where('players', 'array-contains', me).get().catch(() => ({ docs: [] })),
+      // everyone's tagged interests: for the props buds wear and what you have in common (never sent as-is)
+      db().collection('guilds').doc(GUILD_ID).collection('profiles').select('tags', 'shareInterests').get(),
     ]);
+    const tagsOf = new Map(profileSnap.docs.map((d) => [d.id, cleanTags(d.get('tags'))]));
+    const sharing = new Set(profileSnap.docs.filter((d) => d.get('shareInterests') !== false).map((d) => d.id));
+    // your own interests from before tagging existed get tagged in the background
+    if (profileDoc.exists && (profileDoc.get('interests') || []).length > (profileDoc.get('tags') || []).length) {
+      waitUntil(ensureTags(me).catch((err) => console.error('tagging failed:', err)));
+    }
+    // seasonal gear and the crown turn up in your wardrobe when you visit
+    const granted = await grantOnVisit(me, meDoc.exists ? meDoc.data() : null).catch((err) => { console.error('wardrobe grant failed:', err); return null; });
     // When you were last here, so your bud can greet you to match ("oh hi again!" vs "it's been forever!").
     const lastVisit = meDoc.exists ? meDoc.get('lastIslandVisit')?.toMillis() ?? null : null;
     await refs.user(me).set({ lastIslandVisit: Timestamp.now() }, { merge: true });
@@ -59,9 +72,11 @@ export async function GET(request) {
 
     // Owner display names, so a bud can say whose it is.
     const people = [...new Set([...snap.docs.map((d) => d.id), ...inbox.map((n) => n.from)])];
-    const owners = people.length ? await db().getAll(...people.map((id) => refs.user(id)), { fieldMask: ['displayName', 'crownUntil'] }) : [];
+    const owners = people.length ? await db().getAll(...people.map((id) => refs.user(id)), { fieldMask: ['displayName', 'wardrobe'] }) : [];
     const names = new Map(owners.map((d) => [d.id, d.exists ? d.get('displayName') : null]));
-    const crowned = new Set(owners.filter((d) => d.exists && (d.get('crownUntil')?.toMillis() ?? 0) > Date.now()).map((d) => d.id));
+    const wardrobes = new Map(owners.map((d) => [d.id, d.exists ? d.get('wardrobe') || null : null]));
+    if (granted) wardrobes.set(me, { ...(wardrobes.get(me) || {}), items: granted.items });
+    const myTags = tagsOf.get(me) || [], iShare = sharing.has(me);
 
     const list = snap.docs.map((d) => {
       const data = d.data();
@@ -71,7 +86,9 @@ export async function GET(request) {
         stickies: (stickies.get(d.id) || []).slice(0, 8),
         myNote: mySent.get(d.id) || null,
         friend: friendIds.has(d.id),
-        crown: crowned.has(d.id),
+        wear: wearing(tagsOf.get(d.id) || [], wardrobes.get(d.id)),
+        // only the things you share, and only if you both said yes to showing them
+        common: d.id !== me && iShare && sharing.has(d.id) ? inCommon(myTags, tagsOf.get(d.id) || []) : null,
         hobby: hobbyOf(d.id), hobbyLabel: HOBBY_LABEL[hobbyOf(d.id)],
       };
     }).filter((b) => b.r.length === 64);
@@ -118,6 +135,8 @@ export async function GET(request) {
           answered: profileDoc.get('answered') ?? ((profileDoc.get('interests') || []).length ? 3 : 0),
           shareInterests: profileDoc.get('shareInterests') !== false,
         } : null,
+        wardrobe: wardrobeView(myTags, wardrobes.get(me)),
+        found: granted?.found || [],
       },
       buds: list,
       diary,

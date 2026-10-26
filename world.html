@@ -207,6 +207,18 @@ body { transition: background 2s linear; }
 .composer-error { margin: 0; color: #C4385E; font-size: 13.5px; text-align: center; }
 .composer .row { justify-content: flex-end; width: 100%; }
 .flying { position: fixed; z-index: 7; margin: 0; pointer-events: none; }
+.common { margin: 2px 0 12px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 210, 90, .18); }
+.common h3 { margin: 0 0 6px; font-size: 14px; }
+.common.common-lots { background: rgba(255, 190, 60, .28); }
+.common .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.common .chip { background: rgba(255,255,255,.55); border-radius: 999px; padding: 3px 10px; font-size: 13.5px; color: #3A2E10; }
+.wardrobe { margin: 0 0 10px; }
+.wardrobe summary { cursor: pointer; font-size: 14px; font-weight: 600; padding: 4px 0; }
+.wardrobe h4 { margin: 8px 0 4px; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; opacity: .65; }
+.wardrobe .items { display: flex; flex-wrap: wrap; gap: 6px; }
+.wardrobe .item { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--chip-line); background: rgba(127,127,160,.08); color: inherit; border-radius: 12px; padding: 5px 10px 5px 7px; font: 500 13px var(--font, inherit); cursor: pointer; }
+.wardrobe .item .ico { font-size: 17px; line-height: 1; }
+.wardrobe .item.on { border-color: currentColor; background: rgba(127,127,160,.2); font-weight: 650; }
 .about { margin: 4px 0 10px; }
 .about-row { gap: 10px; margin-bottom: 8px; }
 .about-row .muted { font-size: 13px; }
@@ -456,7 +468,7 @@ body { transition: background 2s linear; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
 <script type="module">
-import { setExtents, buildMesh, drawEyeStyle, setClock, clamp, inPoly, distToPoly } from '/js/bud-core.js';
+import { setExtents, buildMesh, drawEyeStyle, setClock, clamp, inPoly, distToPoly, SPACING as EYE_SPACING } from '/js/bud-core.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
 // sound effects and bud voices (js/sound.js); silent stand-in if it didn't load
@@ -782,9 +794,8 @@ function makePumpkin(size, glowing) {
   return g;
 }
 
-// Halloween costumes: about half the buds dress up, the same costume every visit
-// winners of Peekaboo wear a little crown for a day
-function crownFor(bud) {
+// the Peekaboo crown (kept in the wardrobe for good after a win)
+function crownGroup(bud) {
   const b = bud.b, top = b.r.reduce((m, p) => (p.y < m.y ? p : m), b.r[0]), unit = b.w;
   const gold = new THREE.MeshStandardMaterial({ color: toLinear('#FFC93C'), metalness: 0.55, roughness: 0.3, emissive: toLinear('#6B4500'), emissiveIntensity: 0.3, side: THREE.DoubleSide });
   const g = new THREE.Group();
@@ -796,15 +807,11 @@ function crownFor(bud) {
     gem.position.set(Math.cos(a + 0.63) * unit * 0.128, 0, Math.sin(a + 0.63) * unit * 0.128); g.add(gem);
   }
   g.position.set(top.x, -top.y + unit * 0.02, 0); g.rotation.z = -0.12; g.scale.setScalar(1.6);
-  bud.inner.add(g);
+  return g;
 }
 
-function costumeFor(bud) {
-  if (bud.data.crown) return crownFor(bud);
-  if (!HALLOWEEN) return;
-  let h = 0; for (const ch of String(bud.data.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  if (h % 100 >= 55) return;
-  const kind = ['witch', 'horns', 'ears', 'pumpkin'][(h >> 7) % 4];
+// Halloween gear: handed out at random each season (lib/wardrobe.js), worn from the wardrobe
+function halloweenGroup(bud, kind) {
   const b = bud.b, top = b.r.reduce((m, p) => (p.y < m.y ? p : m), b.r[0]);
   const unit = b.w;   // costume sizes in the bud's own pixel units
   const at = (x, y, z = 0) => new THREE.Vector3(x, -y, z);
@@ -831,8 +838,273 @@ function costumeFor(bud) {
   } else {
     const pk = makePumpkin(unit * 0.11, false); pk.position.copy(at(top.x, top.y + unit * 0.03)); pk.rotation.z = 0.2; g.add(pk);
   }
-  bud.inner.add(g);
+  return g;
 }
+
+/* ---------------- props: what each bud wears (chosen in the wardrobe; see lib/interests.js PROPS) ---------------- */
+// One on the head (hats, headphones, glasses) and one in hand or beside it (a controller, a ball, a pet).
+// Everything is built in the bud's own outline units, inside bud.inner, so it hops and squashes with it.
+const propMats = {};
+const PM = (hex, o = {}) => propMats[hex + JSON.stringify(o)] || (propMats[hex + JSON.stringify(o)] = new THREE.MeshStandardMaterial({ color: toLinear(hex), roughness: 0.6, ...o }));
+const mesh = (geo, hex, o) => new THREE.Mesh(geo, PM(hex, o));
+function topOf(b) { return b.r.reduce((m, p) => (p.y < m.y ? p : m), b.r[0]); }
+// the outline's top edge (smallest y) near x, and its left/right edges near y
+function headYAt(b, x, tol) { const near = b.r.filter((p) => Math.abs(p.x - x) < tol); return near.length ? Math.min(...near.map((p) => p.y)) : topOf(b).y; }
+function sidesAt(b, y, tol) {
+  const near = b.r.filter((p) => Math.abs(p.y - y) < tol);
+  if (!near.length) return { l: b.minX, r: b.maxX };
+  return { l: Math.min(...near.map((p) => p.x)), r: Math.max(...near.map((p) => p.x)) };
+}
+function surfaceZ(bud, x, y) {
+  const probe = new THREE.Mesh(bud.bodyMesh.geometry, probeMat);
+  probeRay.set(new THREE.Vector3(x, -y, 1e4), new THREE.Vector3(0, 0, -1));
+  const hit = probeRay.intersectObject(probe, false)[0];
+  return hit ? hit.point.z : bud.b.w * 0.2;
+}
+const tube = (pts, r, hex) => mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, r, 8), hex);
+
+// glasses on the face: round readers, or red-and-blue 3D glasses
+function faceGlasses(bud, kind) {
+  const b = bud.b, r = b.eyeR, sp = r * (EYE_SPACING[bud.data.eyes] || 0.75), lr = Math.max(r * 1.15, sp * 0.86, b.w * 0.06);
+  const ex = b.eyeRel.x, ey = b.eyeRel.y, t = Math.max(r * 0.12, 1.2);
+  let z = 0;
+  for (const s of [-1, 1]) for (const [dx, dy] of [[0, 0], [lr * 0.7, 0], [-lr * 0.7, 0], [0, -lr * 0.7]]) z = Math.max(z, surfaceZ(bud, ex + s * sp + dx, ey + dy));
+  z += t * 1.6;
+  const g = new THREE.Group();
+  for (const s of [-1, 1]) {
+    if (kind === '3d') {
+      const frame = mesh(new THREE.BoxGeometry(lr * 2.1, lr * 1.5, t * 1.2), '#F4F4F8'); frame.position.set(ex + s * sp, -ey, z); g.add(frame);
+      const lens = mesh(new THREE.BoxGeometry(lr * 1.7, lr * 1.1, t * 1.3), s < 0 ? '#E8394B' : '#2FB6E8', { transparent: true, opacity: 0.85, roughness: 0.2 });
+      lens.position.set(ex + s * sp, -ey, z + t * 0.1); g.add(lens);
+    } else {
+      const ring = mesh(new THREE.TorusGeometry(lr, t, 10, 36), '#2A2238', { roughness: 0.35 }); ring.position.set(ex + s * sp, -ey, z); g.add(ring);
+      const lens = mesh(new THREE.CircleGeometry(lr * 0.96, 28), '#DFF0FF', { transparent: true, opacity: 0.25, roughness: 0.05 }); lens.position.set(ex + s * sp, -ey, z - t * 0.3); g.add(lens);
+    }
+    // arms that tuck into the body
+    g.add(tube([new THREE.Vector3(ex + s * (sp + lr * (kind === '3d' ? 1.05 : 1)), -ey + lr * 0.2, z), new THREE.Vector3(ex + s * (sp + lr * 1.9), -ey + lr * 0.3, z - lr * 1.3)], t * 0.7, kind === '3d' ? '#F4F4F8' : '#2A2238'));
+  }
+  if (kind !== '3d' && 2 * sp - 2 * lr > -lr * 0.5) g.add(tube([new THREE.Vector3(ex - sp + lr * 0.95, -ey + lr * 0.25, z), new THREE.Vector3(ex, -ey + lr * 0.6, z + t), new THREE.Vector3(ex + sp - lr * 0.95, -ey + lr * 0.25, z)], t * 0.8, '#2A2238'));
+  return g;
+}
+
+// a band that goes around the head near the top (headband, sweatband)
+function headRing(bud, hex, extra) {
+  const b = bud.b, y = b.minY + b.h * 0.16, sd = sidesAt(b, y, b.h * 0.05), cx = (sd.l + sd.r) / 2, half = (sd.r - sd.l) / 2;
+  const depth = surfaceZ(bud, cx, y);
+  const g = new THREE.Group();
+  const ring = mesh(new THREE.TorusGeometry(1, Math.min(0.09, b.w * 0.028 / Math.max(half, 1)), 8, 40), hex); ring.rotation.x = Math.PI / 2;
+  ring.scale.set(half * 1.04, Math.max(depth, half * 0.4) * 1.08, half * 1.04); ring.position.set(cx, -y, 0);
+  g.add(ring);
+  if (extra) { extra.position.set(cx, -y, Math.max(depth, half * 0.4) * 1.1); g.add(extra); }
+  return g;
+}
+
+const HEAD = {
+  crown: (bud) => crownGroup(bud),
+  witch: (bud) => halloweenGroup(bud, 'witch'), horns: (bud) => halloweenGroup(bud, 'horns'),
+  ears: (bud) => halloweenGroup(bud, 'ears'), pumpkin: (bud) => halloweenGroup(bud, 'pumpkin'),
+  glasses3d: (bud) => faceGlasses(bud, '3d'),
+  readers: (bud) => faceGlasses(bud, 'round'),
+  headphones(bud) {
+    const b = bud.b, u = b.w, y = b.minY + b.h * 0.3, sd = sidesAt(b, y, b.h * 0.06), top = topOf(b), g = new THREE.Group();
+    for (const [x, s] of [[sd.l, -1], [sd.r, 1]]) {
+      const cup = mesh(new THREE.CylinderGeometry(u * 0.085, u * 0.085, u * 0.06, 20), '#FF6F91'); cup.rotation.z = Math.PI / 2; cup.position.set(x + s * u * 0.01, -y, 0); g.add(cup);
+      const pad = mesh(new THREE.CylinderGeometry(u * 0.06, u * 0.06, u * 0.02, 16), '#2B2D42'); pad.rotation.z = Math.PI / 2; pad.position.set(x + s * u * 0.045, -y, 0); g.add(pad);
+    }
+    g.add(tube([new THREE.Vector3(sd.l - u * 0.01, -y + u * 0.05, 0), new THREE.Vector3(sd.l + (top.x - sd.l) * 0.25, -top.y + u * 0.08, 0), new THREE.Vector3(top.x, -top.y + u * 0.11, 0), new THREE.Vector3(sd.r - (sd.r - top.x) * 0.25, -top.y + u * 0.08, 0), new THREE.Vector3(sd.r + u * 0.01, -y + u * 0.05, 0)], u * 0.022, '#2B2D42'));
+    return g;
+  },
+  beret(bud) {
+    const b = bud.b, u = b.w, top = topOf(b), g = new THREE.Group();
+    const cap = mesh(new THREE.SphereGeometry(u * 0.2, 24, 12), '#E04F5F'); cap.scale.set(1, 0.32, 1); g.add(cap);
+    const stem = mesh(new THREE.CylinderGeometry(u * 0.012, u * 0.012, u * 0.05, 6), '#B83A48'); stem.position.y = u * 0.07; g.add(stem);
+    g.position.set(top.x + u * 0.04, -top.y + u * 0.02, 0); g.rotation.z = -0.3; return g;
+  },
+  chefhat(bud) {
+    const b = bud.b, u = b.w, top = topOf(b), g = new THREE.Group();
+    g.add(mesh(new THREE.CylinderGeometry(u * 0.14, u * 0.15, u * 0.09, 24), '#FFFFFF'));
+    for (const [x, y, r] of [[0, 0.13, 0.12], [-0.09, 0.1, 0.09], [0.09, 0.1, 0.09], [0, 0.09, 0.1]]) { const p = mesh(new THREE.SphereGeometry(u * r, 16, 12), '#FFFFFF'); p.position.set(u * x, u * y, 0); g.add(p); }
+    g.position.set(top.x, -top.y + u * 0.03, 0); g.rotation.z = -0.1; return g;
+  },
+  flowercrown(bud) {
+    const b = bud.b, u = b.w, top = topOf(b), g = new THREE.Group(), cols = ['#FF9EBB', '#FFE07A', '#B9A6FF', '#FFFFFF', '#FFB38A'];
+    for (let i = 0; i < 9; i++) {
+      const a = i / 9 * Math.PI * 2, f = mesh(new THREE.SphereGeometry(u * 0.035, 10, 8), cols[i % cols.length]);
+      f.position.set(Math.cos(a) * u * 0.15, 0, Math.sin(a) * u * 0.15); g.add(f);
+      const leaf = mesh(new THREE.SphereGeometry(u * 0.025, 8, 6), '#6BBF7A'); leaf.scale.set(1.6, 0.5, 1); leaf.position.set(Math.cos(a + 0.35) * u * 0.155, -u * 0.01, Math.sin(a + 0.35) * u * 0.155); g.add(leaf);
+    }
+    g.position.set(top.x, -top.y + u * 0.01, 0); g.rotation.z = -0.15; return g;
+  },
+  buckethat(bud) {
+    const b = bud.b, u = b.w, top = topOf(b), g = new THREE.Group();
+    g.add(mesh(new THREE.CylinderGeometry(u * 0.13, u * 0.16, u * 0.1, 24), '#C9B27C'));
+    const brim = mesh(new THREE.CylinderGeometry(u * 0.25, u * 0.25, u * 0.012, 28), '#B8A06A'); brim.position.y = -u * 0.045; g.add(brim);
+    g.position.set(top.x, -top.y + u * 0.04, 0); g.rotation.z = -0.12; return g;
+  },
+  headband(bud) {
+    const dot = mesh(new THREE.CircleGeometry(bud.b.w * 0.035, 20), '#E8394B'); return headRing(bud, '#FFFFFF', dot);
+  },
+  sweatband: (bud) => headRing(bud, '#E8394B'),
+};
+
+// in hand (held at the side) or on the ground beside the bud; built at unit size u, base at y = 0
+function heldSpot(bud) { const b = bud.b; return new THREE.Vector3(b.maxX + b.w * 0.12, -(b.minY + b.h * 0.64), b.w * 0.22); }
+function groundSpot(bud) { const b = bud.b; return new THREE.Vector3(b.maxX + b.w * 0.28, -b.maxY, b.w * 0.2); }
+const ball = (u, hex, seams) => {
+  const g = new THREE.Group(), r = u * 0.12, m = mesh(new THREE.SphereGeometry(r, 24, 16), hex); m.position.y = r; g.add(m);
+  for (const [rx, ry] of seams || []) { const s = mesh(new THREE.TorusGeometry(r * 1.003, r * 0.05, 6, 32), '#2B2D42'); s.rotation.set(rx, ry, 0); s.position.y = r; g.add(s); }
+  return g;
+};
+const HAND = {
+  controller: { at: 'held', make(u) {
+    const g = new THREE.Group();
+    const body = mesh(new THREE.BoxGeometry(u * 0.3, u * 0.12, u * 0.06), '#3B3F52'); g.add(body);
+    for (const s of [-1, 1]) { const grip = mesh(new THREE.SphereGeometry(u * 0.065, 12, 10), '#3B3F52'); grip.position.set(s * u * 0.12, -u * 0.04, 0); g.add(grip); }
+    for (const [x, y, c] of [[0.08, 0.02, '#FF6F91'], [0.11, -0.01, '#7FD3FF'], [0.05, -0.01, '#FFE07A'], [0.08, -0.04, '#8EE08E']]) { const btn = mesh(new THREE.SphereGeometry(u * 0.014, 8, 6), c); btn.position.set(u * x, u * y, u * 0.032); g.add(btn); }
+    const pad = mesh(new THREE.BoxGeometry(u * 0.06, u * 0.018, u * 0.01), '#1E2030'); pad.position.set(-u * 0.08, 0, u * 0.032); g.add(pad);
+    const pad2 = pad.clone(); pad2.rotation.z = Math.PI / 2; g.add(pad2);
+    g.rotation.set(-0.3, -0.4, -0.25); return g; } },
+  popcorn: { at: 'held', make(u) {
+    const g = new THREE.Group(), cup = new THREE.CylinderGeometry(u * 0.09, u * 0.065, u * 0.17, 16, 1, true);
+    const c = document.createElement('canvas'); c.width = 64; c.height = 8; const x = c.getContext('2d');
+    for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#FFFFFF' : '#E8394B'; x.fillRect(i * 8, 0, 8, 8); }
+    const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+    g.add(new THREE.Mesh(cup, new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.7 })));
+    for (let i = 0; i < 9; i++) { const k = mesh(new THREE.SphereGeometry(u * 0.03, 8, 6), i % 3 ? '#FFF6DA' : '#FFE9A8'); k.position.set((Math.random() - 0.5) * u * 0.11, u * 0.09 + Math.random() * u * 0.03, (Math.random() - 0.5) * u * 0.11); g.add(k); }
+    g.rotation.z = -0.15; return g; } },
+  mic: { at: 'held', make(u) {
+    const g = new THREE.Group(), h = mesh(new THREE.CylinderGeometry(u * 0.025, u * 0.018, u * 0.2, 10), '#2B2D42'); g.add(h);
+    const head = mesh(new THREE.SphereGeometry(u * 0.05, 16, 12), '#B7B5C6', { metalness: 0.5, roughness: 0.3 }); head.position.y = u * 0.12; g.add(head);
+    g.rotation.z = -0.35; return g; } },
+  camera: { at: 'held', make(u) {
+    const g = new THREE.Group(); g.add(mesh(new THREE.BoxGeometry(u * 0.2, u * 0.13, u * 0.08), '#2B2D42'));
+    const lens = mesh(new THREE.CylinderGeometry(u * 0.045, u * 0.05, u * 0.07, 16), '#5E5D75'); lens.rotation.x = Math.PI / 2; lens.position.z = u * 0.06; g.add(lens);
+    const glass = mesh(new THREE.CircleGeometry(u * 0.035, 16), '#7FD3FF', { roughness: 0.1 }); glass.position.z = u * 0.096; g.add(glass);
+    const flash = mesh(new THREE.BoxGeometry(u * 0.04, u * 0.02, u * 0.02), '#FFE07A'); flash.position.set(u * 0.06, u * 0.075, 0); g.add(flash);
+    g.rotation.y = -0.4; return g; } },
+  pan: { at: 'held', make(u) {
+    const g = new THREE.Group(), p = mesh(new THREE.CylinderGeometry(u * 0.11, u * 0.09, u * 0.03, 24), '#3B3F52'); g.add(p);
+    const handle = mesh(new THREE.BoxGeometry(u * 0.16, u * 0.02, u * 0.03), '#3B3F52'); handle.position.x = u * 0.17; g.add(handle);
+    const white = mesh(new THREE.CylinderGeometry(u * 0.06, u * 0.06, u * 0.01, 16), '#FFFFFF'); white.position.y = u * 0.018; g.add(white);
+    const yolk = mesh(new THREE.SphereGeometry(u * 0.025, 12, 8), '#FFC93C'); yolk.scale.y = 0.6; yolk.position.y = u * 0.028; g.add(yolk);
+    g.rotation.set(0.9, 0, -0.5); return g; } },
+  manga: { at: 'held', make(u) {
+    const g = new THREE.Group(); g.add(mesh(new THREE.BoxGeometry(u * 0.14, u * 0.2, u * 0.03), '#E8394B'));
+    const pages = mesh(new THREE.BoxGeometry(u * 0.13, u * 0.19, u * 0.032), '#FFFBEF'); pages.position.x = u * 0.004; g.add(pages);
+    const cover = mesh(new THREE.PlaneGeometry(u * 0.09, u * 0.05), '#FFFFFF'); cover.position.set(0, u * 0.04, u * 0.017); g.add(cover);
+    g.rotation.set(-0.2, -0.5, -0.15); return g; } },
+  palette: { at: 'held', make(u) {
+    const g = new THREE.Group(), p = mesh(new THREE.CylinderGeometry(u * 0.12, u * 0.12, u * 0.015, 24), '#D9A86C'); p.scale.z = 0.75; g.add(p);
+    ['#E8394B', '#FFC93C', '#2FB6E8', '#6BBF7A', '#B9A6FF'].forEach((c, i) => { const d = mesh(new THREE.SphereGeometry(u * 0.022, 8, 6), c); const a = i * 1.1 + 0.5; d.scale.y = 0.5; d.position.set(Math.cos(a) * u * 0.07, u * 0.01, Math.sin(a) * u * 0.05); g.add(d); });
+    const brush = mesh(new THREE.CylinderGeometry(u * 0.008, u * 0.012, u * 0.2, 6), '#A47551'); brush.position.set(u * 0.05, u * 0.05, 0); brush.rotation.z = -0.8; g.add(brush);
+    g.rotation.set(1.1, 0, -0.3); return g; } },
+  guitar: { at: 'ground', make(u) {
+    const g = new THREE.Group(), wood = '#D9893B';
+    const low = mesh(new THREE.SphereGeometry(u * 0.11, 20, 14), wood); low.scale.z = 0.35; low.position.y = u * 0.11; g.add(low);
+    const up = mesh(new THREE.SphereGeometry(u * 0.085, 20, 14), wood); up.scale.z = 0.35; up.position.y = u * 0.25; g.add(up);
+    const hole = mesh(new THREE.CircleGeometry(u * 0.035, 16), '#3A2414'); hole.position.set(0, u * 0.18, u * 0.04); g.add(hole);
+    const neck = mesh(new THREE.BoxGeometry(u * 0.035, u * 0.26, u * 0.02), '#7A4A22'); neck.position.y = u * 0.44; g.add(neck);
+    const headst = mesh(new THREE.BoxGeometry(u * 0.05, u * 0.06, u * 0.025), '#3A2414'); headst.position.y = u * 0.6; g.add(headst);
+    g.rotation.z = 0.35; return g; } },
+  drums: { at: 'ground', make(u) {
+    const g = new THREE.Group(), d = mesh(new THREE.CylinderGeometry(u * 0.12, u * 0.12, u * 0.12, 24), '#E8394B'); d.position.y = u * 0.06; g.add(d);
+    const top = mesh(new THREE.CylinderGeometry(u * 0.118, u * 0.118, u * 0.005, 24), '#FFFBEF'); top.position.y = u * 0.122; g.add(top);
+    for (const s of [-1, 1]) { const st = mesh(new THREE.CylinderGeometry(u * 0.008, u * 0.008, u * 0.17, 6), '#D9A86C'); st.position.set(s * u * 0.04, u * 0.18, u * 0.02); st.rotation.z = s * 0.6; g.add(st); }
+    return g; } },
+  basketball: { at: 'ground', make: (u) => ball(u, '#F08A24', [[0, 0], [Math.PI / 2, 0], [0, Math.PI / 2]]) },
+  volleyball: { at: 'ground', make: (u) => ball(u, '#FFFFFF', [[0.6, 0], [-0.6, 0.8]]) },
+  soccer: { at: 'ground', make(u) {
+    const g = ball(u, '#FFFFFF'), r = u * 0.12;
+    for (let i = 0; i < 12; i++) { const a = i * 2.4, yy = Math.cos(i * 1.7); const sp = mesh(new THREE.CircleGeometry(r * 0.3, 5), '#2B2D42', { side: THREE.DoubleSide }); const n = new THREE.Vector3(Math.cos(a) * Math.sqrt(1 - yy * yy), yy, Math.sin(a) * Math.sqrt(1 - yy * yy)); sp.position.copy(n.clone().multiplyScalar(r * 1.005)).add(new THREE.Vector3(0, r, 0)); sp.lookAt(n.clone().multiplyScalar(r * 2).add(new THREE.Vector3(0, r, 0))); g.add(sp); }
+    return g; } },
+  football: { at: 'ground', make(u) {
+    const g = new THREE.Group(), f = mesh(new THREE.SphereGeometry(u * 0.1, 20, 14), '#8A4B2A'); f.scale.set(1.5, 0.95, 0.95); f.position.y = u * 0.095; g.add(f);
+    const lace = mesh(new THREE.BoxGeometry(u * 0.1, u * 0.008, u * 0.01), '#FFFFFF'); lace.position.set(0, u * 0.19, 0); g.add(lace);
+    g.rotation.y = 0.5; return g; } },
+  baseball: { at: 'ground', make(u) {
+    const g = new THREE.Group(), bat = mesh(new THREE.CylinderGeometry(u * 0.035, u * 0.014, u * 0.5, 12), '#D9A86C'); bat.position.y = u * 0.25; bat.rotation.z = 0.25; g.add(bat);
+    const b2 = mesh(new THREE.SphereGeometry(u * 0.045, 14, 10), '#FFFFFF'); b2.position.set(u * 0.12, u * 0.045, u * 0.06); g.add(b2); return g; } },
+  tennis: { at: 'ground', make(u) {
+    const g = new THREE.Group(), head = mesh(new THREE.TorusGeometry(u * 0.1, u * 0.012, 8, 28), '#2FB6E8'); head.scale.y = 1.3; head.position.y = u * 0.38; g.add(head);
+    const strings = mesh(new THREE.CircleGeometry(u * 0.095, 20), '#FFFFFF', { transparent: true, opacity: 0.5, side: THREE.DoubleSide }); strings.scale.y = 1.3; strings.position.y = u * 0.38; g.add(strings);
+    const h = mesh(new THREE.CylinderGeometry(u * 0.014, u * 0.016, u * 0.25, 8), '#2B2D42'); h.position.y = u * 0.14; g.add(h);
+    const tb = mesh(new THREE.SphereGeometry(u * 0.035, 12, 8), '#D9F23B'); tb.position.set(u * 0.1, u * 0.035, u * 0.06); g.add(tb);
+    g.rotation.z = 0.25; return g; } },
+  hockey: { at: 'ground', make(u) {
+    const g = new THREE.Group(), shaft = mesh(new THREE.BoxGeometry(u * 0.025, u * 0.5, u * 0.02), '#D9A86C'); shaft.position.y = u * 0.25; g.add(shaft);
+    const blade = mesh(new THREE.BoxGeometry(u * 0.14, u * 0.04, u * 0.025), '#2B2D42'); blade.position.set(-u * 0.06, u * 0.02, 0); g.add(blade);
+    const puck = mesh(new THREE.CylinderGeometry(u * 0.04, u * 0.04, u * 0.02, 16), '#1E2030'); puck.position.set(u * 0.1, u * 0.01, u * 0.05); g.add(puck);
+    g.rotation.z = 0.2; return g; } },
+  skateboard: { at: 'ground', make(u) {
+    const g = new THREE.Group(), deck = mesh(new THREE.BoxGeometry(u * 0.42, u * 0.02, u * 0.12), '#7A5BD9'); deck.position.y = u * 0.05; g.add(deck);
+    for (const x of [-0.14, 0.14]) for (const z of [-0.045, 0.045]) { const w = mesh(new THREE.CylinderGeometry(u * 0.022, u * 0.022, u * 0.02, 12), '#FFE07A'); w.rotation.x = Math.PI / 2; w.position.set(u * x, u * 0.022, u * z); g.add(w); }
+    g.rotation.y = -0.6; return g; } },
+  dumbbell: { at: 'ground', make(u) {
+    const g = new THREE.Group(), bar = mesh(new THREE.CylinderGeometry(u * 0.015, u * 0.015, u * 0.22, 8), '#B7B5C6', { metalness: 0.5 }); bar.rotation.z = Math.PI / 2; bar.position.y = u * 0.06; g.add(bar);
+    for (const s of [-1, 1]) { const w = mesh(new THREE.CylinderGeometry(u * 0.06, u * 0.06, u * 0.05, 16), '#2B2D42'); w.rotation.z = Math.PI / 2; w.position.set(s * u * 0.1, u * 0.06, 0); g.add(w); }
+    g.rotation.y = -0.5; return g; } },
+  books: { at: 'ground', make(u) {
+    const g = new THREE.Group(); let y = 0;
+    for (const [w, h, c, r] of [[0.22, 0.05, '#2FB6E8', 0.1], [0.2, 0.045, '#E8394B', -0.15], [0.18, 0.05, '#6BBF7A', 0.25]]) { const bk = mesh(new THREE.BoxGeometry(u * w, u * h, u * 0.15), c); bk.position.y = y + u * h / 2; bk.rotation.y = r; g.add(bk); y += u * h; }
+    return g; } },
+  laptop: { at: 'ground', make(u) {
+    const g = new THREE.Group(), base = mesh(new THREE.BoxGeometry(u * 0.28, u * 0.015, u * 0.19), '#B7B5C6', { metalness: 0.3 }); base.position.y = u * 0.008; g.add(base);
+    const screen = new THREE.Group(), lid = mesh(new THREE.BoxGeometry(u * 0.28, u * 0.19, u * 0.012), '#B7B5C6', { metalness: 0.3 });
+    lid.position.y = u * 0.095; screen.add(lid);
+    const glow = mesh(new THREE.PlaneGeometry(u * 0.25, u * 0.16), '#7FD3FF', { emissive: toLinear('#3A7FBF'), emissiveIntensity: 0.6 }); glow.position.set(0, u * 0.095, u * 0.007); screen.add(glow);
+    screen.position.set(0, u * 0.015, -u * 0.095); screen.rotation.x = -0.25; g.add(screen);
+    g.rotation.y = -0.5; return g; } },
+  wateringcan: { at: 'ground', make(u) {
+    const g = new THREE.Group(), body = mesh(new THREE.CylinderGeometry(u * 0.08, u * 0.09, u * 0.14, 16), '#6BBF7A'); body.position.y = u * 0.07; g.add(body);
+    const spout = mesh(new THREE.CylinderGeometry(u * 0.012, u * 0.018, u * 0.16, 8), '#6BBF7A'); spout.position.set(u * 0.12, u * 0.12, 0); spout.rotation.z = -0.9; g.add(spout);
+    const handle = mesh(new THREE.TorusGeometry(u * 0.05, u * 0.01, 6, 16, Math.PI), '#4E9A5A'); handle.position.set(-u * 0.02, u * 0.14, 0); g.add(handle);
+    return g; } },
+  rod: { at: 'ground', make(u) {
+    const g = new THREE.Group(), pole = mesh(new THREE.CylinderGeometry(u * 0.006, u * 0.014, u * 0.7, 6), '#A47551'); pole.position.y = u * 0.35; pole.rotation.z = 0.35; g.add(pole);
+    const tip = new THREE.Vector3(-Math.sin(0.35) * u * 0.7, Math.cos(0.35) * u * 0.7, 0);
+    g.add(tube([tip, tip.clone().add(new THREE.Vector3(-u * 0.04, -u * 0.25, 0)), tip.clone().add(new THREE.Vector3(-u * 0.05, -u * 0.45, 0))], u * 0.002, '#FFFFFF'));
+    const bob = mesh(new THREE.SphereGeometry(u * 0.025, 10, 8), '#E8394B'); bob.position.copy(tip.clone().add(new THREE.Vector3(-u * 0.05, -u * 0.47, 0))); g.add(bob);
+    return g; } },
+  petcat: { at: 'ground', pet: true, make: (u) => tinyPet(u, 'cat') },
+  petdog: { at: 'ground', pet: true, make: (u) => tinyPet(u, 'dog') },
+};
+// a tiny companion that sits beside the bud and wags its tail
+function tinyPet(u, kind) {
+  const g = new THREE.Group(), fur = kind === 'cat' ? '#F2A65A' : '#C98B5E', s = u * 0.55;
+  const body = mesh(new THREE.SphereGeometry(s * 0.2, 16, 12), fur); body.scale.set(1, 0.85, 1.2); body.position.y = s * 0.18; g.add(body);
+  const head = mesh(new THREE.SphereGeometry(s * 0.16, 16, 12), fur); head.position.set(0, s * 0.42, s * 0.12); g.add(head);
+  for (const x of [-1, 1]) {
+    const ear = kind === 'cat' ? mesh(new THREE.ConeGeometry(s * 0.06, s * 0.1, 4), fur) : mesh(new THREE.SphereGeometry(s * 0.07, 10, 8), '#8A5A3A');
+    if (kind === 'cat') ear.position.set(x * s * 0.09, s * 0.56, s * 0.1); else { ear.scale.set(0.6, 1.3, 0.5); ear.position.set(x * s * 0.15, s * 0.4, s * 0.1); }
+    g.add(ear);
+    const eye = mesh(new THREE.SphereGeometry(s * 0.025, 8, 6), '#1E2030'); eye.position.set(x * s * 0.06, s * 0.45, s * 0.26); g.add(eye);
+  }
+  const nose = mesh(new THREE.SphereGeometry(s * 0.02, 8, 6), kind === 'cat' ? '#FF9EBB' : '#1E2030'); nose.position.set(0, s * 0.4, s * 0.28); g.add(nose);
+  const tailG = new THREE.Group(), tail = mesh(new THREE.CylinderGeometry(s * 0.025, s * 0.035, s * 0.28, 8), fur); tail.position.y = s * 0.14; tailG.add(tail);
+  tailG.position.set(0, s * 0.18, -s * 0.2); tailG.rotation.x = -0.7; g.add(tailG);
+  g.userData.tail = tailG;
+  g.rotation.y = -0.4;
+  return g;
+}
+
+// what a bud wears: { head, hand } prop ids from the server (or the wardrobe when you change it)
+function applyWear(bud) {
+  for (const k of ['headProp', 'handProp']) if (bud[k]) { bud.inner.remove(bud[k]); bud[k] = null; }
+  bud.pet = null;
+  const w = bud.data.wear || {}, u = bud.b.w;
+  if (w.head && HEAD[w.head]) { try { bud.headProp = HEAD[w.head](bud); bud.inner.add(bud.headProp); } catch (e) { console.error('prop', w.head, e); } }
+  const H = w.hand && HAND[w.hand];
+  if (H) {
+    try {
+      const g = new THREE.Group(), item = H.make(u); g.add(item);
+      g.position.copy(H.at === 'held' ? heldSpot(bud) : groundSpot(bud));
+      g.scale.setScalar(H.pet ? 1.2 : H.at === 'held' ? 1.7 : 1.5);   // big enough to read from across the island
+      if (H.pet) { g.position.x += u * 0.08; bud.pet = item; }
+      bud.handProp = g; bud.inner.add(g);
+    } catch (e) { console.error('prop', w.hand, e); }
+  }
+}
+
 
 function updateSky(dt) {
   if (T >= skyBits.nextSky) {
@@ -964,7 +1236,7 @@ async function makeBud(data) {
     greetCooldown: rand(2, 8), partner: null, tag, bubble: null, bubbleUntil: 0,
   };
   bodyMesh.userData.bud = bud; faceMesh.userData.bud = bud;
-  costumeFor(bud);
+  applyWear(bud);
   return bud;
 }
 
@@ -1220,6 +1492,7 @@ function updateBud(bud, dt) {
   bud.root.position.set(bud.x, 0, bud.z);
   bud.hop.position.y = bud.y + hopY;
   bud.root.rotation.y = bud.heading;
+  if (bud.pet) bud.pet.userData.tail.rotation.z = Math.sin(T * 7 + bud.blinkAt) * 0.5;   // a happy little tail
   const sy = bud.sy;
   bud.squash.scale.set(2 - sy, sy, 2 - sy);
   // lean back to look at the sky, forward to peek over the edge or smell a flower
@@ -1618,6 +1891,7 @@ let diary = [];        // what my bud got up to: { at, kind, text, with?, fresh 
 let hasProfile = true; // false until you've done the getting-to-know-you chat
 let dmsOn = true;      // bud's question DMs every couple of days
 let myProfile = null;  // what your bud knows about you: { interests, answered, shareInterests }
+let myWardrobe = null; // { head, hand, owned: [{ id, slot, name, icon, from }] }
 const MAX_TOTAL = 10;  // interview questions in all (3 when you make your bud, then "Keep chatting")
 let cardBud = null;
 const nameOf = (bud) => bud.data.nickname || bud.data.trueName;
@@ -1715,6 +1989,7 @@ function renderCardBody() {
     if (!inbox.length) {
       if (!diary.length) cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
       renderAboutMe(bud);
+      renderWardrobe(bud);
       renderGamesList();
       renderDiary(bud);
       renderDmToggle(bud);
@@ -1733,6 +2008,7 @@ function renderCardBody() {
       cardBody.append(note);
     }
     renderAboutMe(bud);
+    renderWardrobe(bud);
     renderGamesList();
     renderDiary(bud);
     renderDmToggle(bud);
@@ -1741,6 +2017,7 @@ function renderCardBody() {
   const others = bud.stickies.filter((st) => !st.dying && st.tag !== 'mine').length;
   if (d.friend) {
     cardBody.append(el('span', 'friends', `You and ${d.ownerName || 'them'} are friends`));
+    renderInCommon(d);
     if (myBud()) {
       const r = el('div', 'row'); r.append(peekabooButton(bud)); cardBody.append(r);
       cardBody.append(el('p', 'muted', 'Peekaboo: you each hide 3 buds on the island and take turns finding them.'));
@@ -1761,13 +2038,16 @@ function renderCardBody() {
     return;
   }
   if (others) cardBody.append(el('p', 'muted', others === 1 ? 'Someone already stuck a note here.' : `${others} notes are stuck here already.`));
+  renderInCommon(d);
   if (!myBud()) {
     const a = el('a', 'btn primary', 'Make your bud to stick notes'); a.href = '/';
     cardBody.append(a);
     return;
   }
   const stick = el('button', 'btn primary', 'Stick a note'); stick.type = 'button';
-  stick.addEventListener('click', () => openComposer(bud));
+  // a ready-made note when you have something in common ("you like basketball too?!"), editable as always
+  const draft = d.common && d.common.top ? `you like ${d.common.top} too?!` : '';
+  stick.addEventListener('click', () => openComposer(bud, draft));
   const r = el('div', 'row'); r.append(stick); cardBody.append(r);
 }
 
@@ -1784,6 +2064,19 @@ function whenLabel(ms) {
   return `${Math.round((dayStart - ms) / 864e5) + 1} days ago`;
 }
 // "Keep chatting" (the interview, up to 10 questions whenever you like) and what your bud knows about you
+// "You have this in common": only what you share, only if you both said yes. Words, never a number.
+const COMMON_TITLE = { lots: 'You have lots in common', some: 'You have some things in common', little: 'You have a little in common' };
+function renderInCommon(d) {
+  const c = d.common;
+  if (!c || c.level === 'none' || !c.things.length) return;
+  const box = el('section', 'common common-' + c.level);
+  box.append(el('h3', null, COMMON_TITLE[c.level] || 'In common'));
+  const chips = el('div', 'chips');
+  c.things.forEach((t) => chips.append(el('span', 'chip', t)));
+  box.append(chips);
+  cardBody.append(box);
+}
+
 function renderAboutMe(bud) {
   if (!hasProfile || !myProfile) return;
   const p = myProfile, box = el('section', 'about');
@@ -1820,6 +2113,47 @@ function renderAboutMe(bud) {
   cardBody.append(box);
 }
 let openAbout = false;
+
+// The wardrobe: one thing on the head, one in hand. Interests unlock props; the crown and seasonal gear are kept.
+const FROM_LABEL = (f) => (f === 'interest' ? '' : f === 'peekaboo' ? 'won at Peekaboo' : f ? `from ${f.replace(/^\w/, (c) => c.toUpperCase())}` : '');
+let openWardrobe = false;
+function renderWardrobe(bud) {
+  const w = myWardrobe;
+  if (!w) return;
+  const det = el('details', 'wardrobe');
+  det.append(el('summary', null, `Wardrobe${w.owned.length ? ` (${w.owned.length})` : ''}`));
+  if (!w.owned.length) {
+    det.append(el('p', 'muted', `Nothing yet. ${hasProfile ? 'Keep chatting' : 'Answer its questions'} so ${nameOf(bud)} knows what you’re into, and it’ll get things to wear.`));
+  }
+  for (const [slot, label] of [['head', 'On its head'], ['hand', 'In hand']]) {
+    const items = w.owned.filter((i) => i.slot === slot);
+    if (!items.length) continue;
+    det.append(el('h4', null, label));
+    const row = el('div', 'items');
+    for (const it of [{ id: 'none', name: 'Nothing', icon: '∅' }, ...items]) {
+      const on = (w[slot] || 'none') === it.id;
+      const b = el('button', 'item' + (on ? ' on' : '')); b.type = 'button';
+      b.title = [it.name, FROM_LABEL(it.from)].filter(Boolean).join(' · ');
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.append(el('span', 'ico', it.icon), el('span', 'nm', it.name));
+      b.addEventListener('click', async () => {
+        if (on) return;
+        b.disabled = true;
+        try {
+          const r = await api('PUT', '/api/profile', { wear: { [slot]: it.id } });
+          w.head = r.wear.head; w.hand = r.wear.hand;
+          bud.data.wear = { head: w.head, hand: w.hand }; applyWear(bud);
+          bud.syv = -0.2; S.play(it.id === 'none' ? 'pop' : 'boing');
+        } catch (e) {}
+        openWardrobe = true; renderCardBody();
+      });
+      row.append(b);
+    }
+    det.append(row);
+  }
+  if (openWardrobe) { det.open = true; openWardrobe = false; }
+  cardBody.append(det);
+}
 function renderDmToggle(bud) {
   const r = el('div', 'row dm-row');
   r.append(el('span', 'muted', `${nameOf(bud)}’s questions in your Discord DMs: ${dmsOn ? 'on' : 'off'}`));
@@ -1866,11 +2200,11 @@ function setNoteColor(c) {
 }
 noteText.addEventListener('input', () => { document.getElementById('noteCount').textContent = `${[...noteText.value].length} / 120`; });
 
-function openComposer(bud) {
+function openComposer(bud, draft = '') {
   composing = bud;
   closeCard();
   document.getElementById('composerTitle').textContent = `A note for ${nameOf(bud)}`;
-  noteText.value = ''; noteText.dispatchEvent(new Event('input'));
+  noteText.value = draft; noteText.dispatchEvent(new Event('input'));
   setNoteColor(NOTE_COLORS[Math.floor(Math.random() * NOTE_COLORS.length)]);
   noteError.hidden = true; noteSend.disabled = false;
   composer.hidden = false;
@@ -2999,6 +3333,14 @@ function showCenter(title, text, linkText, href = '/') {
   hasProfile = world.me.hasProfile !== false;
   dmsOn = world.me.dms !== false;
   myProfile = world.me.profile || null;
+  myWardrobe = world.me.wardrobe || null;
+  // seasonal gear that turned up since last time: "a witch hat washed up on the shore!"
+  const found = (world.me.found || []).map((id) => myWardrobe?.owned.find((o) => o.id === id)).filter(Boolean);
+  if (found.length) setTimeout(() => {
+    const me = myBud(); if (!me) return;
+    const what = found.map((f) => `a ${f.name.toLowerCase()}`).join(' and ');
+    say(me, `${what} washed up on the shore! it’s in my wardrobe`, 4200); me.syv -= 0.15; S.play('sparkle');
+  }, 7000);
   for (const d of world.buds) {
     try { buds.push(await makeBud(d)); } catch (e) { console.error('could not build bud', d.id, e); }
   }
