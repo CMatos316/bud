@@ -219,6 +219,8 @@ body { transition: background 2s linear; }
 .wardrobe .item { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--chip-line); background: rgba(127,127,160,.08); color: inherit; border-radius: 12px; padding: 5px 10px 5px 7px; font: 500 13px var(--font, inherit); cursor: pointer; }
 .wardrobe .item .ico { font-size: 17px; line-height: 1; }
 .wardrobe .item.on { border-color: currentColor; background: rgba(127,127,160,.2); font-weight: 650; }
+.tree-h { margin: 10px 0 6px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; opacity: .7; }
+.tree-friends { gap: 6px; flex-wrap: wrap; }
 .about { margin: 4px 0 10px; }
 .about-row { gap: 10px; margin-bottom: 8px; }
 .about-row .muted { font-size: 13px; }
@@ -1864,6 +1866,112 @@ canvas.addEventListener('wheel', (e) => {
   cam.lastInput = T; hideHint();
 }, { passive: false });
 
+/* ---------------- the friendship tree: a heart for every friendship on the island ---------------- */
+// It stands near the campfire and grows as the server makes friends. Your friends' hearts glow; hearts
+// that grew since your last visit pop in. Tap a heart to see whose friendship it is, or the tree for yours.
+let friendships = [];   // [{ a, b, since }] bud ids, oldest first
+const ftree = { group: null, hearts: [], pops: [], mineMat: null };
+function heartGeometry() {
+  const h = new THREE.Shape();
+  h.moveTo(0, -0.1); h.bezierCurveTo(-0.16, 0.02, -0.12, 0.16, 0, 0.08); h.bezierCurveTo(0.12, 0.16, 0.16, 0.02, 0, -0.1);
+  const g = new THREE.ExtrudeGeometry(h, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 2 });
+  g.center(); return g;
+}
+function buildFriendTree(list, lastVisit, me) {
+  friendships = list;
+  const n = list.length, grow = 1 + Math.min(n, 40) / 40, s = 1.15 * grow;
+  const fire = skyBits.fire || { x: 0, z: 0 }, rr = seeded('friendtree');
+  let spot = null;
+  for (let i = 0; i < 60 && !spot; i++) {
+    const a = rr() * Math.PI * 2, d = 4.5 + rr() * 2, p = { x: fire.x + Math.cos(a) * d, z: fire.z + Math.sin(a) * d };
+    if (Math.hypot(p.x, p.z) < WALK_R * 0.8 && obstacles.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + 1.6 * s)) spot = p;
+  }
+  spot = spot || { x: fire.x + 5, z: fire.z };
+  const g = new THREE.Group(), lin = toLinear;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * s, 0.26 * s, 1.5 * s, 9), new THREE.MeshStandardMaterial({ color: lin('#8A5A3C'), roughness: 1 }));
+  trunk.position.y = 0.75 * s; g.add(trunk);
+  const canopyY = 2.15 * s, canopyR = n ? 1.05 * s : 0.55 * s;
+  const blossoms = ['#FFC2D6', '#FFB0C8', '#FFD6E4', '#FFE4EC'];
+  const puffs = n ? clamp(4 + Math.floor(n / 3), 4, 10) : 2;
+  for (let k = 0; k < puffs; k++) {
+    const a = k * 2.4, up = k === 0 ? 0 : 0.25 + (k % 3) * 0.2;
+    const b = new THREE.Mesh(new THREE.IcosahedronGeometry((k === 0 ? 0.95 : 0.6 + rr() * 0.2) * (n ? s : s * 0.6), 1),
+      new THREE.MeshStandardMaterial({ color: lin(blossoms[k % blossoms.length]), roughness: 0.85, flatShading: true }));
+    b.position.set(k ? Math.cos(a) * canopyR * 0.6 : 0, canopyY + up * s, k ? Math.sin(a) * canopyR * 0.6 : 0); g.add(b);
+  }
+  // hearts on the canopy: yours glow and pulse, the rest are soft pink
+  const hg = heartGeometry();
+  ftree.mineMat = new THREE.MeshStandardMaterial({ color: lin('#FF3D6E'), emissive: lin('#FF3D6E'), emissiveIntensity: 0.7, roughness: 0.35 });
+  const otherMat = new THREE.MeshStandardMaterial({ color: lin('#FF8FAB'), emissive: lin('#FF8FAB'), emissiveIntensity: 0.15, roughness: 0.5 });
+  for (const f of list) {
+    const hr = seeded(`heart:${f.a}_${f.b}`), az = hr() * Math.PI * 2, el = -0.15 + hr() * 1.1;
+    const dir = new THREE.Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+    const mine = f.a === me || f.b === me;
+    const h = new THREE.Mesh(hg, mine ? ftree.mineMat : otherMat);
+    h.position.copy(dir.clone().multiplyScalar(canopyR * 1.12 + 0.12 * s)).add(new THREE.Vector3(0, canopyY + 0.2 * s, 0));
+    h.lookAt(h.position.clone().add(dir));
+    const size = (mine ? 1.9 : 1.5) * Math.min(1.4, s);
+    h.userData = { friendship: f, size };
+    h.scale.setScalar(size);
+    if (lastVisit && f.since > lastVisit) { h.scale.setScalar(0.001); ftree.pops.push({ h, at: 2.5 + ftree.pops.length * 0.35 }); }
+    g.add(h); ftree.hearts.push(h);
+  }
+  g.position.set(spot.x, 0, spot.z); g.rotation.y = rr() * Math.PI * 2;
+  scene.add(g); ftree.group = g;
+  obstacles.push({ x: spot.x, z: spot.z, r: 0.6 * s });
+}
+function updateFriendTree() {
+  if (!ftree.group) return;
+  if (ftree.mineMat) ftree.mineMat.emissiveIntensity = 0.55 + Math.sin(T * 3) * 0.3;
+  for (let i = ftree.pops.length - 1; i >= 0; i--) {
+    const p = ftree.pops[i];
+    if (T < p.at) continue;
+    const k = Math.min(1, (T - p.at) / 0.5), sc = p.h.userData.size * (k < 1 ? 1 + Math.sin(k * Math.PI) * 0.6 : 1) * k;
+    p.h.scale.setScalar(Math.max(0.001, sc));
+    if (k >= 1) { ftree.pops.splice(i, 1); S.play('pop'); }
+  }
+}
+function treeAt(x, y) {
+  if (!ftree.group || !ftree.group.visible) return null;
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(ftree.group, true)[0];
+  return hit ? { heart: hit.object.userData.friendship || null } : null;
+}
+function friendsSince(ms) { return ms ? new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'a while'; }
+function openTreeCard(f) {
+  closeCard();
+  const me = myBud()?.data.id, title = document.getElementById('cardName'), sub = document.getElementById('cardSub');
+  cardBody.textContent = ''; sub.textContent = '';
+  const budLink = (id) => {
+    const b = budById(id), btn = el('button', 'btn', b ? nameOf(b) : 'a bud'); btn.type = 'button';
+    btn.addEventListener('click', () => { if (!b) return; cam.follow = b; cam.followUntil = T + 6; openCard(b); });
+    return btn;
+  };
+  if (f) {
+    const A = budById(f.a), B = budById(f.b);
+    title.textContent = `${A ? nameOf(A) : 'a bud'} ♥ ${B ? nameOf(B) : 'a bud'}`;
+    sub.textContent = `friends since ${friendsSince(f.since)}`;
+    if (f.a === me || f.b === me) cardBody.append(el('p', 'muted', 'That’s one of yours! Your hearts are the bright ones.'));
+    else cardBody.append(el('p', 'muted', 'A heart on the friendship tree. Every friendship made on the island grows one.'));
+    const r = el('div', 'row'); r.append(budLink(f.a), budLink(f.b)); cardBody.append(r);
+  } else {
+    const n = friendships.length, mine = friendships.filter((x) => x.a === me || x.b === me);
+    title.textContent = 'The friendship tree';
+    sub.textContent = n ? `${n} ${n === 1 ? 'friendship' : 'friendships'} on the island` : 'just a sapling for now';
+    cardBody.append(el('p', 'muted', n
+      ? 'It grows a heart for every friendship made here, and gets bigger as the island makes friends. Your friends’ hearts glow.'
+      : 'It grows a heart for every friendship made on the island. Stick a note on a bud you’d like to be friends with, and the first heart could be yours.'));
+    if (mine.length) {
+      cardBody.append(el('h3', 'tree-h', `Your ${mine.length === 1 ? 'heart' : 'hearts'}`));
+      const r = el('div', 'row tree-friends');
+      for (const x of mine) r.append(budLink(x.a === me ? x.b : x.a));
+      cardBody.append(r);
+    } else if (n && me) cardBody.append(el('p', 'muted', 'None of the hearts are yours yet. Tap a bud and stick a note to start one.'));
+  }
+  card.hidden = false; hideHint(); S.play('chime');
+}
+
 /* ---------------- clicking a bud ---------------- */
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 function budAt(x, y) {
@@ -1882,7 +1990,7 @@ function hoverAt(x, y) {
     canvas.classList.toggle('over-bud', tappable(t));
     return;
   }
-  canvas.classList.toggle('over-bud', !!budAt(x, y));
+  canvas.classList.toggle('over-bud', !!budAt(x, y) || !!treeAt(x, y));
 }
 const card = document.getElementById('card');
 const cardBody = document.getElementById('cardBody');
@@ -1927,6 +2035,7 @@ function clickAt(x, y) {
   if (game) { gameTap(x, y); return; }
   const bud = budAt(x, y);
   if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return; }
+  if (!bud && !composing) { const t = treeAt(x, y); if (t) { openTreeCard(t.heart); return; } }
   if (!bud) { if (!composing) closeCard(); return; }
   if (composing) return;
   bud.syv -= 0.12; bud.happyUntil = T + 1.1; bud.lookCameraUntil = T + 2.5;
@@ -2760,6 +2869,7 @@ async function enterGame(id) {
   let v;
   try { v = await api('GET', '/api/game?id=' + encodeURIComponent(id)); }
   catch (e) { const m = myBud(); if (m) say(m, 'hmm, I can’t find that game', 2200); return; }
+  if (ftree.group) ftree.group.visible = false;   // keep the Peekaboo board clear
   game = { id, v, board: 'mine', picks: [], yell: false, busy: false, msg: '', hover: null, group: new THREE.Group(), tiles: new Map(), marks: [], key: viewKey(v) };
   game.board = defaultBoard(v);
   scene.add(game.group);
@@ -2789,6 +2899,7 @@ function gameDist() {
 
 function exitGame() {
   if (!game) return;
+  if (ftree.group) ftree.group.visible = true;
   clearInterval(game.poll);
   clearTimeout(game.flip);
   throws.length = 0;
@@ -3252,6 +3363,7 @@ function frame(now) {
   photoTick();
   gameTick(dt);
   updateSky(dt);
+  updateFriendTree();
   for (const c of clouds) {
     c.a += c.sp * dt;
     c.g.position.set(Math.cos(c.a) * c.r, c.y + Math.sin(T * 0.2 + c.a) * 0.4, Math.sin(c.a) * c.r);
@@ -3344,6 +3456,7 @@ function showCenter(title, text, linkText, href = '/') {
   for (const d of world.buds) {
     try { buds.push(await makeBud(d)); } catch (e) { console.error('could not build bud', d.id, e); }
   }
+  buildFriendTree(world.friendships || [], world.me.lastVisit, world.me.id);
   const mine = buds.find((b) => b.data.isMe);
   if (mine) document.getElementById('findMe').hidden = false;
   if (buds.length) document.getElementById('photoBtn').hidden = false;

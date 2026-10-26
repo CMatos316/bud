@@ -25,7 +25,7 @@ export async function GET(request) {
   try {
     const me = session.id;
     const buds = db().collection('guilds').doc(GUILD_ID).collection('buds');
-    const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news, gameSnap, profileSnap] = await Promise.all([
+    const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news, gameSnap, profileSnap, allFriends] = await Promise.all([
       buds.select(...FIELDS).limit(MAX_BUDS).get(),
       // every unanswered note on the island: anyone can see that a bud has notes on it, not what they say
       refs.notes().where('status', '==', 'pending').select('from', 'to', 'color', 'text', 'createdAt').limit(2000).get(),
@@ -39,6 +39,8 @@ export async function GET(request) {
       gamesRef().where('players', 'array-contains', me).get().catch(() => ({ docs: [] })),
       // everyone's tagged interests: for the props buds wear and what you have in common (never sent as-is)
       db().collection('guilds').doc(GUILD_ID).collection('profiles').select('tags', 'shareInterests').get(),
+      // every friendship on the island: the friendship tree grows a heart for each
+      refs.friends().select('members', 'since').limit(400).get().catch(() => ({ docs: [] })),
     ]);
     const tagsOf = new Map(profileSnap.docs.map((d) => [d.id, cleanTags(d.get('tags'))]));
     const sharing = new Set(profileSnap.docs.filter((d) => d.get('shareInterests') !== false).map((d) => d.id));
@@ -139,6 +141,9 @@ export async function GET(request) {
         found: granted?.found || [],
       },
       buds: list,
+      // the friendship tree: which buds are friends (as bud ids; the island shows bud names), newest last
+      friendships: allFriends.docs.map((f) => ({ a: f.get('members')[0], b: f.get('members')[1], since: f.get('since')?.toMillis() ?? 0 }))
+        .filter((f) => budNames.has(f.a) && budNames.has(f.b)).sort((x, y) => x.since - y.since),
       diary,
       games: gameSnap.docs.map((d) => d.data()).filter((g) => ['setup', 'playing'].includes(g.status)).map((g) => {
         const them = g.players.find((id) => id !== me);
