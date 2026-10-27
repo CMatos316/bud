@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+/* no zooming on phones (see /js/nozoom.js): no double-tap zoom, and text boxes big enough that iPhones don't zoom into them */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@supports (-webkit-touch-callout: none) { input, textarea, select { font-size: max(16px, 1em) !important; } }
+</style>
+<script src="/js/nozoom.js"></script>
 <title>Bud-a-pult · the buddie system</title>
 <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
@@ -78,12 +84,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 <header class="top">
   <a class="brand" href="/world"><img src="/img/favicon.svg" alt=""><span>Bud-a-pult</span></a>
   <span class="pill" id="pill">test range</span>
+  <button class="icon-btn" id="fsBtn" type="button" hidden aria-label="Full screen" title="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path id="fsIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
   <button class="icon-btn" id="soundBtn" type="button"></button>
 </header>
 <div class="banner" id="banner" aria-live="assertive"></div>
 <svg class="band" id="band" hidden aria-hidden="true"><line id="bandLine" stroke-linecap="round"/><circle id="bandStart" r="14"/><circle id="bandEnd" r="10"/></svg>
 <section class="panel" id="panel" hidden></section>
-<div class="turn" id="turn" hidden><div class="panel"><span class="phone" aria-hidden="true">📱</span><h2>Turn your phone sideways</h2><p>Bud-a-pult is a side view: the catapult on one end, the fort on the other. It fits much better with your phone held sideways.</p><div class="row"><button class="btn" id="turnSkip" type="button">Play anyway</button></div></div></div>
+<div class="turn" id="turn" hidden><div class="panel"><span class="phone" aria-hidden="true">📱</span><h2>Turn your phone sideways</h2><p>Bud-a-pult is a side view: the catapult on one end, the fort on the other. It fits much better with your phone held sideways.</p><p id="turnTip" hidden>On iPhone, turn off Rotation Lock in Control Center if the screen doesn’t turn.</p><div class="row"><button class="btn" id="turnSkip" type="button">Play anyway</button><button class="btn primary" id="turnFull" type="button" hidden>Go full screen</button></div></div></div>
 <div class="gate" id="gate" hidden><div class="panel"><h2 id="gateTitle"></h2><p id="gateText"></p><div class="row" id="gateRow"></div></div></div>
 
 <script src="/js/sound.js"></script>
@@ -281,6 +288,27 @@ addEventListener('resize', () => { resize(); reframe(); checkTurn(); });
 let turnSkipped = false;
 try { turnSkipped = sessionStorage.getItem('bp-turn-skip') === '1'; } catch (e) {}
 function checkTurn() { $('turn').hidden = turnSkipped || !(innerHeight > innerWidth && innerWidth < 600); }
+// Full screen: on Android (and computers) the page can take over the whole screen, and on a phone it also turns
+// itself sideways. iPhones only allow that for videos, so there it's turning the phone (or Play anyway).
+const fsEl = document.documentElement;
+const canFull = !!(fsEl.requestFullscreen || fsEl.webkitRequestFullscreen) && (document.fullscreenEnabled || document.webkitFullscreenEnabled);
+const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+async function goFull() {
+  try {
+    if (isFull()) { await (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+    await (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen).call(fsEl, { navigationUI: 'hide' });
+    if (innerWidth < 900 && screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(() => {});
+  } catch (e) {}
+}
+$('fsBtn').hidden = !canFull; $('turnFull').hidden = !canFull;
+$('turnTip').hidden = canFull || !/iPhone|iPod/.test(navigator.userAgent);
+$('fsBtn').addEventListener('click', goFull);
+$('turnFull').addEventListener('click', goFull);
+for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => {
+  $('fsIcon').setAttribute('d', isFull() ? 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5' : 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5');
+  $('fsBtn').setAttribute('aria-label', isFull() ? 'Leave full screen' : 'Full screen');
+  setTimeout(() => { resize(); reframe(); checkTurn(); }, 150);
+});
 $('turnSkip').addEventListener('click', () => { turnSkipped = true; try { sessionStorage.setItem('bp-turn-skip', '1'); } catch (e) {} checkTurn(); });
 
 /* ---------- the game state on this page ---------- */
