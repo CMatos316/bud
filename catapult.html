@@ -49,10 +49,16 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 .tool .sw i { display: block; border-radius: 3px; }
 .count { font-size: 12.5px; color: var(--muted); }
 .count.bad { color: var(--bad); }
-.aim-read { display: flex; gap: 14px; align-items: center; font-size: 14px; font-variant-numeric: tabular-nums; }
-.aim-read b { font-weight: 600; }
-.aim-read .bar { flex: 1; height: 8px; border-radius: 99px; background: var(--chip); overflow: hidden; min-width: 60px; }
-.aim-read .bar i { display: block; height: 100%; background: linear-gradient(90deg, #FFD23F, #FF7A59, #E8394B); border-radius: inherit; }
+.pill.aim { display: inline-flex; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; padding: 6px 14px; font-size: 14.5px; box-shadow: 0 6px 18px -10px rgba(46,40,90,.35); }
+.pill .bar { width: clamp(70px, 22vw, 150px); height: 8px; border-radius: 99px; background: rgba(29,28,43,.12); overflow: hidden; }
+.pill .bar i { display: block; height: 100%; background: linear-gradient(90deg, #FFD23F, #FF7A59, #E8394B); border-radius: inherit; }
+.pill .dots { display: inline-flex; gap: 4px; }
+.pill .dots i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #5E5D75; display: block; }
+.pill .dots i.used { background: #FF7A59; border-color: #FF7A59; }
+.pill .hint { font-weight: 500; color: #5E5D75; }
+.top .small { border: 0; background: rgba(255,255,255,.82); color: #1D1C2B; border-radius: 999px; padding: 6px 12px; font: 600 13.5px var(--font); cursor: pointer; }
+@media (max-width: 520px) { .brand span { display: none; } .brand { padding: 5px 6px; } }
+.err-toast { position: fixed; left: 50%; top: 58px; transform: translateX(-50%); background: rgba(232,80,91,.95); color: #fff; border-radius: 999px; padding: 6px 14px; font-size: 13.5px; font-weight: 600; }
 .launches { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
 .launches i { width: 12px; height: 12px; border-radius: 50%; background: var(--chip); border: 1.5px solid var(--muted); display: inline-block; }
 .launches i.used { background: #FF7A59; border-color: #FF7A59; }
@@ -84,10 +90,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 <header class="top">
   <a class="brand" href="/world"><img src="/img/favicon.svg" alt=""><span>Bud-a-pult</span></a>
   <span class="pill" id="pill">test range</span>
+  <button class="small" id="rebuildBtn" type="button" hidden>Rebuild</button>
   <button class="icon-btn" id="fsBtn" type="button" hidden aria-label="Full screen" title="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path id="fsIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
   <button class="icon-btn" id="soundBtn" type="button"></button>
 </header>
 <div class="banner" id="banner" aria-live="assertive"></div>
+<div class="err-toast" id="errToast" hidden role="alert"></div>
 <svg class="band" id="band" hidden aria-hidden="true"><line id="bandLine" stroke-linecap="round"/><circle id="bandStart" r="14"/><circle id="bandEnd" r="10"/></svg>
 <section class="panel" id="panel" hidden></section>
 <div class="turn" id="turn" hidden><div class="panel"><span class="phone" aria-hidden="true">📱</span><h2>Turn your phone sideways</h2><p>Bud-a-pult is a side view: the catapult on one end, the fort on the other. It fits much better with your phone held sideways.</p><p id="turnTip" hidden>On iPhone, turn off Rotation Lock in Control Center if the screen doesn’t turn.</p><div class="row"><button class="btn" id="turnSkip" type="button">Play anyway</button><button class="btn primary" id="turnFull" type="button" hidden>Go full screen</button></div></div></div>
@@ -303,6 +311,7 @@ async function goFull() {
 $('fsBtn').hidden = !canFull; $('turnFull').hidden = !canFull;
 $('turnTip').hidden = canFull || !/iPhone|iPod/.test(navigator.userAgent);
 $('fsBtn').addEventListener('click', goFull);
+$('rebuildBtn').addEventListener('click', () => toBuild());
 $('turnFull').addEventListener('click', goFull);
 for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => {
   $('fsIcon').setAttribute('d', isFull() ? 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5' : 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5');
@@ -442,6 +451,11 @@ function toolButton(t, label, swatch) {
 const swatch = (w, h, bg) => { const i = el('i'); i.style.width = w + 'px'; i.style.height = h + 'px'; i.style.background = bg; return i; };
 function renderPanel() {
   const p = $('panel'); p.textContent = ''; p.hidden = false;
+  const aiming = st.mode === 'aim' || st.mode === 'fly';
+  $('rebuildBtn').hidden = st.mode !== 'aim';
+  $('errToast').hidden = !(aiming && st.msg); $('errToast').textContent = st.msg || '';
+  if (aiming) { p.hidden = true; showAimRead(); reframe(); return; }
+  setPill('test range');
   const msg = el('p', 'msg', st.msg);
   const launches = el('div', 'launches');
   for (let i = 0; i < LAUNCHES; i++) launches.append(el('i', i < st.launches ? 'used' : null));
@@ -473,16 +487,6 @@ function renderPanel() {
     const go = el('button', 'btn primary', repairing ? 'Done' : 'Ready!'); go.type = 'button'; go.disabled = st.busy;
     go.addEventListener('click', repairing ? finishRepair : finishBuild);
     r.append(go); p.append(r);
-  } else if (st.mode === 'aim') {
-    p.append(el('h2', null, `Fling ${me ? (me.bud.nickname || me.bud.trueName) : 'your bud'}!`), launches);
-    p.append(el('p', null, 'Pull back anywhere on the screen and let go. Pull further for more power; the direction you pull sets the angle.'));
-    const read = el('div', 'aim-read'); read.id = 'aimRead'; p.append(read, msg);
-    showAimRead();
-    const r = el('div', 'row');
-    const rebuild = el('button', 'btn', 'Rebuild'); rebuild.type = 'button'; rebuild.addEventListener('click', toBuild);
-    r.append(rebuild); p.append(r);
-  } else if (st.mode === 'fly') {
-    p.append(el('h2', null, pick(['Wheeeee!', 'Incoming!', 'Here it comes…'])), launches);
   } else if (st.mode === 'result') {
     const s = st.shot, won = !!s.ko, over = won || st.launches >= LAUNCHES;
     p.append(el('h2', null, won ? `💥 Knocked out on launch ${st.launches}!` : over ? '🛡️ The fort held!' : s.firstHit == null ? 'Way off!' : 'The bud’s still standing'));
@@ -540,11 +544,17 @@ function placeShotInCup() {
   const p = cupPos(a); shotBud.root.position.copy(p); shotBud.spin.rotation.z = 0; shotBud.stretch.rotation.z = 0;
   shotBud.stretch.scale.set(1 + st.power * 0.12, 1 - st.power * 0.2, 1); shotBud.root.visible = true;
 }
+function setPill(text) { const p = $('pill'); p.className = 'pill'; p.textContent = text; }
+// the pill at the top while you aim: launches used, then "pull back to fling" or the angle and power
 function showAimRead() {
-  const r = $('aimRead'); if (!r) return;
-  r.textContent = '';
+  const p = $('pill'); p.className = 'pill aim'; p.textContent = '';
+  const dots = el('span', 'dots');
+  for (let i = 0; i < LAUNCHES; i++) dots.append(el('i', i < st.launches ? 'used' : null));
+  p.append(dots);
+  if (st.mode === 'fly') { p.append(el('span', 'hint', 'wheee!')); return; }
+  if (!pull || !pull.moved) { p.append(el('span', 'hint', 'pull back and let go')); return; }
   const bar = el('span', 'bar'), fill = el('i'); fill.style.width = Math.round(st.power * 100) + '%'; bar.append(fill);
-  r.append(el('b', null, `${Math.round(st.angle)}°`), bar, el('b', null, `${Math.round(st.power * 100)}%`));
+  p.append(el('b', null, `${Math.round(st.angle)}°`), bar, el('b', null, `${Math.round(st.power * 100)}%`));
 }
 async function launch() {
   if (st.busy) return;
@@ -665,7 +675,7 @@ function pullTo(e) {
 }
 canvas.addEventListener('pointerup', (e) => {
   if (pull && e.pointerId === pull.id) {
-    const go = pull.moved && st.power >= 0.04; drawBand(null); pull = null; down = null;
+    const go = pull.moved && st.power >= 0.04; drawBand(null); pull = null; down = null; showAimRead();
     if (go) launch(); else { S.play('click', { gain: 0.5 }); }
     return;
   }
