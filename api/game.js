@@ -8,6 +8,8 @@
 // | 'dd-giveup', id, opponent, choice, strokes, guess }
 // Doodle mail (lib/doodlemail.js): GET ?mail=list (your bud's doodles) | ?mail=<id> (one, to replay) | ?mailto=<user>;
 // POST { action: 'mail-send' | 'mail-star' | 'mail-toss', to, strokes, caption, id, fav }
+// Picnic Clash (lib/picnic.js): GET ?picnic= one game; POST { action: 'pc-new' | 'pc-place' | 'pc-pass' | 'pc-resign',
+// id, opponent, offer, cells }
 import { readSession, sameOrigin } from '../lib/session.js';
 import { createGame, hide, shoot, resign, getGame, myGames } from '../lib/peekaboo.js';
 import { isDiscordId } from '../lib/notes.js';
@@ -15,6 +17,7 @@ import { newRoomId, joinRoom, checkIn, startGame, pick, budsFor } from '../lib/s
 import * as prank from '../lib/prankster.js';
 import * as doodle from '../lib/doodle.js';
 import * as mail from '../lib/doodlemail.js';
+import * as picnic from '../lib/picnic.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
 
@@ -33,6 +36,11 @@ export async function GET(request) {
   if (dd != null) {
     if (!/^[A-Za-z0-9]{10,40}$/.test(dd)) return json({ error: 'which game?' }, 400);
     try { return json(await doodle.getGame(session.id, dd)); } catch (err) { return fail(err); }
+  }
+  const pc = url.searchParams.get('picnic');
+  if (pc != null) {
+    if (!/^[A-Za-z0-9]{10,40}$/.test(pc)) return json({ error: 'which picnic?' }, 400);
+    try { return json(await picnic.getGame(session.id, pc)); } catch (err) { return fail(err); }
   }
   const ml = url.searchParams.get('mail'), mailTo = url.searchParams.get('mailto');
   if (ml != null || mailTo != null) {
@@ -76,6 +84,19 @@ export async function POST(request) {
       if (action === 'dd-send') return json(await doodle.sendDrawing(session.id, id, body.strokes));
       if (action === 'dd-guess') return json(await doodle.guess(session.id, id, String(body.guess || '').slice(0, 60)));
       if (action === 'dd-giveup') return json(await doodle.giveUp(session.id, id));
+      return json({ error: 'unknown move' }, 400);
+    } catch (err) { return fail(err); }
+  }
+  if (typeof action === 'string' && action.startsWith('pc-')) {
+    try {
+      if (action === 'pc-new') {
+        if (!isDiscordId(body.opponent)) return json({ error: 'who are you picnicking with?' }, 400);
+        return json(await picnic.createGame(session.id, body.opponent));
+      }
+      if (typeof id !== 'string' || !/^[A-Za-z0-9]{10,40}$/.test(id)) return json({ error: 'which picnic?' }, 400);
+      if (action === 'pc-place') return json(await picnic.place(session.id, id, Number(body.offer), body.cells));
+      if (action === 'pc-pass') return json(await picnic.pass(session.id, id));
+      if (action === 'pc-resign') return json(await picnic.resign(session.id, id));
       return json({ error: 'unknown move' }, 400);
     } catch (err) { return fail(err); }
   }

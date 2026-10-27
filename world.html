@@ -328,6 +328,21 @@ body { transition: background 2s linear; }
 .game-top span { margin-left: auto; font-size: 12.5px; opacity: .75; white-space: nowrap; }
 .game-bar p { flex: none; }
 .game-bar .row { justify-content: flex-end; }
+/* Picnic Clash: your three dishes, and turning them */
+.dish-tray { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 6px; align-items: stretch; }
+.dish { appearance: none; border: 1.5px solid var(--chip-line); background: rgba(127,127,160,.08); color: inherit; border-radius: 14px; padding: 6px 4px 5px; cursor: pointer; display: grid; justify-items: center; gap: 3px; font: 600 12px var(--font, inherit); min-width: 0; }
+.dish[aria-pressed="true"] { border-color: currentColor; background: rgba(127,127,160,.2); }
+.dish .em { font-size: 22px; line-height: 1; }
+.dish .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.dish .shape { display: grid; gap: 2px; }
+.dish .shape i { width: 7px; height: 7px; border-radius: 2px; background: currentColor; opacity: .75; }
+.dish .shape i.off { opacity: 0; }
+.dish-tools { display: grid; gap: 6px; }
+.dish-tools button { appearance: none; border: 1px solid var(--chip-line); background: rgba(127,127,160,.08); color: inherit; border-radius: 12px; width: 40px; cursor: pointer; font-size: 17px; }
+.dish-tools button:disabled { opacity: .35; cursor: default; }
+.napkins { display: inline-flex; gap: 10px; font-size: 12.5px; opacity: .85; flex-wrap: wrap; }
+.napkins span { display: inline-flex; align-items: center; gap: 5px; }
+.napkins i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .seg { display: flex; padding: 3px; border-radius: 999px; background: var(--chip); border: 1px solid var(--chip-line); }
 .seg[hidden] { display: none; }
 .seg button { flex: 1; min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 999px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -441,6 +456,7 @@ body { transition: background 2s linear; }
   <div class="game-top"><b id="gameTitle">Peekaboo</b><span id="gameScore"></span></div>
   <div class="seg" id="gameSeg" role="group" aria-label="Which island"><button type="button" data-board="theirs" aria-pressed="false">Their island</button><button type="button" data-board="mine" aria-pressed="false">Your island</button></div>
   <p id="gameText" aria-live="polite"></p>
+  <div class="dish-tray" id="dishTray" hidden role="group" aria-label="Your dishes"></div>
   <div class="row" id="gameRow"></div>
 </div>
 <div class="countdown" id="countdown" hidden aria-live="assertive"></div>
@@ -490,6 +506,7 @@ const params = new URLSearchParams(location.search);
 const DROP = params.get('drop') === '1';
 const OPEN_NOTES = params.get('notes') === '1';
 const GAME_ID = /^[A-Za-z0-9]{10,40}$/.test(params.get('game') || '') ? params.get('game') : null;
+const PICNIC_ID = /^[A-Za-z0-9]{10,40}$/.test(params.get('picnic') || '') ? params.get('picnic') : null;
 if (DROP || OPEN_NOTES || params.get('news') === '1') history.replaceState(null, '', location.pathname);
 
 const HELLOS = ['hi!', 'hey!', 'oh hi', 'hello!', 'yo', 'hiii'];
@@ -530,6 +547,7 @@ scene.environment = ENV_DAY;
 let R = 12;              // island radius, set once we know how many buds live here
 let WALK_R = R * 0.78;   // how far from the middle buds wander
 const obstacles = [];    // trees and rocks buds walk around: { x, z, r }
+let islandDecor = null;  // the island's trees, rocks and flowers (Picnic Clash clears a spot for its blanket)
 const flowers = [];      // where the little flowers are, for buds who like to smell them
 const clouds = [];
 
@@ -559,7 +577,7 @@ function buildIsland(nBuds) {
   topGeo.translate(0, -(depth + bevel), 0);
   const grass = new THREE.MeshStandardMaterial({ color: toLinear('#86CF86'), roughness: 0.95, envMapIntensity: 0.35 });
   const grassSide = new THREE.MeshStandardMaterial({ color: toLinear('#6DB774'), roughness: 0.95, envMapIntensity: 0.35 });
-  group.add(new THREE.Mesh(topGeo, [grass, grassSide]));
+  const top = new THREE.Mesh(topGeo, [grass, grassSide]); top.userData.ground = true; group.add(top);
 
   // rocky underside, a lumpy upside-down cone
   const h = R * 0.85;
@@ -581,7 +599,7 @@ function buildIsland(nBuds) {
   cone.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   const rock = cone.toNonIndexed(); rock.computeVertexNormals();
   const under = new THREE.Mesh(rock, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
-  under.position.y = -(depth + bevel) - h / 2 + 0.05;
+  under.position.y = -(depth + bevel) - h / 2 + 0.05; under.userData.ground = true;
   group.add(under);
 
   // trees and rocks near the rim
@@ -643,7 +661,7 @@ function buildIsland(nBuds) {
     scene.add(c); clouds.push(d);
   }
 
-  scene.add(group);
+  scene.add(group); islandDecor = group;
 }
 
 /* ---------------- the sky follows your clock; Halloween comes and goes on its own ---------------- */
@@ -985,6 +1003,18 @@ const HAND = {
     const g = new THREE.Group(), h = mesh(new THREE.CylinderGeometry(u * 0.025, u * 0.018, u * 0.2, 10), '#2B2D42'); g.add(h);
     const head = mesh(new THREE.SphereGeometry(u * 0.05, 16, 12), '#B7B5C6', { metalness: 0.5, roughness: 0.3 }); head.position.y = u * 0.12; g.add(head);
     g.rotation.z = -0.35; return g; } },
+  basket: { at: 'held', make(u) {
+    // a picnic basket (won at Picnic Clash): wicker body, a checked cloth peeking out, a handle
+    const g = new THREE.Group();
+    const c = document.createElement('canvas'); c.width = 64; c.height = 32; const x = c.getContext('2d');
+    x.fillStyle = '#C98B4E'; x.fillRect(0, 0, 64, 32); x.strokeStyle = '#9C6334'; x.lineWidth = 2;
+    for (let i = 0; i < 64; i += 6) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i + 3, 32); x.stroke(); }
+    for (let j = 4; j < 32; j += 7) { x.beginPath(); x.moveTo(0, j); x.lineTo(64, j); x.stroke(); }
+    const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(u * 0.24, u * 0.13, u * 0.15), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 })); g.add(body);
+    const cloth = mesh(new THREE.BoxGeometry(u * 0.22, u * 0.02, u * 0.13), '#E8394B'); cloth.position.y = u * 0.07; cloth.rotation.z = 0.08; g.add(cloth);
+    const handle = mesh(new THREE.TorusGeometry(u * 0.1, u * 0.012, 6, 20, Math.PI), '#9C6334'); handle.position.y = u * 0.065; g.add(handle);
+    g.rotation.y = -0.3; return g; } },
   camera: { at: 'held', make(u) {
     const g = new THREE.Group(); g.add(mesh(new THREE.BoxGeometry(u * 0.2, u * 0.13, u * 0.08), '#2B2D42'));
     const lens = mesh(new THREE.CylinderGeometry(u * 0.045, u * 0.05, u * 0.07, 16), '#5E5D75'); lens.rotation.x = Math.PI / 2; lens.position.z = u * 0.06; g.add(lens);
@@ -1483,6 +1513,8 @@ function updateBud(bud, dt) {
     // already snapped to face the lens; don't drift
   } else if (bud.lookCameraUntil > T && (bud.state === 'idle' || bud.state === 'greet' && !bud.partner)) {
     bud.heading += angleTo(bud.heading, Math.atan2(camera.position.x - bud.x, camera.position.z - bud.z)) * Math.min(1, dt * 5);
+  } else if (bud.faceSpot && bud.state === 'idle') {
+    bud.heading += angleTo(bud.heading, Math.atan2(bud.faceSpot.x - bud.x, bud.faceSpot.z - bud.z)) * Math.min(1, dt * 5);
   }
 
   // anything that interrupts a hop still lets the bud land
@@ -1812,7 +1844,7 @@ function placeCamera(dt) {
   cam.dist += (camGoal.dist - cam.dist) * k;
   if (camGoal.pitch != null) cam.pitch += (camGoal.pitch - cam.pitch) * k;
   if (camGoal.yaw != null) cam.yaw += angleTo(cam.yaw, camGoal.yaw) * k;
-  if (T - cam.lastInput > 6 && !cam.follow && !game) cam.yaw += dt * 0.035 * RM;
+  if (T - cam.lastInput > 6 && !cam.follow && !game && !pic) cam.yaw += dt * 0.035 * RM;
   const cp = Math.cos(cam.pitch);
   camera.position.set(
     cam.target.x + Math.sin(cam.yaw) * cp * cam.dist,
@@ -1822,7 +1854,7 @@ function placeCamera(dt) {
   camera.lookAt(cam.target);
   // With a card or note pad open at the bottom, slide the picture up so the bud you're looking at sits above it.
   const panel = [document.getElementById('card'), document.getElementById('composer')].find((e) => !e.hidden);
-  const want = game ? (gameBar.getBoundingClientRect().height + 24 - 64) / 2 : panel && cam.follow ? Math.min(panel.getBoundingClientRect().height * 0.5, innerHeight * 0.3) : 0;
+  const want = game || pic ? (gameBar.getBoundingClientRect().height + 24 - 64) / 2 : panel && cam.follow ? Math.min(panel.getBoundingClientRect().height * 0.5, innerHeight * 0.3) : 0;
   cam.shift = (cam.shift || 0) + (want - (cam.shift || 0)) * (1 - Math.pow(0.02, dt));
   if (Math.abs(cam.shift) > 0.5) camera.setViewOffset(innerWidth, innerHeight, 0, cam.shift, innerWidth, innerHeight);
   else if (camera.view && camera.view.enabled) camera.clearViewOffset();
@@ -1997,6 +2029,7 @@ function hoverAt(x, y) {
     canvas.classList.toggle('over-bud', tappable(t));
     return;
   }
+  if (pic) { picHover(x, y); return; }
   canvas.classList.toggle('over-bud', !!budAt(x, y) || !!treeAt(x, y));
 }
 const card = document.getElementById('card');
@@ -2040,6 +2073,7 @@ function noteEl(text, color, small = false) {
 
 function clickAt(x, y) {
   if (game) { gameTap(x, y); return; }
+  if (pic) { picTap(x, y); return; }
   const bud = budAt(x, y);
   if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return; }
   if (!bud && !composing) { const t = treeAt(x, y); if (t) { openTreeCard(t.heart); return; } }
@@ -2137,8 +2171,8 @@ function renderCardBody() {
     cardBody.append(el('span', 'friends', `You and ${d.ownerName || 'them'} are friends`));
     renderInCommon(d);
     if (myBud()) {
-      const r = el('div', 'row'); r.append(peekabooButton(bud), sendDoodleButton(bud), doodleButton(bud)); cardBody.append(r);
-      cardBody.append(el('p', 'muted', `Peekaboo: hide 3 buds each, then take turns finding them. Send a doodle: draw ${d.ownerName || 'them'} something for their DMs. Doodle Duel: take turns drawing and guessing.`));
+      const r = el('div', 'row'); r.append(peekabooButton(bud), picnicButton(bud), sendDoodleButton(bud), doodleButton(bud)); cardBody.append(r);
+      cardBody.append(el('p', 'muted', `Peekaboo: hide 3 buds each, then take turns finding them. Picnic Clash: set dishes on a blanket and snag theirs. Send a doodle: draw ${d.ownerName || 'them'} something for their DMs. Doodle Duel: take turns drawing and guessing.`));
     }
     return;
   }
@@ -2233,7 +2267,7 @@ function renderAboutMe(bud) {
 let openAbout = false;
 
 // The wardrobe: one thing on the head, one in hand. Interests unlock props; the crown and seasonal gear are kept.
-const FROM_LABEL = (f) => (f === 'interest' ? '' : f === 'peekaboo' ? 'won at Peekaboo' : f ? `from ${f.replace(/^\w/, (c) => c.toUpperCase())}` : '');
+const FROM_LABEL = (f) => (f === 'interest' ? '' : f === 'peekaboo' ? 'won at Peekaboo' : f === 'picnic' ? 'won at Picnic Clash' : f ? `from ${f.replace(/^\w/, (c) => c.toUpperCase())}` : '');
 let openWardrobe = false;
 function renderWardrobe(bud) {
   const w = myWardrobe;
@@ -2873,6 +2907,7 @@ function tappable(t) {
 async function enterGame(id) {
   if (game && game.id === id) return;
   if (game) exitGame();
+  if (pic) exitPicnic();
   if (photo) exitPhoto();
   closeComposer(); closeCard(); hideHint();
   let v;
@@ -3304,6 +3339,583 @@ async function startGameWith(them) {
   await enterGame(res.id);
 }
 
+/* ---------------- Picnic Clash: dishes on a blanket ---------------- */
+// A checked picnic blanket in the middle of the island, 8 x 8 squares. You and a friend take turns setting
+// dishes down (lib/picnic.js referees); fence one of theirs in and your bud snags it. Your bud sits at your
+// end of the blanket, theirs at the other. Played over time: a DM when it's your turn.
+const PN = 8, PCS = 1.05, PHALF = PN * PCS / 2, PSEAT = PHALF + 1.25;
+const NAPKIN = ['#4FA3FF', '#FF9636'];   // the first player's napkins, the second player's
+const DISHES = {
+  strawberry: { name: 'strawberry', icon: '🍓', cells: [[0, 0]] },
+  sandwich: { name: 'sandwich', icon: '🥪', cells: [[0, 0], [1, 0]] },
+  hotdog: { name: 'hot dog', icon: '🌭', cells: [[0, 0], [1, 0], [2, 0]] },
+  cheese: { name: 'cheese wedge', icon: '🧀', cells: [[0, 0], [1, 0], [0, 1]] },
+  baguette: { name: 'baguette', icon: '🥖', cells: [[0, 0], [1, 0], [2, 0], [3, 0]] },
+  pie: { name: 'pie', icon: '🥧', cells: [[0, 0], [1, 0], [0, 1], [1, 1]] },
+  pizza: { name: 'slice of pizza', icon: '🍕', cells: [[0, 0], [0, 1], [0, 2], [1, 2]] },
+  watermelon: { name: 'watermelon slice', icon: '🍉', cells: [[0, 0], [1, 0], [2, 0], [1, 1]] },
+  pretzel: { name: 'pretzel', icon: '🥨', cells: [[1, 0], [2, 0], [0, 1], [1, 1]] },
+  cake: { name: 'layer cake', icon: '🍰', cells: [[0, 0], [1, 0], [0, 1], [1, 1], [0, 2]] },
+};
+let pic = null;        // the picnic on screen: { id, v, sel, rot, flip, at, hover, busy, msg, group, pieces, ghost, ... }
+let myPicnics = [];    // picnics still going: { id, them, myTurn }
+const dishTray = document.getElementById('dishTray');
+const psq = (i) => ({ x: ((i % PN) - (PN - 1) / 2) * PCS, z: (Math.floor(i / PN) - (PN - 1) / 2) * PCS });
+const picThem = () => (pic && pic.v.people && pic.v.people[pic.v.them]) || 'your friend';
+const picBud = (id) => (pic && pic.v.buds && pic.v.buds[id]) || 'a bud';
+const picMyTurn = () => pic && pic.v.status === 'playing' && pic.v.myTurn;
+const napkinOf = (uid) => NAPKIN[pic.v.players.indexOf(uid)] || NAPKIN[0];
+const seatOf = (uid) => ({ x: 0, z: pic.v.players.indexOf(uid) === 0 ? -PSEAT : PSEAT });
+
+// turning and flipping a dish, then moving it so its middle square sits on the square you tapped
+function shapeOf(id, rot, flip) {
+  let c = DISHES[id].cells.map(([x, y]) => [flip ? -x : x, y]);
+  for (let r = 0; r < rot; r++) c = c.map(([x, y]) => [-y, x]);
+  const mx = Math.min(...c.map((p) => p[0])), my = Math.min(...c.map((p) => p[1]));
+  return c.map(([x, y]) => [x - mx, y - my]);
+}
+function cellsAt(id, rot, flip, at) {
+  const sh = shapeOf(id, rot, flip);
+  const cx = sh.reduce((s, p) => s + p[0], 0) / sh.length, cy = sh.reduce((s, p) => s + p[1], 0) / sh.length;
+  const pv = sh.reduce((b, p) => (Math.hypot(p[0] - cx, p[1] - cy) < Math.hypot(b[0] - cx, b[1] - cy) ? p : b));
+  let pts = sh.map(([x, y]) => [(at % PN) + x - pv[0], Math.floor(at / PN) + y - pv[1]]);
+  const minX = Math.min(...pts.map((p) => p[0])), maxX = Math.max(...pts.map((p) => p[0]));
+  const minY = Math.min(...pts.map((p) => p[1])), maxY = Math.max(...pts.map((p) => p[1]));
+  const dx = minX < 0 ? -minX : maxX > PN - 1 ? PN - 1 - maxX : 0, dy = minY < 0 ? -minY : maxY > PN - 1 ? PN - 1 - maxY : 0;
+  pts = pts.map(([x, y]) => [x + dx, y + dy]);
+  return pts.map(([x, y]) => y * PN + x);
+}
+function picOwners() { const o = new Array(PN * PN).fill(null); pic.v.pieces.forEach((p) => p.cells.forEach((i) => { o[i] = p.owner; })); return o; }
+const picAround = (i) => { const x = i % PN, out = []; if (x > 0) out.push(i - 1); if (x < PN - 1) out.push(i + 1); if (i >= PN) out.push(i - PN); if (i < PN * PN - PN) out.push(i + PN); return out; };
+// the same rule the server uses: every square around one of their dishes is yours (the edge is a wall)
+function picSteals(cells) {
+  const me = pic.v.me, o = picOwners(); cells.forEach((i) => { o[i] = me; });
+  const out = [];
+  pic.v.pieces.forEach((p, k) => {
+    if (p.owner === me) return;
+    const inside = new Set(p.cells), edge = [...new Set(p.cells.flatMap(picAround))].filter((j) => !inside.has(j));
+    if (edge.length && edge.every((j) => o[j] === me)) out.push(k);
+  });
+  return out;
+}
+const picGhostCells = () => (pic && pic.sel != null && (pic.at ?? pic.hover) != null ? cellsAt(pic.v.offers[pic.sel], pic.rot, pic.flip, pic.at ?? pic.hover) : null);
+function picLegal() {
+  const cells = picMyTurn() && !pic.busy ? picGhostCells() : null;
+  if (!cells) return false;
+  const o = picOwners();
+  return cells.every((i) => o[i] === null);
+}
+
+/* the blanket */
+function blanketTexture() {
+  const c = document.createElement('canvas'), S2 = 1024; c.width = c.height = S2;
+  const g = c.getContext('2d'), m = S2 * 0.15 / (PN * PCS + 0.3) * 1, cell = (S2 - m * 2) / PN;
+  g.fillStyle = '#FFF8F2'; g.fillRect(0, 0, S2, S2);
+  // gingham: red bands both ways, darker where they cross
+  const band = cell / 2;
+  g.fillStyle = 'rgba(226, 70, 80, 0.42)';
+  for (let k = 0; k < PN * 2; k += 2) { g.fillRect(m + k * band, 0, band, S2); g.fillRect(0, m + k * band, S2, band); }
+  // the edges of each square, faint, so it's clear where a dish can go
+  g.strokeStyle = 'rgba(120, 30, 40, 0.18)'; g.lineWidth = 3;
+  for (let k = 0; k <= PN; k++) { g.beginPath(); g.moveTo(m + k * cell, m); g.lineTo(m + k * cell, S2 - m); g.stroke(); g.beginPath(); g.moveTo(m, m + k * cell); g.lineTo(S2 - m, m + k * cell); g.stroke(); }
+  // a hem
+  g.strokeStyle = 'rgba(200, 50, 60, 0.75)'; g.lineWidth = 10; g.strokeRect(m * 0.45, m * 0.45, S2 - m * 0.9, S2 - m * 0.9);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4;
+  return t;
+}
+
+/* the dishes, built from their squares (so an L-shaped pizza really is L-shaped) */
+const own = (o) => { o.userData.own = true; return o; };
+function slab(cells, w, h, y, hex, g, round = false) {
+  // one block per square, plus bridges between squares of the same dish so it reads as one thing
+  const mat = PM(hex), set = new Set(cells);
+  for (const i of cells) {
+    const p = psq(i), m = new THREE.Mesh(round ? new THREE.CylinderGeometry(w / 2, w / 2, h, 20) : new THREE.BoxGeometry(w, h, w), mat);
+    m.position.set(p.x, y + h / 2, p.z); g.add(m);
+    for (const j of [i + 1, i + PN]) {
+      if (!set.has(j) || (j === i + 1 && i % PN === PN - 1)) continue;
+      const q = psq(j), b = new THREE.Mesh(new THREE.BoxGeometry(j === i + 1 ? PCS : w, h, j === i + 1 ? w : PCS), mat);
+      b.position.set((p.x + q.x) / 2, y + h / 2, (p.z + q.z) / 2); g.add(b);
+    }
+  }
+  return y + h;
+}
+function dots(cells, n, hex, r, y, g, seed, flat = false) {
+  const mat = PM(hex);
+  for (const i of cells) {
+    const p = psq(i);
+    for (let k = 0; k < n; k++) {
+      const a = (seed + i * 7 + k * 2.4) % (Math.PI * 2), d = PCS * (0.08 + ((i * 13 + k * 5) % 7) / 7 * 0.2);
+      const m = new THREE.Mesh(flat ? new THREE.CylinderGeometry(r, r, 0.02, 14) : new THREE.SphereGeometry(r, 8, 6), mat);
+      m.position.set(p.x + Math.cos(a) * d, y + (flat ? 0.01 : r * 0.4), p.z + Math.sin(a) * d); g.add(m);
+    }
+  }
+}
+function lineAxis(cells) {
+  const ps = cells.map(psq), cx = ps.reduce((s, p) => s + p.x, 0) / ps.length, cz = ps.reduce((s, p) => s + p.z, 0) / ps.length;
+  const alongX = cells.every((i) => Math.floor(i / PN) === Math.floor(cells[0] / PN));
+  return { cx, cz, alongX, len: cells.length * PCS };
+}
+function foodRoll(g, ax, r, len, hex, y) {
+  const mat = PM(hex), body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len - r * 2, 18), mat);
+  body.rotation.z = Math.PI / 2; g.add(body);
+  for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 12), mat); e.position.x = s * (len / 2 - r); g.add(e); }
+  return g;
+}
+const FOOD = {
+  strawberry(cells, g) {
+    const p = psq(cells[0]), b = new THREE.Mesh(new THREE.SphereGeometry(PCS * 0.27, 18, 14), PM('#E8394B'));
+    b.scale.set(1, 1.15, 1); b.position.set(p.x, 0.36, p.z); g.add(b);
+    for (let k = 0; k < 5; k++) { const l = new THREE.Mesh(new THREE.ConeGeometry(PCS * 0.07, PCS * 0.18, 5), PM('#58B368')); const a = k / 5 * Math.PI * 2; l.position.set(p.x + Math.cos(a) * 0.08, 0.66, p.z + Math.sin(a) * 0.08); l.rotation.set(Math.sin(a) * 1.2, 0, -Math.cos(a) * 1.2); g.add(l); }
+    dots(cells, 6, '#FFE9A8', 0.022, 0.42, g, 1);
+  },
+  sandwich(cells, g) {
+    let y = slab(cells, PCS * 0.76, 0.1, 0.09, '#F2D49B', g);
+    y = slab(cells, PCS * 0.82, 0.04, y, '#7BC86C', g);
+    y = slab(cells, PCS * 0.74, 0.05, y, '#E8504B', g);
+    y = slab(cells, PCS * 0.78, 0.04, y, '#FFD54A', g);
+    slab(cells, PCS * 0.76, 0.11, y, '#F2D49B', g);
+  },
+  hotdog(cells, g) {
+    const a = lineAxis(cells), h = new THREE.Group();
+    foodRoll(h, a, PCS * 0.2, a.len * 0.94, '#E9B872', 0); h.scale.y = 0.75;
+    const dog = new THREE.Group(); foodRoll(dog, a, PCS * 0.11, a.len, '#C2453A', 0); dog.position.y = PCS * 0.14; h.add(dog);
+    for (let k = 0; k < 6; k++) { const m = new THREE.Mesh(new THREE.SphereGeometry(PCS * 0.04, 8, 6), PM('#FFC93C')); m.position.set((k / 5 - 0.5) * a.len * 0.75, PCS * 0.25, (k % 2 ? 1 : -1) * PCS * 0.04); h.add(m); }
+    h.position.set(a.cx, 0.24, a.cz); if (!a.alongX) h.rotation.y = Math.PI / 2; g.add(h);
+  },
+  baguette(cells, g) {
+    const a = lineAxis(cells), h = new THREE.Group();
+    foodRoll(h, a, PCS * 0.22, a.len * 0.96, '#D99A4E', 0); h.scale.y = 0.8;
+    for (let k = 0; k < 5; k++) { const m = new THREE.Mesh(new THREE.BoxGeometry(PCS * 0.06, 0.05, PCS * 0.26), PM('#F5D9A6')); m.position.set((k / 4 - 0.5) * a.len * 0.7, PCS * 0.2, 0); m.rotation.y = 0.6; h.add(m); }
+    h.position.set(a.cx, 0.27, a.cz); if (!a.alongX) h.rotation.y = Math.PI / 2; g.add(h);
+  },
+  pie(cells, g) {
+    const ps = cells.map(psq), cx = ps.reduce((s, p) => s + p.x, 0) / 4, cz = ps.reduce((s, p) => s + p.z, 0) / 4;
+    const tin = new THREE.Mesh(new THREE.CylinderGeometry(PCS * 0.86, PCS * 0.74, 0.22, 32), PM('#E3B06C')); tin.position.set(cx, 0.2, cz); g.add(tin);
+    const fill = new THREE.Mesh(new THREE.CylinderGeometry(PCS * 0.76, PCS * 0.76, 0.04, 32), PM('#B8283C')); fill.position.set(cx, 0.31, cz); g.add(fill);
+    for (let k = -2; k <= 2; k++) for (const rot of [0, Math.PI / 2]) {
+      const w = Math.sqrt(Math.max(0, 0.76 ** 2 - (k * 0.28) ** 2)) * 2 * PCS;
+      const s2 = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, PCS * 0.09), PM('#F0C98A')); s2.position.set(cx, 0.345, cz); s2.rotation.y = rot;
+      s2.translateZ(k * 0.28 * PCS); g.add(s2);
+    }
+  },
+  cheese(cells, g) {
+    const y = slab(cells, PCS * 0.8, 0.3, 0.09, '#FFD54A', g);
+    dots(cells, 2, '#E8B931', PCS * 0.08, y, g, 3, true);
+  },
+  pizza(cells, g) {
+    let y = slab(cells, PCS * 0.86, 0.07, 0.09, '#E7B26B', g);
+    y = slab(cells, PCS * 0.76, 0.04, y, '#FFD86B', g);
+    dots(cells, 2, '#C8403A', PCS * 0.11, y, g, 5, true);
+    dots(cells, 2, '#5FA868', PCS * 0.04, y, g, 2);
+  },
+  watermelon(cells, g) {
+    let y = slab(cells, PCS * 0.84, 0.08, 0.09, '#3FA34D', g);
+    y = slab(cells, PCS * 0.8, 0.03, y, '#EAF7D9', g);
+    y = slab(cells, PCS * 0.78, 0.16, y, '#FF5D6C', g);
+    dots(cells, 3, '#2B2B3A', 0.03, y, g, 7);
+  },
+  pretzel(cells, g) {
+    const set = new Set(cells), mat = PM('#B9733A');
+    for (const i of cells) {
+      const p = psq(i), t = new THREE.Mesh(new THREE.TorusGeometry(PCS * 0.26, PCS * 0.08, 10, 22), mat);
+      t.rotation.x = Math.PI / 2; t.position.set(p.x, 0.17, p.z); g.add(t);
+      for (const j of [i + 1, i + PN]) {
+        if (!set.has(j) || (j === i + 1 && i % PN === PN - 1)) continue;
+        const q = psq(j), b = new THREE.Mesh(new THREE.CylinderGeometry(PCS * 0.08, PCS * 0.08, PCS * 0.5, 10), mat);
+        b.rotation.set(j === i + PN ? Math.PI / 2 : 0, 0, j === i + 1 ? Math.PI / 2 : 0); b.position.set((p.x + q.x) / 2, 0.17, (p.z + q.z) / 2); g.add(b);
+      }
+    }
+    dots(cells, 4, '#FFFFFF', 0.025, 0.25, g, 9);
+  },
+  cake(cells, g) {
+    let y = slab(cells, PCS * 0.8, 0.14, 0.09, '#F7D7A8', g);
+    y = slab(cells, PCS * 0.8, 0.04, y, '#FFF5F7', g);
+    y = slab(cells, PCS * 0.8, 0.14, y, '#F7D7A8', g);
+    y = slab(cells, PCS * 0.82, 0.06, y, '#FF9EC4', g);
+    dots(cells, 3, '#7FD3FF', 0.025, y, g, 4); dots(cells, 2, '#FFE07A', 0.025, y, g, 8);
+    const top = psq(Math.min(...cells)), ch = new THREE.Mesh(new THREE.SphereGeometry(PCS * 0.09, 12, 10), PM('#D7263D')); ch.position.set(top.x, y + 0.08, top.z); g.add(ch);
+  },
+};
+// one dish on its napkin; the napkin's material is its own, so it can change color when the dish is snagged
+function buildDish(dish, cells, napkinHex) {
+  const g = new THREE.Group(), food = new THREE.Group();
+  const napMat = own(new THREE.MeshStandardMaterial({ color: toLinear(napkinHex), roughness: 0.9 }));
+  const set = new Set(cells);
+  for (const i of cells) {
+    const p = psq(i), n = new THREE.Mesh(new THREE.BoxGeometry(PCS * 0.94, 0.03, PCS * 0.94), napMat); n.position.set(p.x, 0.075, p.z); g.add(n);
+    for (const j of [i + 1, i + PN]) {
+      if (!set.has(j) || (j === i + 1 && i % PN === PN - 1)) continue;
+      const q = psq(j), b = new THREE.Mesh(new THREE.BoxGeometry(j === i + 1 ? PCS : PCS * 0.94, 0.03, j === i + 1 ? PCS * 0.94 : PCS), napMat);
+      b.position.set((p.x + q.x) / 2, 0.075, (p.z + q.z) / 2); g.add(b);
+    }
+  }
+  FOOD[dish](cells, food);
+  g.add(food);
+  const ps = cells.map(psq);
+  g.userData = { napMat, food, cx: ps.reduce((s, p) => s + p.x, 0) / ps.length, cz: ps.reduce((s, p) => s + p.z, 0) / ps.length };
+  // pivot the food around its middle, so it can wobble and drop in place
+  food.position.set(g.userData.cx, 0, g.userData.cz); for (const c of food.children) { c.position.x -= g.userData.cx; c.position.z -= g.userData.cz; }
+  return g;
+}
+function disposeGroup(g) {
+  g.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    const m = o.material;
+    if (m && !Array.isArray(m) && ((m.userData && m.userData.own) || o.userData.ghostMat)) { if (m.map) m.map.dispose(); m.dispose(); }
+    if (Array.isArray(m)) for (const x of m) if (x.userData && x.userData.own) { if (x.map) x.map.dispose(); x.dispose(); }
+  });
+}
+
+/* entering and leaving */
+async function enterPicnic(id) {
+  if (pic && pic.id === id) return;
+  if (pic) exitPicnic();
+  if (game) exitGame();
+  if (photo) exitPhoto();
+  closeComposer(); closeCard(); hideHint();
+  let v;
+  try { v = await api('GET', '/api/game?picnic=' + encodeURIComponent(id)); }
+  catch (e) { const m = myBud(); if (m) say(m, 'hmm, I can’t find that picnic', 2200); return; }
+  if (game) exitGame();
+  pic = { id, v, sel: null, rot: 0, flip: false, at: null, hover: null, busy: false, msg: '', group: new THREE.Group(), pieces: [], ghost: null, ghostCells: [], wobble: new Set(), drops: [], hidden: [], key: picKey(v) };
+  scene.add(pic.group);
+  // the blanket
+  const bw = PN * PCS + 0.3, mats = [PM('#F3E3DC'), PM('#F3E3DC'), own(new THREE.MeshStandardMaterial({ map: blanketTexture(), roughness: 0.95 })), PM('#F3E3DC'), PM('#F3E3DC'), PM('#F3E3DC')];
+  const blanket = new THREE.Mesh(new THREE.BoxGeometry(bw, 0.06, bw), mats); blanket.position.y = 0.03; pic.group.add(blanket);
+  // clear the spot: trees, rocks, flowers, pumpkins and the campfire step aside (and come back when you leave)
+  const near = (o) => Math.abs(o.position.x) < PHALF + 1.4 && Math.abs(o.position.z) < PSEAT + 1.6;
+  const hide = (o) => { if (o && o.visible && near(o)) { o.visible = false; pic.hidden.push(o); } };
+  if (islandDecor) for (const o of islandDecor.children) if (!o.userData.ground) hide(o);
+  for (const pk of skyBits.pumpkins) hide(pk);
+  if (skyBits.fire) hide(skyBits.fire.group);
+  if (ftree.group && ftree.group.visible) { ftree.group.visible = false; pic.hidden.push(ftree.group); }
+  for (const b of buds) { b.gameHidden = true; b.root.visible = false; }
+  pic.savedPitch = cam.pitch;
+  cam.follow = null; camGoal.target.set(0, 0.2, 0); camGoal.pitch = 0.98;
+  camGoal.yaw = v.players.indexOf(v.me) === 0 ? Math.PI : 0;   // your end of the blanket is nearest you
+  if (params.get('picnic') !== id) history.replaceState(null, '', `${location.pathname}?picnic=${encodeURIComponent(id)}`);
+  gameSeg.hidden = true; gameBar.setAttribute('aria-label', 'Picnic Clash'); gameBar.hidden = false;
+  S.play('whoosh', { gain: 0.8 });
+  seatBuds();
+  renderPicnic();
+  camGoal.dist = picDist();
+  pic.poll = setInterval(pollPicnic, 3000);
+}
+function picDist() {
+  const barH = gameBar.getBoundingClientRect().height + 24, availH = Math.max(200, innerHeight - barH - 64);
+  const tv = Math.tan(camera.fov * Math.PI / 360);
+  const halfV = Math.atan(tv * availH / innerHeight), halfH = Math.atan(tv * camera.aspect * 0.94);
+  // across: the blanket's width; up and down: the seats too, but seen at a slant, so they take less room
+  return Math.max((PHALF + 0.5) / Math.tan(halfH), (PSEAT + 0.4) * 0.86 / Math.tan(halfV)) + 1;
+}
+function exitPicnic() {
+  if (!pic) return;
+  clearInterval(pic.poll);
+  for (const o of pic.hidden) o.visible = true;
+  clearPicnicBoard(); disposeGroup(pic.group); scene.remove(pic.group);
+  for (const b of buds) {
+    b.gameHidden = false; b.root.visible = true;
+    if (b.gamePiece) { b.gamePiece = false; b.held = false; b.faceSpot = null; b.look = null; b.lookUntil = 0; b.lookCameraUntil = T + 1; b.timer = rand(0.5, 2); }
+  }
+  const g = myPicnics.find((x) => x.id === pic.id);
+  if (g) { g.myTurn = picMyTurn(); g.done = pic.v.status !== 'playing'; }
+  myPicnics = myPicnics.filter((x) => !x.done);
+  camGoal.pitch = pic.savedPitch; camGoal.yaw = null; camGoal.dist = fitDist();
+  setTimeout(() => { if (!game && !pic && !photo) camGoal.pitch = null; }, 1500);
+  gameBar.hidden = true; dishTray.hidden = true; gameBar.setAttribute('aria-label', 'Peekaboo');
+  pic = null;
+  history.replaceState(null, '', location.pathname);
+  canvas.classList.remove('over-bud');
+}
+// the two buds sit at their ends of the blanket, looking at the food
+function seatBuds() {
+  for (const id of pic.v.players) {
+    const b = budById(id), s = seatOf(id);
+    if (!b) continue;
+    if (b.state === 'act') endActivity(b);
+    b.gameHidden = false; b.root.visible = true; b.gamePiece = true; b.placed = true;
+    b.x = s.x; b.z = s.z; b.state = b.y > 0 ? b.state : 'idle'; b.target = null; b.partner = null;
+    b.held = true; b.lookCameraUntil = 0; b.faceSpot = { x: 0, z: 0 }; b.look = { x: 0, y: 0.2, z: 0 }; b.lookUntil = Infinity;
+    b.heading = Math.atan2(-s.x, -s.z);
+  }
+}
+const picKey = (v) => [v.status, v.turn, v.moveCount].join('|');
+
+async function pollPicnic() {
+  if (!pic || pic.busy || document.hidden || pic.v.status !== 'playing' || picMyTurn()) return;
+  try {
+    const v = await api('GET', '/api/game?picnic=' + encodeURIComponent(pic.id));
+    if (pic && v.id === pic.id && picKey(v) !== pic.key) {
+      const theirs = v.moves.length && v.moveCount > pic.v.moveCount ? v.moves[v.moves.length - 1] : null;
+      pic.v = v; pic.key = picKey(v); pic.sel = null; pic.at = null;
+      pic.msg = theirs ? (theirs.pass ? `${picThem()} couldn’t fit anything.` : theirs.steals.length ? `${picThem()} snagged ${theirs.steals.length === 1 ? 'your ' + DISHES[v.pieces[theirs.steals[0]].dish].name : theirs.steals.length + ' of your dishes'}!` : `${picThem()} set down a ${DISHES[theirs.dish].name}.`) : '';
+      if (v.myTurn) S.play('chime');
+      renderPicnic(theirs);
+    }
+  } catch (e) {}
+}
+
+/* the board */
+function clearPicnicBoard() {
+  for (const g of pic.pieces) { pic.group.remove(g); disposeGroup(g); }
+  pic.pieces = [];
+  clearGhost();
+}
+function clearGhost() {
+  if (pic.ghost) { pic.group.remove(pic.ghost); disposeGroup(pic.ghost); pic.ghost = null; }
+}
+// lastMove: the move to animate (the dish drops in, snagged dishes change napkins)
+function renderPicnicBoard(lastMove) {
+  clearPicnicBoard();
+  const v = pic.v, newest = lastMove && !lastMove.pass ? v.pieces.length - 1 : -1;
+  v.pieces.forEach((p, k) => {
+    const stolen = lastMove && lastMove.steals && lastMove.steals.includes(k);
+    const g = buildDish(p.dish, p.cells, stolen ? napkinOf(v.players.find((x) => x !== p.owner)) : napkinOf(p.owner));
+    pic.group.add(g); pic.pieces.push(g);
+    if (k === newest) { g.userData.food.position.y = 3.2; pic.drops.push({ g, t: 0, kind: 'drop' }); }
+    if (stolen) pic.drops.push({ g, t: -0.45, kind: 'snag', to: toLinear(napkinOf(p.owner)) });
+  });
+  if (lastMove && !lastMove.pass) {
+    S.play('whoosh', { gain: 0.4, rate: 1.3 });
+    if (lastMove.steals.length) {
+      const thief = budById(lastMove.by), loser = budById(v.players.find((x) => x !== lastMove.by));
+      setTimeout(() => {
+        if (!pic) return;
+        S.play('sparkle', { gain: 0.8 });
+        if (thief && thief.gamePiece) { thief.y = 0.01; thief.vy = 7; thief.happyUntil = T + 2.5; say(thief, pick(['mine now!', 'yoink!', 'snack secured', 'thank you very much']), 2000); }
+        if (loser && loser.gamePiece) { loser.syv += 0.25; say(loser, pick(['hey!!', 'my snack…', 'nooo', 'rude!']), 2000); }
+      }, 700);
+    }
+  }
+  updateGhost();
+}
+function updateGhost() {
+  clearGhost();
+  pic.wobble = new Set();
+  const cells = picGhostCells();
+  if (!cells || !picMyTurn()) { colorPicnicCursor(); return; }
+  const legal = picLegal();
+  const g = buildDish(pic.v.offers[pic.sel], cells, napkinOf(pic.v.me));
+  g.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = legal ? 0.62 : 0.3; o.material.depthWrite = false; o.userData.ghostMat = true; } });
+  if (!legal) g.userData.napMat = null;
+  // a tint under the squares: green where it fits, red where something's in the way
+  const o = picOwners();
+  for (const i of cells) {
+    const p = psq(i), sq = new THREE.Mesh(new THREE.PlaneGeometry(PCS * 0.96, PCS * 0.96), new THREE.MeshBasicMaterial({ color: o[i] === null ? 0x7BE38B : 0xFF5D6C, transparent: true, opacity: 0.5, depthWrite: false }));
+    sq.userData.ghostMat = true; sq.rotation.x = -Math.PI / 2; sq.position.set(p.x, 0.065, p.z); sq.renderOrder = 2; g.add(sq);
+  }
+  g.position.y = pic.at != null ? 0.12 : 0.22;
+  pic.ghost = g; pic.group.add(g);
+  if (legal) pic.wobble = new Set(picSteals(cells));
+  colorPicnicCursor();
+}
+function colorPicnicCursor() {
+  const btn = gameRow.querySelector('[data-place]');
+  if (btn) btn.disabled = !picLegal();
+  const n = pic.wobble.size;
+  const hint = document.getElementById('picHint');
+  if (hint) hint.textContent = n ? `This snags ${n === 1 ? 'a dish' : n + ' dishes'}! 😈` : '';
+}
+
+/* taps */
+function picCell(x, y) {
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.06);
+  if (!ray.ray.intersectPlane(plane, hitPoint)) return null;
+  const cx = Math.floor(hitPoint.x / PCS + PN / 2), cz = Math.floor(hitPoint.z / PCS + PN / 2);
+  if (cx < 0 || cz < 0 || cx >= PN || cz >= PN) return null;
+  return cz * PN + cx;
+}
+function picHover(x, y) {
+  const c = picCell(x, y);
+  canvas.classList.toggle('over-bud', c != null && picMyTurn() && pic.sel != null);
+  if (c === pic.hover) return;
+  pic.hover = c;
+  if (pic.at == null) updateGhost();
+}
+function picTap(x, y) {
+  if (!picMyTurn() || pic.busy) return;
+  const c = picCell(x, y);
+  if (c == null) return;
+  if (pic.sel == null) { pic.msg = 'Pick a dish first.'; renderPicnicText(); S.play('click', { gain: 0.6 }); return; }
+  // tapping the same spot again sets it down
+  if (pic.at === c && picLegal()) { picPlace(); return; }
+  pic.at = c; pic.hover = c;
+  S.play('pop', { rate: 1.1, gain: 0.6 });
+  updateGhost();
+  pic.msg = picLegal() ? 'Tap it again (or Set it down) to put it there.' : 'Something’s in the way there.';
+  renderPicnicText();
+}
+function picTurn() { if (!picMyTurn() || pic.sel == null) return; pic.rot = (pic.rot + 1) % 4; S.play('click'); updateGhost(); renderTray(); }
+function picFlip() { if (!picMyTurn() || pic.sel == null) return; pic.flip = !pic.flip; S.play('click'); updateGhost(); renderTray(); }
+
+async function picPlace() {
+  if (!picLegal()) return;
+  const cells = picGhostCells(), offer = pic.sel;
+  pic.busy = true; renderPicnicUi();
+  try {
+    const v = await api('POST', '/api/game', { action: 'pc-place', id: pic.id, offer, cells });
+    if (!pic) return;
+    const last = v.last;
+    pic.v = v; pic.key = picKey(v); pic.busy = false; pic.sel = null; pic.at = null; pic.rot = 0; pic.flip = false;
+    pic.msg = last.steals.length ? `You snagged ${last.steals.length === 1 ? 'their ' + DISHES[v.pieces[last.steals[0]].dish].name : last.steals.length + ' dishes'}!` : '';
+    renderPicnic(last);
+  } catch (e) { if (pic) { pic.busy = false; pic.msg = e.message; renderPicnic(); } }
+}
+async function picPass() {
+  pic.busy = true; renderPicnicUi();
+  try { const v = await api('POST', '/api/game', { action: 'pc-pass', id: pic.id }); if (!pic) return; pic.v = v; pic.key = picKey(v); pic.busy = false; pic.msg = ''; renderPicnic(); }
+  catch (e) { if (pic) { pic.busy = false; pic.msg = e.message; renderPicnic(); } }
+}
+async function picResign() {
+  pic.busy = true; renderPicnicUi();
+  try { const v = await api('POST', '/api/game', { action: 'pc-resign', id: pic.id }); if (!pic) return; pic.v = v; pic.key = picKey(v); pic.busy = false; renderPicnic(); }
+  catch (e) { if (pic) { pic.busy = false; pic.msg = e.message; renderPicnic(); } }
+}
+async function startPicnicWith(them) {
+  const res = await api('POST', '/api/game', { action: 'pc-new', opponent: them });
+  if (!myPicnics.some((g) => g.id === res.id)) myPicnics.push({ id: res.id, them, myTurn: true });
+  await enterPicnic(res.id);
+}
+
+/* the panel */
+function renderPicnic(lastMove) { renderPicnicBoard(lastMove); renderPicnicUi(); }
+function renderTray() {
+  dishTray.textContent = '';
+  const v = pic.v;
+  dishTray.hidden = !(picMyTurn() && v.offers);
+  if (dishTray.hidden) return;
+  v.offers.forEach((id, i) => {
+    const d = DISHES[id], b = el('button', 'dish'); b.type = 'button';
+    b.setAttribute('aria-pressed', String(pic.sel === i)); b.setAttribute('aria-label', `${d.name}, ${d.cells.length} square${d.cells.length > 1 ? 's' : ''}`);
+    const sh = pic.sel === i ? shapeOf(id, pic.rot, pic.flip) : shapeOf(id, 0, false);
+    const w = Math.max(...sh.map((p) => p[0])) + 1, h = Math.max(...sh.map((p) => p[1])) + 1, grid = el('span', 'shape');
+    grid.style.gridTemplateColumns = `repeat(${w}, 7px)`;
+    const on = new Set(sh.map(([x, y]) => y * w + x));
+    for (let k = 0; k < w * h; k++) grid.append(el('i', on.has(k) ? null : 'off'));
+    b.append(el('span', 'em', d.icon), el('span', 'nm', d.name), grid);
+    b.addEventListener('click', () => {
+      if (pic.busy) return;
+      if (pic.sel !== i) { pic.sel = i; pic.rot = 0; pic.flip = false; }
+      S.play('pop', { rate: 1.2, gain: 0.6 });
+      pic.msg = pic.at == null ? 'Now tap the blanket where it should go.' : pic.msg;
+      updateGhost(); renderTray(); renderPicnicText();
+    });
+    dishTray.append(b);
+  });
+  const tools = el('div', 'dish-tools');
+  const turn = el('button', null, '⟳'); turn.type = 'button'; turn.title = 'Turn it (R)'; turn.setAttribute('aria-label', 'Turn the dish');
+  const flip = el('button', null, '⇋'); flip.type = 'button'; flip.title = 'Flip it (F)'; flip.setAttribute('aria-label', 'Flip the dish');
+  turn.disabled = flip.disabled = pic.sel == null || pic.busy;
+  turn.addEventListener('click', picTurn); flip.addEventListener('click', picFlip);
+  tools.append(turn, flip); dishTray.append(tools);
+}
+function renderPicnicText() {
+  const v = pic.v, them = picThem(), me = v.me;
+  let text = '';
+  if (v.status === 'playing' && picMyTurn()) {
+    text = !v.canMove ? 'None of your dishes fit anywhere. Skip this turn.'
+      : `Your turn (${v.left[me]} left). Pick a dish, then tap the blanket. Fence in ${them}’s dishes to snag them!`;
+  } else if (v.status === 'playing') {
+    text = `${them} is choosing a dish. We’ll DM you when it’s your turn.`;
+  } else {
+    const s = v.score, mine = s[me], theirs = s[v.them];
+    text = v.status === 'resigned'
+      ? v.winner === me ? `${them} packed up early. You win! 🧺` : 'You packed up early. Next time!'
+      : v.winner === 'tie' ? `It’s a tie, ${mine} to ${theirs}!`
+      : v.winner === me ? `You win, ${mine} to ${theirs}! ${picBud(me)} gets a picnic basket 🧺` : `${them} wins, ${theirs} to ${mine}. So close!`;
+  }
+  gameText.textContent = '';
+  gameText.append(text);
+  if (pic.msg) { gameText.append(el('br')); gameText.append(el('b', null, pic.msg)); }
+  const hint = el('span', null); hint.id = 'picHint'; gameText.append(el('br'), hint);
+  const leg = el('span', 'napkins');
+  for (const id of v.players) { const s2 = el('span'); const sw = el('i'); sw.style.background = napkinOf(id); s2.append(sw, id === me ? 'your napkins' : `${them}’s`); leg.append(s2); }
+  gameText.append(el('br'), leg);
+  colorPicnicCursor();
+}
+function renderPicnicUi() {
+  if (!pic) return;
+  const v = pic.v, me = v.me, them = picThem(), s = v.score;
+  gameTitle.textContent = `Picnic Clash with ${them}`;
+  gameScore.textContent = `you ${s[me]} · ${them} ${s[v.them]}`;
+  gameSeg.hidden = true;
+  renderTray();
+  gameRow.textContent = '';
+  const btn = (label, fn, primary = false, disabled = false) => {
+    const b = el('button', 'btn' + (primary ? ' primary' : ''), label); b.type = 'button'; b.disabled = disabled || pic.busy;
+    b.addEventListener('click', fn); gameRow.append(b); return b;
+  };
+  if (v.status === 'playing' && picMyTurn()) {
+    btn('Leave', exitPicnic);
+    if (!v.canMove) btn('Skip turn', picPass, true);
+    else btn('Set it down', picPlace, true, !picLegal()).dataset.place = '1';
+  } else if (v.status === 'playing') {
+    const give = btn('Give up', () => { if (give.dataset.sure !== '1') { give.dataset.sure = '1'; give.textContent = 'Sure? They win'; return; } picResign(); });
+    btn('Leave', exitPicnic, true);
+  } else {
+    btn('Leave', exitPicnic);
+    btn('Rematch', async () => { const t = v.them; pic.busy = true; renderPicnicUi(); try { exitPicnic(); await startPicnicWith(t); } catch (e) { const m = myBud(); if (m) say(m, e.message, 2400); } }, true);
+  }
+  renderPicnicText();
+  requestAnimationFrame(() => { if (pic) camGoal.dist = picDist(); });
+}
+
+/* every frame: dishes dropping in, snagged napkins changing color, dishes you're about to snag wobbling */
+function picTick(dt) {
+  if (!pic) return;
+  for (let i = pic.drops.length - 1; i >= 0; i--) {
+    const d = pic.drops[i]; d.t += dt;
+    if (d.kind === 'drop') {
+      const k = Math.min(1, d.t / 0.45), f = d.g.userData.food;
+      f.position.y = k < 1 ? 3.2 * (1 - k * k) : Math.max(0, Math.sin(Math.min(1, (d.t - 0.45) / 0.22) * Math.PI) * 0.18);
+      if (k >= 1 && !d.landed) { d.landed = true; puff(d.g.userData.cx, d.g.userData.cz, 0.5); S.play('thump', { gain: 0.5, rate: 1.3 }); }
+      if (d.t > 0.7) { f.position.y = 0; pic.drops.splice(i, 1); }
+    } else if (d.kind === 'snag') {
+      if (d.t < 0) continue;
+      const nm = d.g.userData.napMat, f = d.g.userData.food;
+      if (!d.puffed) { d.puffed = true; puff(d.g.userData.cx, d.g.userData.cz, 0.7); }
+      nm.color.lerp(d.to, Math.min(1, dt * 6));
+      f.rotation.y = Math.sin(Math.min(1, d.t / 0.6) * Math.PI) * 0.6; f.position.y = Math.sin(Math.min(1, d.t / 0.6) * Math.PI) * 0.5;
+      if (d.t > 0.6) { nm.color.copy(d.to); f.rotation.y = 0; f.position.y = 0; pic.drops.splice(i, 1); }
+    }
+  }
+  pic.pieces.forEach((g, k) => {
+    const f = g.userData.food, w = pic.wobble.has(k);
+    if (w) { f.rotation.z = Math.sin(T * 18) * 0.07; f.position.y = 0.04 + Math.abs(Math.sin(T * 9)) * 0.06; }
+    else if (f.rotation.z) { f.rotation.z = 0; if (!pic.drops.some((d) => d.g === g)) f.position.y = 0; }
+  });
+}
+
+function picnicButton(bud) {
+  const g = myPicnics.find((x) => x.them === bud.data.id);
+  const b = el('button', 'btn', g ? (g.myTurn ? '🧺 Your turn: picnic' : '🧺 Picnic Clash') : '🧺 Picnic Clash'); b.type = 'button';
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { if (g) await enterPicnic(g.id); else await startPicnicWith(bud.data.id); }
+    catch (e) { b.disabled = false; b.textContent = e.message; }
+  });
+  return b;
+}
+function renderPicnicList() {
+  if (!myPicnics.length) return;
+  const box = el('section', 'diary games');
+  box.append(el('h3', null, 'Picnic Clash'));
+  const ul = el('ul');
+  for (const g of myPicnics) {
+    const other = budById(g.them), who = other ? other.data.ownerName || nameOf(other) : 'a friend';
+    const li = el('li', g.myTurn ? 'fresh' : null);
+    const open = el('button', 'btn', g.myTurn ? 'Your turn' : 'Open'); open.type = 'button';
+    open.addEventListener('click', () => enterPicnic(g.id));
+    li.append(el('span', 'ico', '🧺'), el('span', null, `with ${who}`), open);
+    ul.append(li);
+  }
+  box.append(ul);
+  cardBody.append(box);
+}
+
 // the card buttons: on a friend's bud, and the list on your own
 // Doodle Duel (doodle.html): a drawing game between friends, in turns
 let myDoodles = [];
@@ -3375,6 +3987,7 @@ function peekabooButton(bud) {
 }
 function renderGamesList() {
   renderDoodlesList();
+  renderPicnicList();
   if (!myGames.length) return;
   const box = el('section', 'diary games');
   box.append(el('h3', null, 'Peekaboo'));
@@ -3414,6 +4027,13 @@ gameSeg.addEventListener('click', (e) => {
   renderGame();
 });
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && game && !game.busy) exitGame(); });
+addEventListener('keydown', (e) => {
+  if (!pic || pic.busy || e.target.closest?.('input, textarea')) return;
+  if (e.key === 'Escape') exitPicnic();
+  else if (e.key === 'r' || e.key === 'R') picTurn();
+  else if (e.key === 'f' || e.key === 'F') picFlip();
+  else if (e.key === 'Enter' && picLegal()) picPlace();
+});
 
 const hint = document.getElementById('hint');
 function hideHint() { hint.classList.add('gone'); }
@@ -3445,6 +4065,7 @@ function frame(now) {
   separateBuds();
   photoTick();
   gameTick(dt);
+  picTick(dt);
   updateSky(dt);
   updateFriendTree();
   for (const c of clouds) {
@@ -3472,6 +4093,7 @@ function resize() {
   camera.fov = innerWidth < innerHeight ? 50 : 38;
   camera.updateProjectionMatrix();
   if (game) camGoal.dist = gameDist();
+  if (pic) camGoal.dist = picDist();
 }
 // how far back the camera sits to see the whole island, wide or narrow screen
 function fitDist() {
@@ -3519,13 +4141,14 @@ function showCenter(title, text, linkText, href = '/') {
   myGames = world.games || [];
   myDoodles = world.doodles || [];
   myMail = world.doodleMail || { count: 0, fresh: 0 };
+  myPicnics = world.picnics || [];
   news = world.news || null;
   if (news) {
     document.getElementById('newsBtn').hidden = false;
     document.getElementById('newsDot').hidden = !!news.seen;
     const OPEN_NEWS = params.get('news') === '1';
     if (OPEN_NEWS) setTimeout(openNews, 1200);
-    else if (!news.seen && !DROP && !GAME_ID) setTimeout(() => { if (card.hidden && !photo && !composing && !game) openNews(); }, 9500);
+    else if (!news.seen && !DROP && !GAME_ID) setTimeout(() => { if (card.hidden && !photo && !composing && !game && !pic) openNews(); }, 9500);
   }
   hasProfile = world.me.hasProfile !== false;
   dmsOn = world.me.dms !== false;
@@ -3540,7 +4163,7 @@ function showCenter(title, text, linkText, href = '/') {
   // seasonal gear that turned up since last time: "a witch hat washed up on the shore!"
   const found = (world.me.found || []).map((id) => myWardrobe?.owned.find((o) => o.id === id)).filter(Boolean);
   if (found.length) setTimeout(() => {
-    const me = myBud(); if (!me) return;
+    const me = myBud(); if (!me || game || pic) return;
     const what = found.map((f) => `a ${f.name.toLowerCase()}`).join(' and ');
     say(me, `${what} washed up on the shore! it’s in my wardrobe`, 4200); me.syv -= 0.15; S.play('sparkle');
   }, 7000);
@@ -3585,10 +4208,11 @@ function showCenter(title, text, linkText, href = '/') {
     document.getElementById('titleSub').textContent = 'Your bud just moved in.';
     setTimeout(() => { mine.heading = Math.atan2(camera.position.x - mine.x, camera.position.z - mine.z); say(mine, 'wheeeee!', 1500); }, 200);
   }
-  if (mine && !DROP && !GAME_ID && !params.get('bud')) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
+  if (mine && !DROP && !GAME_ID && !PICNIC_ID && !params.get('bud')) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
   if (GAME_ID && mine) setTimeout(() => enterGame(GAME_ID), 700);
+  else if (PICNIC_ID && mine) setTimeout(() => enterPicnic(PICNIC_ID), 700);
   const OPEN_BUD = /^\d{5,25}$/.test(params.get('bud') || '') ? buds.find((b) => b.data.id === params.get('bud')) : null;
-  if (OPEN_BUD && !GAME_ID) {
+  if (OPEN_BUD && !GAME_ID && !PICNIC_ID) {
     history.replaceState(null, '', location.pathname);
     setTimeout(() => { cam.follow = OPEN_BUD; cam.followUntil = T + 5; camGoal.dist = Math.max(9, R * 0.85); OPEN_BUD.syv -= 0.12; say(OPEN_BUD, pick(HELLOS), 1500); openCard(OPEN_BUD); }, 1500);
   }

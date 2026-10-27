@@ -10,6 +10,7 @@ import { lifeDiary, hobbyOf, HOBBY_LABEL } from '../lib/life.js';
 import { games as gamesRef } from '../lib/peekaboo.js';
 import { myDoodles } from '../lib/doodle.js';
 import { counts as doodleCounts } from '../lib/doodlemail.js';
+import { myPicnics } from '../lib/picnic.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
 import { waitUntil } from '@vercel/functions';
@@ -152,6 +153,8 @@ export async function GET(request) {
       diary,
       // Doodle Duel games, whose turn it is
       doodles: await myDoodles(me).catch(() => []),
+      // Picnic Clash games still going
+      picnics: await myPicnics(me).catch(() => []),
       // doodle mail in your bud's inventory (the pictures load when you open it)
       doodleMail: { count: mailInfo.count, fresh: mailInfo.fresh },
       games: gameSnap.docs.map((d) => d.data()).filter((g) => ['setup', 'playing'].includes(g.status)).map((g) => {
