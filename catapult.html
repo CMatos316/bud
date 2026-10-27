@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bud-a-pult · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="Fling your bud at a fortress. Knock out the bud inside in 3 launches.">
+<meta name="theme-color" content="#BFD9FF">
+<style>
+/* Bud-a-pult test range: build a fortress, fling your bud at it, watch the replay. The physics runs on the
+   server (lib/catapult.js); this page only draws what happened. */
+:root {
+  --ink: #1D1C2B; --muted: #5E5D75; --card: rgba(255,255,255,.9); --line: rgba(29,28,43,.1); --shadow: rgba(46,40,90,.22);
+  --btn: #1D1C2B; --btn-ink: #fff; --chip: rgba(127,127,160,.12); --bad: #E8505B; --good: #2E9E62;
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink: #EDECF6; --muted: #A9A7C4; --card: rgba(30,32,52,.9); --line: rgba(255,255,255,.12); --shadow: rgba(0,0,0,.5); --btn: #EDECF6; --btn-ink: #15161F; --chip: rgba(255,255,255,.08); color-scheme: dark; } }
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; color: var(--ink); font-family: var(--font); -webkit-tap-highlight-color: transparent; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.top { position: fixed; top: max(10px, env(safe-area-inset-top)); left: 16px; right: 16px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.top > * { pointer-events: auto; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; color: #1D1C2B; text-decoration: none; background: rgba(255,255,255,.82); border-radius: 999px; padding: 5px 12px 5px 6px; }
+.brand img { width: 24px; height: 24px; }
+.pill { margin-left: auto; background: rgba(255,255,255,.82); color: #1D1C2B; border-radius: 999px; padding: 5px 12px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.icon-btn { border: 0; background: rgba(255,255,255,.82); color: #1D1C2B; width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; cursor: pointer; padding: 0; flex: none; }
+.icon-btn svg { width: 17px; height: 17px; }
+.panel { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); width: min(520px, calc(100% - 32px)); background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 12px 14px; box-shadow: 0 18px 40px -22px var(--shadow); display: grid; gap: 10px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.panel h2 { margin: 0; font-size: 17px; }
+.panel p { margin: 0; font-size: 14px; line-height: 1.35; color: var(--muted); }
+.panel p b { color: var(--ink); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.btn { font: 600 15px var(--font); border-radius: 999px; padding: 10px 18px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn.primary { background: var(--btn); color: var(--btn-ink); border-color: transparent; }
+.btn:disabled { opacity: .45; cursor: default; }
+.tools { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.tool { appearance: none; border: 1.5px solid transparent; background: var(--chip); color: inherit; border-radius: 14px; padding: 6px 2px 5px; cursor: pointer; display: grid; justify-items: center; gap: 2px; font: 600 11.5px var(--font); min-width: 0; }
+.tool[aria-pressed="true"] { border-color: currentColor; }
+.tool .sw { height: 22px; display: grid; place-items: center; }
+.tool .sw i { display: block; border-radius: 3px; }
+.count { font-size: 12.5px; color: var(--muted); }
+.count.bad { color: var(--bad); }
+.aim { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 14px; }
+.aim label { font-weight: 600; }
+.aim output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.aim input[type=range] { width: 100%; accent-color: #FF7A59; height: 28px; }
+.launches { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.launches i { width: 12px; height: 12px; border-radius: 50%; background: var(--chip); border: 1.5px solid var(--muted); display: inline-block; }
+.launches i.used { background: #FF7A59; border-color: #FF7A59; }
+.msg { min-height: 1em; font-size: 13.5px; color: var(--bad); margin: 0; }
+.banner { position: fixed; left: 50%; top: 26%; transform: translate(-50%, -50%) scale(.6); font: 700 clamp(30px, 9vw, 56px) var(--font); color: #fff; -webkit-text-stroke: 2px #1D1C2B; paint-order: stroke fill; text-shadow: 0 6px 0 #1D1C2B; opacity: 0; pointer-events: none; transition: opacity .25s, transform .45s cubic-bezier(.3,1.6,.5,1); white-space: nowrap; }
+.banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+/* phones held sideways: the panel docks on the right, so the field gets the whole width */
+@media (orientation: landscape) and (max-height: 520px) {
+  .panel { left: auto; right: max(10px, env(safe-area-inset-right)); transform: none; top: 54px; bottom: auto; max-height: calc(100% - 64px); width: min(300px, 42vw); align-content: start; overflow-y: auto; padding: 10px 12px; gap: 8px; }
+  .panel h2 { font-size: 15px; } .panel p { font-size: 13px; }
+  .tools { grid-template-columns: repeat(3, 1fr); }
+  .btn { padding: 8px 14px; font-size: 14px; }
+}
+.turn { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(191, 217, 255, .75); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 5; }
+.turn .panel { position: static; transform: none; max-width: 340px; text-align: center; justify-items: center; }
+.turn .phone { font-size: 46px; display: inline-block; animation: tip 2.4s ease-in-out infinite; }
+@keyframes tip { 0%, 30% { transform: rotate(0); } 55%, 85% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+@media (prefers-reduced-motion: reduce) { .turn .phone { animation: none; transform: rotate(-90deg); } }
+.gate { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; }
+.gate .panel { position: static; transform: none; max-width: 420px; }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="The test range: a catapult on the left, a fortress on the right"></canvas>
+<header class="top">
+  <a class="brand" href="/world"><img src="/img/favicon.svg" alt=""><span>Bud-a-pult</span></a>
+  <span class="pill" id="pill">test range</span>
+  <button class="icon-btn" id="soundBtn" type="button"></button>
+</header>
+<div class="banner" id="banner" aria-live="assertive"></div>
+<section class="panel" id="panel" hidden></section>
+<div class="turn" id="turn" hidden><div class="panel"><span class="phone" aria-hidden="true">📱</span><h2>Turn your phone sideways</h2><p>Bud-a-pult is a side view: the catapult on one end, the fort on the other. It fits much better with your phone held sideways.</p><div class="row"><button class="btn" id="turnSkip" type="button">Play anyway</button></div></div></div>
+<div class="gate" id="gate" hidden><div class="panel"><h2 id="gateTitle"></h2><p id="gateText"></p><div class="row" id="gateRow"></div></div></div>
+
+<script src="/js/sound.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
+<script type="module">
+import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
+const S = window.BudSound || { play() {}, bindToggle() {}, muted: true };
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const toLinear = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+
+// the same numbers as lib/catapult.js
+const CELL = 0.5, COLS = 8, ROWS = 10, FORT_X = 16, MAX_PIECES = 16, MAX_STONE = 4, REPAIRS = 2, LAUNCHES = 3;
+const PIECES = { wood: { w: 1, h: 1 }, stone: { w: 1, h: 1 }, beam: { w: 3, h: 1 }, pillar: { w: 1, h: 2 } };
+const LAUNCH = { x: 0.6, y: 1.5 }, MIN_SPEED = 9, MAX_SPEED = 19, GROUND_END = FORT_X + COLS * CELL + 5;
+const SHOT_W = 0.78, BUD_W = 0.52;   // how wide the buds are drawn (meters)
+// a ready-made fort, so you can start flinging right away
+const STARTER = {
+  pieces: [
+    { t: 'stone', x: 2, y: 0 }, { t: 'stone', x: 5, y: 0 }, { t: 'wood', x: 3, y: 0 }, { t: 'wood', x: 4, y: 0 },
+    { t: 'beam', x: 2, y: 1 }, { t: 'wood', x: 5, y: 1 }, { t: 'pillar', x: 2, y: 2 }, { t: 'pillar', x: 5, y: 2 },
+    { t: 'beam', x: 2, y: 4 }, { t: 'wood', x: 5, y: 4 }, { t: 'wood', x: 3, y: 5 }, { t: 'stone', x: 4, y: 5 },
+  ],
+  bud: { x: 3, y: 2 },
+};
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, credentials: 'same-origin', cache: 'no-store', body: body ? JSON.stringify(body) : undefined });
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw Object.assign(new Error(data.error || 'something went wrong'), { status: res.status });
+  return data;
+}
+
+/* ---------- the scene ---------- */
+const canvas = $('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 400);
+{
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#8EC5FF'); gr.addColorStop(0.65, '#D9ECFF'); gr.addColorStop(1, '#FBE3EF');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; scene.background = t;
+}
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8FBF8F, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 0.85); sun.position.set(-6, 14, 10); scene.add(sun);
+const M = (hex, o = {}) => new THREE.MeshStandardMaterial({ color: toLinear(hex), roughness: 0.85, ...o });
+
+// the ground: a long strip of the island ending in a little cliff, then the sea
+const ground = new THREE.Group(); scene.add(ground);
+{
+  const w = GROUND_END + 14, top = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, 7), M('#86CF86')); top.position.set(GROUND_END - w / 2, -0.15, -1); ground.add(top);
+  const soil = new THREE.Mesh(new THREE.BoxGeometry(w, 3.2, 6.8), M('#C9A27A', { flatShading: true })); soil.position.set(GROUND_END - w / 2, -1.9, -1); ground.add(soil);
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(400, 200), M('#9FD3F0', { roughness: 0.4 })); sea.rotation.x = -Math.PI / 2; sea.position.set(60, -3.2, -40); ground.add(sea);
+  // trees and hills behind, for depth
+  const leaf = [M('#5FB36A', { flatShading: true }), M('#7BC67E', { flatShading: true })], trunk = M('#A47551');
+  for (const [x, z, s] of [[-4, -3.2, 1.2], [3.5, -3.8, 1], [8, -3.4, 1.3], [12.5, -4.2, 0.9], [22.5, -3.6, 1.1], [-8, -4, 1.1]]) {
+    const t = new THREE.Group();
+    const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * s, 0.2 * s, 1.1 * s, 7), trunk); tr.position.y = 0.55 * s; t.add(tr);
+    for (let k = 0; k < 3; k++) { const l = new THREE.Mesh(new THREE.IcosahedronGeometry((0.85 - k * 0.2) * s, 0), leaf[k % 2]); l.position.y = (1.25 + k * 0.5) * s; t.add(l); }
+    t.position.set(x, 0, z); ground.add(t);
+  }
+  for (let i = 0; i < 40; i++) {
+    const f = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), M(['#FFB3C7', '#FFE08A', '#FFFFFF', '#C9B8FF'][i % 4]));
+    f.position.set(-10 + (i * 7.3) % (GROUND_END + 9), 0.06, -0.6 - (i * 1.7) % 3.4); ground.add(f);
+  }
+}
+
+// the catapult: a wooden base and a throwing arm that swings forward on launch
+const catapult = new THREE.Group(); scene.add(catapult);
+const ARM_PIVOT = new THREE.Vector3(0, 0.75, 0), ARM_LEN = Math.hypot(LAUNCH.x - ARM_PIVOT.x, LAUNCH.y - ARM_PIVOT.y);
+const ARM_FIRE = Math.atan2(LAUNCH.y - ARM_PIVOT.y, LAUNCH.x - ARM_PIVOT.x), ARM_COCK = Math.PI + 0.45;
+const arm = new THREE.Group();
+{
+  const wood = M('#B5834F'), dark = M('#8A5A3C');
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.22, 1.0), wood); base.position.set(-0.1, 0.16, 0); catapult.add(base);
+  for (const z of [-0.36, 0.36]) {
+    const up = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.75, 0.12), dark); up.position.set(0, 0.55, z); catapult.add(up);
+    for (const x of [-0.65, 0.5]) { const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 16), dark); wh.rotation.x = Math.PI / 2; wh.position.set(x, 0.2, z * 1.45); catapult.add(wh); }
+  }
+  const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 10), dark); axle.rotation.x = Math.PI / 2; axle.position.copy(ARM_PIVOT); catapult.add(axle);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(ARM_LEN, 0.1, 0.12), wood); beam.position.x = ARM_LEN / 2; arm.add(beam);
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.18, 0.14, 16, 1, true), dark); cup.position.set(ARM_LEN, 0.04, 0); arm.add(cup);
+  arm.position.copy(ARM_PIVOT); catapult.add(arm);
+}
+const armAt = (a) => { arm.rotation.z = a; };
+armAt(ARM_COCK);
+const cupPos = (a) => new THREE.Vector3(ARM_PIVOT.x + Math.cos(a) * ARM_LEN, ARM_PIVOT.y + Math.sin(a) * ARM_LEN + 0.28, 0);
+
+/* textures for the blocks */
+function woodTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#D9A86C'; g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = 'rgba(140, 90, 50, .45)'; g.lineWidth = 2;
+  for (let y = 8; y < 128; y += 14) { g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= 128; x += 16) g.lineTo(x, y + Math.sin(x * 0.08 + y) * 2); g.stroke(); }
+  g.strokeStyle = 'rgba(110, 70, 40, .8)'; g.lineWidth = 6; g.strokeRect(3, 3, 122, 122);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+}
+function stoneTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#A8A6B8'; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 70; i++) { g.fillStyle = `rgba(${i % 2 ? 255 : 60},${i % 2 ? 255 : 60},${i % 2 ? 255 : 80},.08)`; g.beginPath(); g.arc((i * 37) % 128, (i * 59) % 128, 4 + (i % 5) * 3, 0, 7); g.fill(); }
+  g.strokeStyle = 'rgba(70, 68, 90, .55)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(20, 30); g.lineTo(46, 52); g.lineTo(40, 80); g.moveTo(90, 100); g.lineTo(104, 76); g.stroke();
+  g.strokeStyle = 'rgba(70, 68, 90, .8)'; g.lineWidth = 6; g.strokeRect(3, 3, 122, 122);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+}
+const TEX = { wood: woodTex(), stone: stoneTex() };
+const MATS = {};
+function pieceMat(t) {
+  if (MATS[t]) return MATS[t];
+  const P = PIECES[t], base = t === 'stone' ? TEX.stone : TEX.wood;
+  const tex = base.clone(); tex.needsUpdate = true; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(P.w, P.h);
+  return (MATS[t] = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 }));
+}
+function pieceMesh(t) {
+  const P = PIECES[t];
+  return new THREE.Mesh(new THREE.BoxGeometry(P.w * CELL - 0.012, P.h * CELL - 0.012, 0.9), pieceMat(t));
+}
+
+/* buds, drawn the way the island draws them, centered on their middle */
+const FACE_W = 256, FACE_H = 175;
+async function loadImage(src) { return new Promise((ok) => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; }); }
+async function makeBud(data, width, tint) {
+  const b = setExtents({ r: data.r.map(([x, y]) => ({ x, y })), eyeRel: data.eyeRel, eyeR: data.eyeR });
+  const { geom, face } = buildMesh(b);
+  const img = await loadImage(data.paint);
+  const s = width / Math.max(b.w, b.h);
+  const map = img ? new THREE.Texture(img) : null;
+  if (map) { map.encoding = THREE.sRGBEncoding; map.needsUpdate = true; }
+  const body = new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: map ? 0xffffff : toLinear(tint || '#EEE8DF'), map, roughness: 0.58, clearcoat: 0.3 }));
+  const fc = document.createElement('canvas'); fc.width = FACE_W; fc.height = FACE_H;
+  const faceTex = new THREE.CanvasTexture(fc); faceTex.encoding = THREE.sRGBEncoding;
+  const faceMesh = new THREE.Mesh(face, new THREE.MeshStandardMaterial({ map: faceTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  faceMesh.renderOrder = 2;
+  const inner = new THREE.Group(); inner.add(body, faceMesh); inner.scale.setScalar(s);
+  geom.computeBoundingBox(); const c = geom.boundingBox.getCenter(new THREE.Vector3());
+  inner.position.set(-c.x * s, -c.y * s, -c.z * s);
+  const spin = new THREE.Group(), stretch = new THREE.Group(), root = new THREE.Group();
+  spin.add(inner); stretch.add(spin); root.add(stretch); scene.add(root);
+  const bud = { data, b, root, stretch, spin, inner, faceTex, g: fc.getContext('2d'), happy: false, ouch: false, look: { x: 0.4, y: 0 }, blinkAt: 0 };
+  drawFace(bud, 0);
+  return bud;
+}
+function drawFace(bud, t) {
+  const r = bud.b.eyeR, sc = FACE_W / (r * 4.4), g = bud.g;
+  const blink = bud.ouch ? 1 : (t > bud.blinkAt && t < bud.blinkAt + 0.15) ? Math.sin((t - bud.blinkAt) / 0.15 * Math.PI) : 0;
+  if (t > bud.blinkAt + 0.15) bud.blinkAt = t + 2 + Math.random() * 4;
+  const key = [blink.toFixed(1), bud.happy, bud.look.x.toFixed(2), bud.look.y.toFixed(2)].join();
+  if (key === bud.key) return; bud.key = key;
+  g.clearRect(0, 0, FACE_W, FACE_H);
+  drawEyeStyle(g, bud.data.eyes, FACE_W / 2, FACE_H / 2, r * sc, blink, bud.happy, '#15161F', bud.look);
+  bud.faceTex.needsUpdate = true;
+}
+// the practice dummy that hides in your fort: a round straw-colored bud
+function dummyData() {
+  const r = Array.from({ length: 36 }, (_, i) => { const a = i / 36 * Math.PI * 2; return [Math.cos(a) * 60, Math.sin(a) * 56]; });
+  return { r, eyeRel: { x: 0, y: -8 }, eyeR: 15, eyes: 'bean', paint: null, trueName: 'Dummy' };
+}
+
+/* ---------- camera ---------- */
+const view = { x: 9, y: 2.5, w: 26 }, goal = { x: 9, y: 2.5, w: 26 };
+function frame(x0, x1, y0, y1) {
+  // fit this box into the part of the screen the top bar and the panel leave free
+  const pr = $('panel').hidden ? null : $('panel').getBoundingClientRect();
+  const docked = pr && pr.left > innerWidth * 0.4;   // the panel on the right (phones held sideways)
+  const L = 8, R = docked ? pr.left - 12 : innerWidth - 8, Tp = 58, B = pr && !docked ? pr.top - 10 : innerHeight - 8;
+  const fw = Math.max(80, R - L), fh = Math.max(80, B - Tp), aspect = innerWidth / innerHeight;
+  const W = Math.max((x1 - x0) * innerWidth / fw, (y1 - y0) * innerHeight / fh * aspect), H = W / aspect;
+  goal.w = W;
+  goal.x = (x0 + x1) / 2 - ((L + R) / 2 - innerWidth / 2) * W / innerWidth;
+  goal.y = (y0 + y1) / 2 + ((Tp + B) / 2 - innerHeight / 2) * H / innerHeight;
+}
+function placeCamera(dt, snap) {
+  const k = snap ? 1 : 1 - Math.pow(0.02, dt);
+  view.x += (goal.x - view.x) * k; view.y += (goal.y - view.y) * k; view.w += (goal.w - view.w) * k;
+  const fovH = 2 * Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect);
+  const dist = view.w / 2 / Math.tan(fovH / 2);
+  camera.position.set(view.x, view.y + dist * 0.12, dist);
+  camera.lookAt(view.x, view.y, 0);
+}
+const frameField = () => frame(-1.6, GROUND_END - 1.5, -0.6, 6.2);
+const frameFort = () => frame(FORT_X - 1.4, FORT_X + COLS * CELL + 1.4, -0.4, ROWS * CELL + 0.4);
+function resize() {
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+addEventListener('resize', () => { resize(); reframe(); checkTurn(); });
+// held upright on a phone: suggest turning it sideways (once per visit, if they'd rather not)
+let turnSkipped = false;
+try { turnSkipped = sessionStorage.getItem('bp-turn-skip') === '1'; } catch (e) {}
+function checkTurn() { $('turn').hidden = turnSkipped || !(innerHeight > innerWidth && innerWidth < 600); }
+$('turnSkip').addEventListener('click', () => { turnSkipped = true; try { sessionStorage.setItem('bp-turn-skip', '1'); } catch (e) {} checkTurn(); });
+
+/* ---------- the game state on this page ---------- */
+// mode: 'build' (placing pieces) | 'aim' | 'fly' (replay) | 'result' | 'repair'
+const st = {
+  mode: 'build', tool: 'wood', build: JSON.parse(JSON.stringify(STARTER)), fort: null, fortStart: null, launches: 0,
+  angle: 45, power: 0.5, busy: false, msg: '', shot: null, lastPath: [], add: [],
+};
+let me = null, shotBud = null, towerBud = null;
+const bodyMeshes = [];   // the fortress pieces on screen, in the same order as the state
+function clearBodies() { for (const m of bodyMeshes) scene.remove(m); bodyMeshes.length = 0; }
+// draw a fortress state ({ bodies: [{ t, x, y, a }], bud })
+function showState(s) {
+  clearBodies();
+  for (const b of s.bodies) { const m = pieceMesh(b.t); m.position.set(b.x, b.y, 0); m.rotation.z = b.a; scene.add(m); bodyMeshes.push(m); }
+  towerBud.root.position.set(s.bud.x, s.bud.y, 0); towerBud.spin.rotation.z = s.bud.a; towerBud.root.visible = true;
+}
+// draw a grid build (before it's been settled)
+function showBuild() {
+  clearBodies();
+  for (const p of st.build.pieces) {
+    const P = PIECES[p.t], m = pieceMesh(p.t);
+    m.position.set(FORT_X + (p.x + P.w / 2) * CELL, (p.y + P.h / 2) * CELL, 0); scene.add(m); bodyMeshes.push(m);
+  }
+  for (const p of st.add) {
+    const P = PIECES[p.t], m = pieceMesh(p.t); m.material = m.material.clone(); m.material.emissive = toLinear('#3BB273'); m.material.emissiveIntensity = 0.25;
+    m.position.set(FORT_X + (p.x + P.w / 2) * CELL, (p.y + P.h / 2) * CELL, 0); scene.add(m); bodyMeshes.push(m);
+  }
+  if (st.mode === 'build') { const b = st.build.bud; towerBud.root.position.set(FORT_X + (b.x + 0.5) * CELL, (b.y + 0.5) * CELL, 0); towerBud.spin.rotation.z = 0; towerBud.root.visible = true; }
+}
+
+// the build grid, drawn in front of the fortress
+const gridMesh = (() => {
+  const c = document.createElement('canvas'), px = 64; c.width = COLS * px; c.height = ROWS * px; const g = c.getContext('2d');
+  g.strokeStyle = 'rgba(255,255,255,.75)'; g.lineWidth = 2; g.setLineDash([6, 6]);
+  for (let i = 0; i <= COLS; i++) { g.beginPath(); g.moveTo(i * px, 0); g.lineTo(i * px, c.height); g.stroke(); }
+  for (let j = 0; j <= ROWS; j++) { g.beginPath(); g.moveTo(0, j * px); g.lineTo(c.width, j * px); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(COLS * CELL, ROWS * CELL), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+  m.position.set(FORT_X + COLS * CELL / 2, ROWS * CELL / 2, 0.47); m.renderOrder = 3; scene.add(m);
+  return m;
+})();
+const cursor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false }));
+cursor.position.z = 0.48; cursor.renderOrder = 4; cursor.visible = false; scene.add(cursor);
+
+// the aiming arc: dots for the start of the flight, and fainter dots where your last shot went
+const arcDots = [], lastDots = [];
+const dotGeo = new THREE.SphereGeometry(0.07, 8, 6);
+for (let i = 0; i < 14; i++) { const d = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color: 0xffffff })); d.visible = false; scene.add(d); arcDots.push(d); }
+function drawArc() {
+  const on = st.mode === 'aim';
+  const a = st.angle * Math.PI / 180, v = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * st.power;
+  arcDots.forEach((d, i) => {
+    const t = (i + 1) * 0.05; d.visible = on;
+    d.position.set(LAUNCH.x + Math.cos(a) * v * t, LAUNCH.y + Math.sin(a) * v * t - 4.9 * t * t, 0.2);
+    d.scale.setScalar(1 - i / 20);
+  });
+  lastDots.forEach((d) => { d.visible = on; });
+}
+function setLastPath(points) {
+  for (const d of lastDots) scene.remove(d); lastDots.length = 0;
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45 });
+  for (const [x, y] of points) { const d = new THREE.Mesh(dotGeo, mat); d.scale.setScalar(0.6); d.position.set(x, y, 0.15); d.visible = false; scene.add(d); lastDots.push(d); }
+}
+
+/* ---------- building ---------- */
+const occupied = () => {
+  const m = new Map();
+  st.build.pieces.forEach((p, k) => { const P = PIECES[p.t]; for (let i = 0; i < P.w; i++) for (let j = 0; j < P.h; j++) m.set(`${p.x + i},${p.y + j}`, k); });
+  m.set(`${st.build.bud.x},${st.build.bud.y}`, 'bud');
+  return m;
+};
+function cellAt(cx, cy) {
+  const ndc = new THREE.Vector2(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1), ray = new THREE.Raycaster();
+  ray.setFromCamera(ndc, camera);
+  const p = new THREE.Vector3(); if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), p)) return null;
+  const gx = Math.floor((p.x - FORT_X) / CELL), gy = Math.floor(p.y / CELL);
+  return gx >= 0 && gy >= 0 && gx < COLS && gy < ROWS ? { gx, gy } : null;
+}
+function fits(t, gx, gy, occ) {
+  const P = PIECES[t];
+  if (gx + P.w > COLS || gy + P.h > ROWS) return false;
+  for (let i = 0; i < P.w; i++) for (let j = 0; j < P.h; j++) if (occ.has(`${gx + i},${gy + j}`)) return false;
+  return true;
+}
+function buildTap(c) {
+  if (!c) return;
+  const occ = occupied(), here = occ.get(`${c.gx},${c.gy}`);
+  st.msg = '';
+  if (st.tool === 'bud') {
+    if (here != null && here !== 'bud') { st.msg = 'Pick an empty square for your bud.'; return renderPanel(); }
+    st.build.bud = { x: c.gx, y: c.gy }; S.play('boing', { gain: 0.6 });
+  } else if (here != null) {
+    if (here === 'bud') { st.msg = 'That’s your bud! Move it with the Bud tool.'; return renderPanel(); }
+    st.build.pieces.splice(here, 1); S.play('squish', { gain: 0.6 });
+  } else {
+    if (st.build.pieces.length >= MAX_PIECES) { st.msg = `That’s all ${MAX_PIECES} pieces.`; return renderPanel(); }
+    if (st.tool === 'stone' && st.build.pieces.filter((p) => p.t === 'stone').length >= MAX_STONE) { st.msg = `Only ${MAX_STONE} stone blocks.`; return renderPanel(); }
+    if (!fits(st.tool, c.gx, c.gy, occ)) { st.msg = 'It doesn’t fit there.'; return renderPanel(); }
+    st.build.pieces.push({ t: st.tool, x: c.gx, y: c.gy }); S.play('thump', { gain: 0.5, rate: 1.2 });
+  }
+  showBuild(); renderPanel();
+}
+// repairs: new pieces only, on squares that are empty now (the server makes the final call)
+function repairTap(c) {
+  if (!c) return;
+  st.msg = '';
+  const i = st.add.findIndex((p) => { const P = PIECES[p.t]; return c.gx >= p.x && c.gx < p.x + P.w && c.gy >= p.y && c.gy < p.y + P.h; });
+  if (i >= 0) { st.add.splice(i, 1); S.play('squish', { gain: 0.6 }); }
+  else if (st.tool === 'bud') { st.msg = 'Your bud stays where it is. Add pieces around it.'; }
+  else if (st.add.length >= REPAIRS) { st.msg = `You can add ${REPAIRS} pieces. Tap one to take it back.`; }
+  else if (st.tool === 'stone' && st.fort.bodies.filter((b) => b.t === 'stone').length + st.add.filter((p) => p.t === 'stone').length >= MAX_STONE) { st.msg = `Only ${MAX_STONE} stone blocks.`; }
+  else if (c.gx + PIECES[st.tool].w > COLS || c.gy + PIECES[st.tool].h > ROWS) { st.msg = 'It doesn’t fit there.'; }
+  else { st.add.push({ t: st.tool, x: c.gx, y: c.gy }); S.play('thump', { gain: 0.5, rate: 1.2 }); }
+  showState(st.fort);
+  for (const p of st.add) {
+    const P = PIECES[p.t], m = pieceMesh(p.t); m.material = m.material.clone(); m.material.transparent = true; m.material.opacity = 0.75; m.material.emissive = toLinear('#3BB273'); m.material.emissiveIntensity = 0.3;
+    m.position.set(FORT_X + (p.x + P.w / 2) * CELL, (p.y + P.h / 2) * CELL, 0); scene.add(m); bodyMeshes.push(m);
+  }
+  renderPanel();
+}
+
+/* ---------- the panel ---------- */
+function toolButton(t, label, swatch) {
+  const b = el('button', 'tool'); b.type = 'button'; b.setAttribute('aria-pressed', String(st.tool === t));
+  const sw = el('span', 'sw'); sw.append(swatch); b.append(sw, el('span', null, label));
+  b.addEventListener('click', () => { st.tool = t; S.play('click'); renderPanel(); });
+  return b;
+}
+const swatch = (w, h, bg) => { const i = el('i'); i.style.width = w + 'px'; i.style.height = h + 'px'; i.style.background = bg; return i; };
+function renderPanel() {
+  const p = $('panel'); p.textContent = ''; p.hidden = false;
+  const msg = el('p', 'msg', st.msg);
+  const launches = el('div', 'launches');
+  for (let i = 0; i < LAUNCHES; i++) launches.append(el('i', i < st.launches ? 'used' : null));
+  const shown = st.mode === 'fly' || st.mode === 'result' ? st.launches : Math.min(st.launches + 1, LAUNCHES);
+  launches.append(` launch ${shown} of ${LAUNCHES}`);
+  if (st.mode === 'build' || st.mode === 'repair') {
+    const repairing = st.mode === 'repair';
+    p.append(el('h2', null, repairing ? `Patch it up: add up to ${REPAIRS} pieces` : 'Build a fort around your bud'));
+    p.append(el('p', null, repairing ? 'Tap a square to add the selected piece (tap it again to take it back). Rubble stays where it fell.' : 'Tap a square to place a piece, tap a piece to remove it. Keep your bud safe: if the flying bud reaches it, or knocks it loose, your fort loses.'));
+    const tools = el('div', 'tools');
+    tools.append(toolButton('wood', 'Wood', swatch(18, 18, '#D9A86C')), toolButton('stone', 'Stone', swatch(18, 18, '#A8A6B8')),
+      toolButton('beam', 'Beam', swatch(30, 10, '#D9A86C')), toolButton('pillar', 'Pillar', swatch(10, 22, '#D9A86C')));
+    if (!repairing) tools.append(toolButton('bud', 'Bud', swatch(16, 16, '#F6C28B')));
+    p.append(tools);
+    const n = repairing ? st.add.length : st.build.pieces.length, stones = (repairing ? st.fort.bodies.filter((b) => b.t === 'stone').length + st.add.filter((x) => x.t === 'stone').length : st.build.pieces.filter((x) => x.t === 'stone').length);
+    p.append(el('span', 'count', repairing ? `${n} of ${REPAIRS} pieces added` : `${n} of ${MAX_PIECES} pieces · ${stones} of ${MAX_STONE} stone`));
+    p.append(msg);
+    const r = el('div', 'row');
+    if (!repairing) {
+      const clr = el('button', 'btn', 'Clear'); clr.type = 'button';
+      clr.addEventListener('click', () => { st.build = { pieces: [], bud: { x: 3, y: 0 } }; showBuild(); renderPanel(); });
+      const starter = el('button', 'btn', 'Ready-made fort'); starter.type = 'button';
+      starter.addEventListener('click', () => { st.build = JSON.parse(JSON.stringify(STARTER)); showBuild(); renderPanel(); });
+      r.append(clr, starter);
+    } else {
+      const skip = el('button', 'btn', 'Skip'); skip.type = 'button'; skip.addEventListener('click', () => { st.add = []; showState(st.fort); toAim(); });
+      r.append(skip);
+    }
+    const go = el('button', 'btn primary', repairing ? 'Done' : 'Ready!'); go.type = 'button'; go.disabled = st.busy;
+    go.addEventListener('click', repairing ? finishRepair : finishBuild);
+    r.append(go); p.append(r);
+  } else if (st.mode === 'aim') {
+    p.append(el('h2', null, `Fling ${me ? (me.bud.nickname || me.bud.trueName) : 'your bud'}!`), launches);
+    const aim = el('div', 'aim');
+    const slider = (label, min, max, step, value, fmt, on) => {
+      const lab = el('label', null, label), input = el('input'), out = el('output', null, fmt(value));
+      input.type = 'range'; input.min = min; input.max = max; input.step = step; input.value = value;
+      const id = 'r' + label; input.id = id; lab.htmlFor = id;
+      input.addEventListener('input', () => { on(Number(input.value)); out.textContent = fmt(Number(input.value)); drawArc(); });
+      aim.append(lab, input, out);
+    };
+    slider('Angle', 15, 75, 1, st.angle, (v) => `${v}°`, (v) => { st.angle = v; });
+    slider('Power', 0, 100, 1, Math.round(st.power * 100), (v) => `${v}%`, (v) => { st.power = v / 100; });
+    p.append(aim, msg);
+    const r = el('div', 'row');
+    const rebuild = el('button', 'btn', 'Rebuild'); rebuild.type = 'button'; rebuild.addEventListener('click', toBuild);
+    const go = el('button', 'btn primary', '🚀 Launch!'); go.type = 'button'; go.disabled = st.busy;
+    go.addEventListener('click', launch);
+    r.append(rebuild, go); p.append(r);
+  } else if (st.mode === 'fly') {
+    p.append(el('h2', null, pick(['Wheeeee!', 'Incoming!', 'Here it comes…'])), launches);
+  } else if (st.mode === 'result') {
+    const s = st.shot, won = !!s.ko, over = won || st.launches >= LAUNCHES;
+    p.append(el('h2', null, won ? `💥 Knocked out on launch ${st.launches}!` : over ? '🛡️ The fort held!' : s.firstHit == null ? 'Way off!' : 'The bud’s still standing'));
+    p.append(launches);
+    p.append(el('p', null, won ? ({ direct: 'A direct hit on the bud inside.', knocked: 'The bud got knocked flying.', fell: 'The bud tumbled out of its spot.' })[s.ko.how] || ''
+      : over ? `${LAUNCHES} launches and the bud inside is still safe. In a real game, the defender would win this one.`
+      : 'In a real game, your friend gets to add 2 pieces before your next launch. Try it out:'));
+    const r = el('div', 'row');
+    if (over) {
+      const again = el('button', 'btn', 'Same fort again'); again.type = 'button';
+      again.addEventListener('click', () => { st.fort = JSON.parse(JSON.stringify(st.fortStart)); st.launches = 0; showState(st.fort); toAim(); });
+      const rebuild = el('button', 'btn primary', 'Build a new fort'); rebuild.type = 'button'; rebuild.addEventListener('click', toBuild);
+      r.append(again, rebuild);
+    } else {
+      const replay = el('button', 'btn', '↻ Replay'); replay.type = 'button'; replay.addEventListener('click', () => playShot(st.shot, true));
+      const fix = el('button', 'btn', 'Patch it up'); fix.type = 'button'; fix.addEventListener('click', toRepair);
+      const next = el('button', 'btn primary', 'Next launch'); next.type = 'button'; next.addEventListener('click', toAim);
+      r.append(replay, fix, next);
+    }
+    p.append(r);
+  }
+  reframe();
+}
+function reframe() {
+  if (st.mode === 'build' || st.mode === 'repair') frameFort();
+  else if (st.mode === 'aim') frameField();
+  else if (st.mode === 'result') frame(FORT_X - 2.5, FORT_X + COLS * CELL + 2.5, -0.5, ROWS * CELL + 0.5);
+}
+
+/* ---------- moves ---------- */
+async function finishBuild() {
+  st.busy = true; st.msg = ''; renderPanel();
+  try {
+    const { state } = await api('POST', '/api/game', { action: 'bp-build', pieces: st.build.pieces, bud: st.build.bud });
+    st.fort = state; st.fortStart = JSON.parse(JSON.stringify(state)); st.launches = 0; st.busy = false;
+    showState(st.fort); S.play('chime');
+    toAim();
+  } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
+}
+async function finishRepair() {
+  if (!st.add.length) { showState(st.fort); return toAim(); }
+  st.busy = true; st.msg = ''; renderPanel();
+  try {
+    const { state } = await api('POST', '/api/game', { action: 'bp-repair', state: st.fort, add: st.add });
+    st.fort = state; st.add = []; st.busy = false; showState(st.fort); S.play('chime'); toAim();
+  } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
+}
+function toBuild() { st.mode = 'build'; st.add = []; st.msg = ''; gridMesh.visible = true; setLastPath([]); showBuild(); renderPanel(); drawArc(); }
+function toRepair() { st.mode = 'repair'; st.add = []; st.msg = ''; st.tool = 'wood'; gridMesh.visible = true; showState(st.fort); renderPanel(); drawArc(); }
+function toAim() { st.mode = 'aim'; st.msg = ''; gridMesh.visible = false; cursor.visible = false; armAt(ARM_COCK); placeShotInCup(); renderPanel(); drawArc(); }
+function placeShotInCup() {
+  const p = cupPos(ARM_COCK); shotBud.root.position.copy(p); shotBud.spin.rotation.z = 0; shotBud.stretch.scale.set(1, 1, 1); shotBud.root.visible = true;
+}
+async function launch() {
+  if (st.busy) return;
+  st.busy = true; st.msg = ''; renderPanel();
+  try {
+    const shot = await api('POST', '/api/game', { action: 'bp-shoot', state: st.fort, angle: st.angle, power: st.power });
+    st.busy = false; st.launches++; st.shot = shot;
+    playShot(shot, false);
+  } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
+}
+
+/* ---------- the replay ---------- */
+let play = null;   // { shot, t (seconds of replay time), slow, ... }
+function playShot(shot, again) {
+  st.mode = 'fly'; renderPanel(); drawArc();
+  showState(st.fort && !again ? st.fort : st.fort);
+  // bodies in the replay: the fortress as it was before the shot
+  clearBodies();
+  const kinds = shot.kinds, n = kinds.length - 2;
+  for (let i = 0; i < n; i++) { const m = pieceMesh(kinds[i]); scene.add(m); bodyMeshes.push(m); }
+  towerBud.happy = false; towerBud.ouch = false; shotBud.happy = true;
+  play = { shot, t: -0.42, wind: 0, hitIdx: 0, koShown: false, again };
+  S.play('whoosh', { gain: 0.6, rate: 0.8 });
+}
+function endShot() {
+  const shot = play.shot; play = null;
+  if (!shot._applied) { shot._applied = true; st.fort = shot.after; setLastPath(shot.frames.filter((_, i) => i % 3 === 0 && (shot.firstHit == null || i <= shot.firstHit)).map((f) => f[f.length - 1]).slice(0, 40)); }
+  showState(st.fort);
+  shotBud.root.visible = false;
+  st.mode = 'result'; renderPanel();
+  if (!shot.ko) { towerBud.happy = true; setTimeout(() => { towerBud.happy = false; }, 1600); }
+}
+function banner(text) { const b = $('banner'); b.textContent = text; b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 1500); }
+function lerpFrame(frames, f) {
+  const i = Math.max(0, Math.min(frames.length - 1, Math.floor(f))), j = Math.min(frames.length - 1, i + 1), k = Math.max(0, Math.min(1, f - i));
+  return frames[i].map((a, n) => { const b = frames[j][n]; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]; });
+}
+function playTick(dt) {
+  const sh = play.shot, hz = sh.hz, frames = sh.frames, last = frames.length - 1;
+  // slow motion around the knockout
+  const koT = sh.ko ? sh.ko.frame / hz : null;
+  const near = koT != null && play.t > koT - 0.25 && play.t < koT + 0.9;
+  play.t += dt * (near ? 0.25 : 1);
+  // the catapult swings first, carrying the bud in its cup
+  if (play.t < 0) {
+    const k = Math.min(1, (play.t + 0.42) / 0.42), a = ARM_COCK + (ARM_FIRE - ARM_COCK) * (k * k);
+    armAt(a); shotBud.root.position.copy(cupPos(a)); shotBud.stretch.scale.set(1, 1 - 0.25 * k, 1);
+    if (!play.thwack && k > 0.95) { play.thwack = true; S.play('boing', { gain: 0.7, rate: 0.7 }); }
+    frameFieldFollow(LAUNCH.x);
+    return;
+  }
+  armAt(ARM_FIRE + Math.sin(Math.min(1, play.t / 0.3) * Math.PI) * 0.15);
+  const f = play.t * hz, pos = lerpFrame(frames, f), n = pos.length - 2;
+  for (let i = 0; i < n; i++) { const m = bodyMeshes[i]; if (!m) continue; m.position.set(pos[i][0], pos[i][1], 0); m.rotation.z = pos[i][2]; }
+  const tb = pos[n], sb = pos[n + 1];
+  towerBud.root.position.set(tb[0], tb[1], 0); towerBud.spin.rotation.z = tb[2];
+  // the flying bud tumbles, and stretches along the way it's going (squashes when it hits something)
+  const prev = lerpFrame(frames, Math.max(0, f - 0.5))[n + 1], vx = (sb[0] - prev[0]) * hz * 2, vy = (sb[1] - prev[1]) * hz * 2;
+  const speed = Math.hypot(vx, vy), dir = Math.atan2(vy, vx);
+  shotBud.root.position.set(sb[0], sb[1], 0); shotBud.root.visible = sb[1] > -3;
+  const hitNow = sh.hits.find((h) => Math.abs(h[0] - f) < 2.2);
+  const k = hitNow ? -0.3 : Math.min(0.35, speed / 45);
+  shotBud.stretch.rotation.z = dir; shotBud.stretch.scale.set(1 + k, 1 - k * 0.6, 1);
+  shotBud.spin.rotation.z = sb[2] - dir;
+  shotBud.look = { x: Math.cos(dir) * 0.6, y: -Math.sin(dir) * 0.4 };
+  // big impacts: a puff and a thump
+  while (play.hitIdx < sh.hits.length && sh.hits[play.hitIdx][0] <= f) {
+    const h = sh.hits[play.hitIdx++]; puff(h[1], h[2], 0.4 + h[3] * 0.06);
+    S.play('thump', { gain: Math.min(1, 0.3 + h[3] * 0.08), rate: 0.9 + Math.random() * 0.3 });
+  }
+  if (sh.ko && !play.koShown && f >= sh.ko.frame) {
+    play.koShown = true; towerBud.ouch = true; shotBud.happy = true;
+    banner(pick(['KNOCKOUT!', 'BONK!', 'GOT IT!'])); S.play('sparkle', { gain: 0.9 });
+  }
+  // camera: follow the flying bud, then the fortress; zoom in for the knockout
+  if (near) frame(tb[0] - 2.2, tb[0] + 2.2, tb[1] - 1.6, tb[1] + 1.6);
+  else if (sh.firstHit != null && f >= sh.firstHit && sb[0] > FORT_X - 4) frame(FORT_X - 3, FORT_X + COLS * CELL + 2.5, -0.5, ROWS * CELL + 0.6);
+  else frameFieldFollow(sb[0]);
+  if (f >= last + hz * 0.6) endShot();
+}
+function frameFieldFollow(x) { const w = Math.min(14, GROUND_END + 2); const cx = Math.max(-1.5 + w / 2, Math.min(GROUND_END + 1 - w / 2, x + 2)); frame(cx - w / 2, cx + w / 2, -0.5, 6); }
+
+/* dust */
+const puffs = [], puffMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true });
+function puff(x, y, k = 1) {
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry((0.08 + Math.random() * 0.1) * k, 8, 6), puffMat.clone());
+    const a = i / 10 * Math.PI * 2; m.position.set(x, y, 0.4); scene.add(m);
+    puffs.push({ m, vx: Math.cos(a) * 2 * k, vy: Math.sin(a) * 2 * k + 0.6, life: 0 });
+  }
+}
+
+/* ---------- input ---------- */
+let down = null;
+canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointerup', (e) => {
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) { down = null; return; }
+  down = null;
+  if (st.busy) return;
+  if (st.mode === 'build') buildTap(cellAt(e.clientX, e.clientY));
+  else if (st.mode === 'repair') repairTap(cellAt(e.clientX, e.clientY));
+});
+canvas.addEventListener('pointermove', (e) => {
+  const on = st.mode === 'build' || st.mode === 'repair';
+  const c = on ? cellAt(e.clientX, e.clientY) : null;
+  cursor.visible = !!c && e.pointerType === 'mouse';
+  if (c) {
+    const P = PIECES[st.tool] || { w: 1, h: 1 };
+    cursor.scale.set(P.w * CELL, P.h * CELL, 1); cursor.position.set(FORT_X + (c.gx + P.w / 2) * CELL, (c.gy + P.h / 2) * CELL, 0.48);
+  }
+});
+addEventListener('keydown', (e) => {
+  if (st.mode !== 'aim' || e.target.closest('input')) return;
+  if (e.key === 'ArrowUp') st.angle = Math.min(75, st.angle + 1);
+  else if (e.key === 'ArrowDown') st.angle = Math.max(15, st.angle - 1);
+  else if (e.key === 'ArrowRight') st.power = Math.min(1, st.power + 0.01);
+  else if (e.key === 'ArrowLeft') st.power = Math.max(0, st.power - 0.01);
+  else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); launch(); return; }
+  else return;
+  e.preventDefault(); renderPanel(); drawArc();
+});
+
+/* ---------- loop ---------- */
+let T = 0, lastNow = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastNow) / 1000); lastNow = now; T += dt;
+  if (play) playTick(dt);
+  for (let i = puffs.length - 1; i >= 0; i--) {
+    const p = puffs[i]; p.life += dt; p.m.position.x += p.vx * dt; p.m.position.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92;
+    p.m.material.opacity = Math.max(0, 1 - p.life / 0.8); p.m.scale.setScalar(1 + p.life * 1.4);
+    if (p.life > 0.8) { scene.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose(); puffs.splice(i, 1); }
+  }
+  if (shotBud) {
+    drawFace(shotBud, T);
+    if (!play) { shotBud.stretch.scale.y = 1 + Math.sin(T * 3) * 0.03; shotBud.look = { x: 0.6, y: 0.05 }; }
+  }
+  if (towerBud) {
+    drawFace(towerBud, T);
+    if (!play) towerBud.look = { x: -0.6, y: 0 };
+  }
+  placeCamera(dt, false);
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+function gate(title, text, actions) {
+  $('gate').hidden = false; $('panel').hidden = true;
+  $('gateTitle').textContent = title; $('gateText').textContent = text;
+  const r = $('gateRow'); r.textContent = '';
+  for (const [label, href, primary] of actions) { const a = el('a', 'btn' + (primary ? ' primary' : ''), label); a.href = href; r.append(a); }
+}
+(async () => {
+  S.bindToggle($('soundBtn')); if (!window.BudSound) $('soundBtn').hidden = true;
+  resize(); frameField(); placeCamera(0, true); checkTurn();
+  requestAnimationFrame(loop);
+  try { me = await api('GET', '/api/me'); }
+  catch (e) {
+    if (e.status === 401) return gate('Sign in first', 'Bud-a-pult is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', `/api/auth/login?next=${encodeURIComponent(location.pathname)}`, true]]);
+    return gate('Couldn’t load your bud', e.message, [['Go to the island', '/world', true]]);
+  }
+  if (!me.bud) return gate('Make your bud first', 'You need a bud to put in the catapult!', [['Make your bud', '/', true]]);
+  [shotBud, towerBud] = await Promise.all([makeBud(me.bud, SHOT_W), makeBud(dummyData(), BUD_W, '#F6C28B')]);
+  placeShotInCup();
+  toBuild();
+})();
+</script>
+</body>
+</html>

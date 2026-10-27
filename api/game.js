@@ -6,6 +6,8 @@
 // | 'pk-night' | 'pk-ready' | 'pk-vote', room, target }
 // Doodle Duel (lib/doodle.js): GET ?doodle= one game; POST { action: 'dd-new' | 'dd-pick' | 'dd-send' | 'dd-guess'
 // | 'dd-giveup', id, opponent, choice, strokes, guess }
+// Bud-a-pult test range (lib/catapult.js, the physics runs here): POST { action: 'bp-build' | 'bp-shoot' |
+// 'bp-repair', pieces, bud, state, angle, power, add }
 // Doodle mail (lib/doodlemail.js): GET ?mail=list (your bud's doodles) | ?mail=<id> (one, to replay) | ?mailto=<user>;
 // POST { action: 'mail-send' | 'mail-star' | 'mail-toss', to, strokes, caption, id, fav }
 import { readSession, sameOrigin } from '../lib/session.js';
@@ -15,6 +17,7 @@ import { newRoomId, joinRoom, checkIn, startGame, pick, budsFor } from '../lib/s
 import * as prank from '../lib/prankster.js';
 import * as doodle from '../lib/doodle.js';
 import * as mail from '../lib/doodlemail.js';
+import * as pult from '../lib/catapult.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
 
@@ -76,6 +79,14 @@ export async function POST(request) {
       if (action === 'dd-send') return json(await doodle.sendDrawing(session.id, id, body.strokes));
       if (action === 'dd-guess') return json(await doodle.guess(session.id, id, String(body.guess || '').slice(0, 60)));
       if (action === 'dd-giveup') return json(await doodle.giveUp(session.id, id));
+      return json({ error: 'unknown move' }, 400);
+    } catch (err) { return fail(err); }
+  }
+  if (typeof action === 'string' && action.startsWith('bp-')) {
+    try {
+      if (action === 'bp-build') return json({ state: pult.settle(pult.placeBuild(pult.checkBuild(body.pieces, body.bud))) });
+      if (action === 'bp-shoot') return json(pult.shoot(pult.cleanState(body.state), body.angle, body.power));
+      if (action === 'bp-repair') return json({ state: pult.repair(pult.cleanState(body.state), body.add) });
       return json({ error: 'unknown move' }, 400);
     } catch (err) { return fail(err); }
   }
