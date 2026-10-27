@@ -43,10 +43,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 .tool .sw i { display: block; border-radius: 3px; }
 .count { font-size: 12.5px; color: var(--muted); }
 .count.bad { color: var(--bad); }
-.aim { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 14px; }
-.aim label { font-weight: 600; }
-.aim output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
-.aim input[type=range] { width: 100%; accent-color: #FF7A59; height: 28px; }
+.aim-read { display: flex; gap: 14px; align-items: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+.aim-read b { font-weight: 600; }
+.aim-read .bar { flex: 1; height: 8px; border-radius: 99px; background: var(--chip); overflow: hidden; min-width: 60px; }
+.aim-read .bar i { display: block; height: 100%; background: linear-gradient(90deg, #FFD23F, #FF7A59, #E8394B); border-radius: inherit; }
 .launches { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
 .launches i { width: 12px; height: 12px; border-radius: 50%; background: var(--chip); border: 1.5px solid var(--muted); display: inline-block; }
 .launches i.used { background: #FF7A59; border-color: #FF7A59; }
@@ -65,6 +65,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 .turn .phone { font-size: 46px; display: inline-block; animation: tip 2.4s ease-in-out infinite; }
 @keyframes tip { 0%, 30% { transform: rotate(0); } 55%, 85% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
 @media (prefers-reduced-motion: reduce) { .turn .phone { animation: none; transform: rotate(-90deg); } }
+.band { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.band line { stroke: #FF7A59; stroke-width: 6; stroke-dasharray: 2 10; }
+.band #bandStart { fill: none; stroke: rgba(255,255,255,.9); stroke-width: 3; }
+.band #bandEnd { fill: #FF7A59; stroke: #fff; stroke-width: 3; }
 .gate { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; }
 .gate .panel { position: static; transform: none; max-width: 420px; }
 </style>
@@ -77,6 +81,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
   <button class="icon-btn" id="soundBtn" type="button"></button>
 </header>
 <div class="banner" id="banner" aria-live="assertive"></div>
+<svg class="band" id="band" hidden aria-hidden="true"><line id="bandLine" stroke-linecap="round"/><circle id="bandStart" r="14"/><circle id="bandEnd" r="10"/></svg>
 <section class="panel" id="panel" hidden></section>
 <div class="turn" id="turn" hidden><div class="panel"><span class="phone" aria-hidden="true">📱</span><h2>Turn your phone sideways</h2><p>Bud-a-pult is a side view: the catapult on one end, the fort on the other. It fits much better with your phone held sideways.</p><div class="row"><button class="btn" id="turnSkip" type="button">Play anyway</button></div></div></div>
 <div class="gate" id="gate" hidden><div class="panel"><h2 id="gateTitle"></h2><p id="gateText"></p><div class="row" id="gateRow"></div></div></div>
@@ -264,7 +269,7 @@ function placeCamera(dt, snap) {
   camera.position.set(view.x, view.y + dist * 0.12, dist);
   camera.lookAt(view.x, view.y, 0);
 }
-const frameField = () => frame(-1.6, GROUND_END - 1.5, -0.6, 6.2);
+const frameField = () => frame(-1.4, FORT_X + COLS * CELL + 1.2, -0.5, 6);
 const frameFort = () => frame(FORT_X - 1.4, FORT_X + COLS * CELL + 1.4, -0.4, ROWS * CELL + 0.4);
 function resize() {
   renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
@@ -324,14 +329,15 @@ cursor.position.z = 0.48; cursor.renderOrder = 4; cursor.visible = false; scene.
 // the aiming arc: dots for the start of the flight, and fainter dots where your last shot went
 const arcDots = [], lastDots = [];
 const dotGeo = new THREE.SphereGeometry(0.07, 8, 6);
-for (let i = 0; i < 14; i++) { const d = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color: 0xffffff })); d.visible = false; scene.add(d); arcDots.push(d); }
+const arcMat = new THREE.MeshBasicMaterial({ color: toLinear('#FF7A59') });
+for (let i = 0; i < 14; i++) { const d = new THREE.Mesh(dotGeo, arcMat); d.visible = false; scene.add(d); arcDots.push(d); }
 function drawArc() {
   const on = st.mode === 'aim';
   const a = st.angle * Math.PI / 180, v = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * st.power;
   arcDots.forEach((d, i) => {
     const t = (i + 1) * 0.05; d.visible = on;
     d.position.set(LAUNCH.x + Math.cos(a) * v * t, LAUNCH.y + Math.sin(a) * v * t - 4.9 * t * t, 0.2);
-    d.scale.setScalar(1 - i / 20);
+    d.scale.setScalar(1.5 - i / 16);
   });
   lastDots.forEach((d) => { d.visible = on; });
 }
@@ -441,22 +447,12 @@ function renderPanel() {
     r.append(go); p.append(r);
   } else if (st.mode === 'aim') {
     p.append(el('h2', null, `Fling ${me ? (me.bud.nickname || me.bud.trueName) : 'your bud'}!`), launches);
-    const aim = el('div', 'aim');
-    const slider = (label, min, max, step, value, fmt, on) => {
-      const lab = el('label', null, label), input = el('input'), out = el('output', null, fmt(value));
-      input.type = 'range'; input.min = min; input.max = max; input.step = step; input.value = value;
-      const id = 'r' + label; input.id = id; lab.htmlFor = id;
-      input.addEventListener('input', () => { on(Number(input.value)); out.textContent = fmt(Number(input.value)); drawArc(); });
-      aim.append(lab, input, out);
-    };
-    slider('Angle', 15, 75, 1, st.angle, (v) => `${v}°`, (v) => { st.angle = v; });
-    slider('Power', 0, 100, 1, Math.round(st.power * 100), (v) => `${v}%`, (v) => { st.power = v / 100; });
-    p.append(aim, msg);
+    p.append(el('p', null, 'Pull back anywhere on the screen and let go. Pull further for more power; the direction you pull sets the angle.'));
+    const read = el('div', 'aim-read'); read.id = 'aimRead'; p.append(read, msg);
+    showAimRead();
     const r = el('div', 'row');
     const rebuild = el('button', 'btn', 'Rebuild'); rebuild.type = 'button'; rebuild.addEventListener('click', toBuild);
-    const go = el('button', 'btn primary', '🚀 Launch!'); go.type = 'button'; go.disabled = st.busy;
-    go.addEventListener('click', launch);
-    r.append(rebuild, go); p.append(r);
+    r.append(rebuild); p.append(r);
   } else if (st.mode === 'fly') {
     p.append(el('h2', null, pick(['Wheeeee!', 'Incoming!', 'Here it comes…'])), launches);
   } else if (st.mode === 'result') {
@@ -508,9 +504,19 @@ async function finishRepair() {
 }
 function toBuild() { st.mode = 'build'; st.add = []; st.msg = ''; gridMesh.visible = true; setLastPath([]); showBuild(); renderPanel(); drawArc(); }
 function toRepair() { st.mode = 'repair'; st.add = []; st.msg = ''; st.tool = 'wood'; gridMesh.visible = true; showState(st.fort); renderPanel(); drawArc(); }
-function toAim() { st.mode = 'aim'; st.msg = ''; gridMesh.visible = false; cursor.visible = false; armAt(ARM_COCK); placeShotInCup(); renderPanel(); drawArc(); }
+function toAim() { st.mode = 'aim'; st.msg = ''; gridMesh.visible = false; cursor.visible = false; placeShotInCup(); renderPanel(); drawArc(); }
+// pulling back winds the arm down: further back for more power, with the bud squashed into the cup
+const windAngle = (power) => ARM_FIRE + (ARM_COCK - ARM_FIRE) * (0.3 + 0.7 * power);
 function placeShotInCup() {
-  const p = cupPos(ARM_COCK); shotBud.root.position.copy(p); shotBud.spin.rotation.z = 0; shotBud.stretch.scale.set(1, 1, 1); shotBud.root.visible = true;
+  const a = windAngle(st.power); armAt(a);
+  const p = cupPos(a); shotBud.root.position.copy(p); shotBud.spin.rotation.z = 0; shotBud.stretch.rotation.z = 0;
+  shotBud.stretch.scale.set(1 + st.power * 0.12, 1 - st.power * 0.2, 1); shotBud.root.visible = true;
+}
+function showAimRead() {
+  const r = $('aimRead'); if (!r) return;
+  r.textContent = '';
+  const bar = el('span', 'bar'), fill = el('i'); fill.style.width = Math.round(st.power * 100) + '%'; bar.append(fill);
+  r.append(el('b', null, `${Math.round(st.angle)}°`), bar, el('b', null, `${Math.round(st.power * 100)}%`));
 }
 async function launch() {
   if (st.busy) return;
@@ -532,7 +538,7 @@ function playShot(shot, again) {
   const kinds = shot.kinds, n = kinds.length - 2;
   for (let i = 0; i < n; i++) { const m = pieceMesh(kinds[i]); scene.add(m); bodyMeshes.push(m); }
   towerBud.happy = false; towerBud.ouch = false; shotBud.happy = true;
-  play = { shot, t: -0.42, wind: 0, hitIdx: 0, koShown: false, again };
+  play = { shot, t: -0.42, from: windAngle(shot.shot.power), hitIdx: 0, koShown: false, again };
   S.play('whoosh', { gain: 0.6, rate: 0.8 });
 }
 function endShot() {
@@ -556,7 +562,7 @@ function playTick(dt) {
   play.t += dt * (near ? 0.25 : 1);
   // the catapult swings first, carrying the bud in its cup
   if (play.t < 0) {
-    const k = Math.min(1, (play.t + 0.42) / 0.42), a = ARM_COCK + (ARM_FIRE - ARM_COCK) * (k * k);
+    const k = Math.min(1, (play.t + 0.42) / 0.42), a = play.from + (ARM_FIRE - play.from) * (k * k);
     armAt(a); shotBud.root.position.copy(cupPos(a)); shotBud.stretch.scale.set(1, 1 - 0.25 * k, 1);
     if (!play.thwack && k > 0.95) { play.thwack = true; S.play('boing', { gain: 0.7, rate: 0.7 }); }
     frameFieldFollow(LAUNCH.x);
@@ -604,16 +610,46 @@ function puff(x, y, k = 1) {
 }
 
 /* ---------- input ---------- */
-let down = null;
-canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+let down = null, pull = null;
+const maxPull = () => clamp(Math.min(innerWidth, innerHeight) * 0.42, 110, 260);
+canvas.addEventListener('pointerdown', (e) => {
+  down = { x: e.clientX, y: e.clientY };
+  if (st.mode === 'aim' && !st.busy) { pull = { x: e.clientX, y: e.clientY, id: e.pointerId, moved: false }; canvas.setPointerCapture(e.pointerId); S.play('squish', { gain: 0.4, rate: 1.3 }); }
+});
+function drawBand(e) {
+  const b = $('band'); b.toggleAttribute('hidden', !e);   // (an svg has no .hidden property)
+  if (!e) return;
+  const L = $('bandLine'); L.setAttribute('x1', pull.x); L.setAttribute('y1', pull.y); L.setAttribute('x2', e.clientX); L.setAttribute('y2', e.clientY);
+  $('bandStart').setAttribute('cx', pull.x); $('bandStart').setAttribute('cy', pull.y);
+  $('bandEnd').setAttribute('cx', e.clientX); $('bandEnd').setAttribute('cy', e.clientY);
+}
+// slingshot aiming: the pull from where you pressed sets the angle (pull down-left to aim up-right) and the power
+function pullTo(e) {
+  const dx = pull.x - e.clientX, dy = e.clientY - pull.y, len = Math.hypot(dx, dy);
+  if (len > 8) pull.moved = true;
+  if (!pull.moved) return;
+  st.angle = clamp(Math.round(Math.atan2(dy, dx) * 180 / Math.PI), 15, 75);
+  const was = st.power;
+  st.power = clamp(len / maxPull(), 0, 1);
+  if (Math.floor(st.power * 8) !== Math.floor(was * 8)) S.play('tick', { gain: 0.3, rate: 0.8 + st.power * 0.6 });
+  placeShotInCup(); drawArc(); showAimRead(); drawBand(e);
+  shotBud.look = { x: Math.cos(st.angle * Math.PI / 180) * 0.6, y: -Math.sin(st.angle * Math.PI / 180) * 0.4 };
+}
 canvas.addEventListener('pointerup', (e) => {
+  if (pull && e.pointerId === pull.id) {
+    const go = pull.moved && st.power >= 0.04; drawBand(null); pull = null; down = null;
+    if (go) launch(); else { S.play('click', { gain: 0.5 }); }
+    return;
+  }
   if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) { down = null; return; }
   down = null;
   if (st.busy) return;
   if (st.mode === 'build') buildTap(cellAt(e.clientX, e.clientY));
   else if (st.mode === 'repair') repairTap(cellAt(e.clientX, e.clientY));
 });
+canvas.addEventListener('pointercancel', () => { if (pull) drawBand(null); pull = null; down = null; });
 canvas.addEventListener('pointermove', (e) => {
+  if (pull && e.pointerId === pull.id) { pullTo(e); return; }
   const on = st.mode === 'build' || st.mode === 'repair';
   const c = on ? cellAt(e.clientX, e.clientY) : null;
   cursor.visible = !!c && e.pointerType === 'mouse';
@@ -630,7 +666,7 @@ addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') st.power = Math.max(0, st.power - 0.01);
   else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); launch(); return; }
   else return;
-  e.preventDefault(); renderPanel(); drawArc();
+  e.preventDefault(); placeShotInCup(); showAimRead(); drawArc();
 });
 
 /* ---------- loop ---------- */
@@ -645,7 +681,7 @@ function loop(now) {
   }
   if (shotBud) {
     drawFace(shotBud, T);
-    if (!play) { shotBud.stretch.scale.y = 1 + Math.sin(T * 3) * 0.03; shotBud.look = { x: 0.6, y: 0.05 }; }
+    if (!play && !pull) { shotBud.stretch.scale.y = 1 - st.power * 0.2 + Math.sin(T * 3) * 0.03; }
   }
   if (towerBud) {
     drawFace(towerBud, T);
