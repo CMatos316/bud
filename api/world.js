@@ -8,6 +8,7 @@ import { latestIssue } from '../lib/newsletter.js';
 import { sameOrigin } from '../lib/session.js';
 import { lifeDiary, hobbyOf, HOBBY_LABEL } from '../lib/life.js';
 import { games as gamesRef } from '../lib/peekaboo.js';
+import { myDoodles } from '../lib/doodle.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
 import { waitUntil } from '@vercel/functions';
@@ -145,6 +146,8 @@ export async function GET(request) {
       friendships: allFriends.docs.map((f) => ({ a: f.get('members')[0], b: f.get('members')[1], since: f.get('since')?.toMillis() ?? 0 }))
         .filter((f) => budNames.has(f.a) && budNames.has(f.b)).sort((x, y) => x.since - y.since),
       diary,
+      // Doodle Duel games, whose turn it is
+      doodles: await myDoodles(me).catch(() => []),
       games: gameSnap.docs.map((d) => d.data()).filter((g) => ['setup', 'playing'].includes(g.status)).map((g) => {
         const them = g.players.find((id) => id !== me);
         return { id: g.id, them, myTurn: g.status === 'playing' ? g.turn === me : !g.ready?.[me], status: g.status };

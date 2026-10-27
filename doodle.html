@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Doodle Duel · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="Take turns drawing and guessing with a friend. Every right guess grows your streak.">
+<meta name="theme-color" content="#BFD9FF">
+<style>
+/* Doodle Duel: pick a word, paint it with the bud maker's brushes, and your friend watches it replay and
+   guesses. One screen per turn; works on phones. */
+:root {
+  --sky-top: #BFD9FF; --sky-bottom: #FBE3EF; --ink: #1D1C2B; --muted: #5E5D75; --card: rgba(255,255,255,.86); --line: rgba(29,28,43,.09);
+  --shadow: rgba(46,40,90,.2); --btn: #1D1C2B; --btn-ink: #fff; --paper: #FFFBEF; --good: #3BB273; --bad: #E8505B; --chip: rgba(127,127,160,.12);
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --sky-top: #141A3A; --sky-bottom: #2C1F45; --ink: #EDECF6; --muted: #A9A7C4; --card: rgba(30,32,52,.84); --line: rgba(255,255,255,.1); --shadow: rgba(0,0,0,.45); --btn: #EDECF6; --btn-ink: #15161F; --chip: rgba(255,255,255,.08); color-scheme: dark; } }
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body { margin: 0; color: var(--ink); font-family: var(--font); background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)) fixed; -webkit-tap-highlight-color: transparent; }
+.app { max-width: 620px; margin: 0 auto; padding: max(10px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); display: grid; gap: 10px; }
+.top { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; color: inherit; text-decoration: none; min-width: 0; }
+.brand img { width: 26px; height: 26px; }
+.brand span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.streak { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.streak small { color: var(--muted); font-weight: 500; }
+.icon-btn { border: 1px solid var(--line); background: var(--card); color: inherit; width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; cursor: pointer; padding: 0; flex: none; }
+.icon-btn svg { width: 17px; height: 17px; }
+.host { display: flex; gap: 10px; align-items: flex-start; }
+.host img { width: 44px; height: 44px; flex: none; }
+.bubble { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 9px 14px; flex: 1; box-shadow: 0 10px 24px -16px var(--shadow); }
+.bubble::before { content: ""; position: absolute; left: -7px; top: 15px; width: 12px; height: 12px; background: inherit; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); transform: rotate(45deg); }
+.bubble .kicker { margin: 0; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.bubble .say { margin: 2px 0 0; font-size: clamp(16px, 4vw, 20px); font-weight: 600; line-height: 1.25; }
+
+#main { display: grid; gap: 12px; }
+.choices { display: grid; gap: 10px; grid-template-columns: repeat(3, 1fr); }
+.choice { border: 1px solid var(--line); background: var(--card); color: inherit; border-radius: 18px; padding: 16px 8px; cursor: pointer; font: inherit; display: grid; gap: 6px; justify-items: center; box-shadow: 0 12px 24px -18px var(--shadow); transition: transform .15s; }
+.choice:hover { transform: translateY(-3px); }
+.choice b { font-size: clamp(16px, 4.4vw, 21px); }
+.choice span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.choice .stars { color: #F2B300; letter-spacing: 2px; font-size: 15px; }
+
+.paper { position: relative; width: 100%; max-width: min(100%, 54vh); margin: 0 auto; aspect-ratio: 1; background: var(--paper); border-radius: 18px; box-shadow: 0 18px 34px -22px var(--shadow), inset 0 0 0 1px rgba(0,0,0,.06); overflow: hidden; touch-action: none; }
+.paper canvas { width: 100%; height: 100%; display: block; }
+.paper .word { position: absolute; left: 12px; top: 10px; background: rgba(29,28,43,.82); color: #fff; font-size: 13.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+.paper .replay { position: absolute; right: 10px; top: 10px; }
+.tray { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; margin-top: 10px; }
+.brushes { display: flex; align-items: flex-end; gap: 1px; height: 58px; overflow: hidden; }
+.brush { --tilt: 0deg; appearance: none; border: 0; background: none; padding: 0; cursor: pointer; width: 26px; height: 68px; flex: none; transform: translateY(18px) rotate(var(--tilt)); transform-origin: 50% 100%; transition: transform .3s cubic-bezier(.3,1.6,.5,1); }
+.brush[aria-checked="true"] { transform: translateY(-1px) rotate(0); }
+.brush canvas { width: 26px; height: 68px; display: block; }
+.tools { display: flex; gap: 4px; }
+.tool { appearance: none; border: 1.5px solid transparent; background: var(--chip); color: var(--ink); cursor: pointer; width: 38px; height: 38px; border-radius: 13px; display: grid; place-items: center; padding: 0; }
+.tool[aria-checked="true"] { border-color: var(--ink); }
+.tool span { background: var(--ink); border-radius: 50%; display: block; }
+.tool svg { width: 18px; height: 18px; }
+
+.blanks { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.blanks .w { display: flex; gap: 5px; }
+.blanks i { width: clamp(24px, 7vw, 34px); height: clamp(32px, 9vw, 42px); border-bottom: 3px solid var(--ink); display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: clamp(18px, 5vw, 24px); text-transform: uppercase; }
+.blanks.shake { animation: shake .4s; }
+@keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+.blanks.right i { color: var(--good); border-color: var(--good); }
+.bank { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.bank button { width: clamp(34px, 9vw, 42px); height: clamp(38px, 10vw, 46px); border-radius: 10px; border: 0; background: var(--paper); color: #2B2A3A; font: 700 clamp(17px, 4.6vw, 21px) var(--font); text-transform: uppercase; cursor: pointer; box-shadow: 0 3px 0 rgba(0,0,0,.15); }
+.bank button:disabled { opacity: .25; cursor: default; box-shadow: none; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: center; }
+.btn { font: 600 15px var(--font); border-radius: 999px; padding: 10px 18px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn.primary { background: var(--btn); color: var(--btn-ink); border-color: transparent; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.small { padding: 6px 12px; font-size: 13px; }
+.msg { min-height: 1.2em; text-align: center; font-size: 14px; margin: 0; color: var(--muted); }
+.msg.bad { color: var(--bad); }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 14px 16px; box-shadow: 0 16px 30px -24px var(--shadow); }
+.panel h3 { margin: 0 0 6px; font-size: 13px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.history { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+.history li { display: flex; gap: 8px; }
+.history .ok { color: var(--good); } .history .no { color: var(--bad); }
+.typed { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; }
+.center { display: grid; place-items: center; text-align: center; min-height: 100vh; padding: 16px; }
+.center .panel { max-width: 420px; }
+.center h2 { margin: 0 0 6px; }
+.center p { color: var(--muted); }
+@media (max-width: 420px) { .choices { grid-template-columns: 1fr; } .choice { grid-auto-flow: column; justify-content: space-between; padding: 12px 16px; } }
+</style>
+</head>
+<body>
+<div class="app" id="app" hidden>
+  <header class="top">
+    <a class="brand" href="/world"><img src="/img/favicon.svg" alt=""><span id="title">Doodle Duel</span></a>
+    <span class="streak" id="streak"></span>
+    <button class="icon-btn" id="soundBtn" type="button"></button>
+  </header>
+  <div class="host"><img src="/img/favicon.svg" alt=""><div class="bubble"><p class="kicker" id="kicker"></p><p class="say" id="say" aria-live="polite"></p></div></div>
+  <section id="main"></section>
+  <section class="panel" id="historyBox" hidden><h3>Lately</h3><ul class="history" id="history"></ul></section>
+</div>
+<div class="center" id="gate" hidden><div class="panel"><h2 id="gateTitle"></h2><p id="gateText"></p><div class="row" id="gateRow"></div></div></div>
+
+<script src="/js/sound.js"></script>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const S = window.BudSound || { play() {}, bindToggle() {}, muted: true };
+// the bud maker's paints and brush sizes (canvas units: the paper is 1000 x 1000)
+const PALETTE = [['#FF6B5B', 'Tomato'], ['#FF9F43', 'Tangerine'], ['#FFD23F', 'Sunny'], ['#5ED6A0', 'Mint'], ['#4FB3FF', 'Sky'], ['#7C6CFF', 'Iris'], ['#FF7EB6', 'Bubblegum'], ['#F6F2EC', 'Cream'], ['#2B2B3A', 'Ink']];
+const SIZES = [[12, 'Small'], [26, 'Medium'], [52, 'Large']];
+const id = new URLSearchParams(location.search).get('id');
+let view = null, busy = false, lastKey = '';
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, credentials: 'same-origin', cache: 'no-store', body: body ? JSON.stringify(body) : undefined });
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw Object.assign(new Error(data.error || 'something went wrong'), { status: res.status });
+  return data;
+}
+const them = () => (view.people?.[view.them]) || 'your friend';
+const themBud = () => (view.buds?.[view.them]) || 'their bud';
+function hostSays(kicker, text) { $('kicker').textContent = kicker; $('say').textContent = text; }
+
+/* ---------- painting strokes onto the paper ---------- */
+function setupCanvas(c) {
+  const dpr = Math.min(2, devicePixelRatio || 1), w = c.clientWidth || 400;
+  c.width = c.height = Math.round(w * dpr);
+  const g = c.getContext('2d');
+  g.setTransform(c.width / 1000, 0, 0, c.width / 1000, 0, 0);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  return g;
+}
+function clearPaper(g) { g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, g.canvas.width, g.canvas.height); g.restore(); }
+// draw stroke st up to time t (Infinity: the whole thing)
+function drawStroke(g, st, upTo = Infinity) {
+  const p = st.p;
+  g.strokeStyle = PALETTE[st.c]?.[0] || '#2B2B3A'; g.fillStyle = g.strokeStyle; g.lineWidth = SIZES[st.s]?.[0] || 26;
+  if (p[2] > upTo) return;
+  if (p.length === 3) { g.beginPath(); g.arc(p[0], p[1], g.lineWidth / 2, 0, Math.PI * 2); g.fill(); return; }
+  g.beginPath(); g.moveTo(p[0], p[1]);
+  for (let i = 3; i < p.length; i += 3) { if (p[i + 2] > upTo) break; g.lineTo(p[i], p[i + 1]); }
+  g.stroke();
+}
+function drawAll(g, strokes, upTo = Infinity) { clearPaper(g); for (const st of strokes) drawStroke(g, st, upTo); }
+
+// replay a drawing stroke by stroke, a bit faster than it was drawn
+let replayRaf = 0;
+function replay(g, strokes, done) {
+  cancelAnimationFrame(replayRaf);
+  const end = Math.max(...strokes.map((s) => s.p[s.p.length - 1]), 1), speed = Math.max(1.4, end / 25000), t0 = performance.now();
+  let lastStroke = -1;
+  const step = () => {
+    const t = (performance.now() - t0) * speed;
+    drawAll(g, strokes, t);
+    const n = strokes.filter((s) => s.p[2] <= t).length;
+    if (n !== lastStroke) { lastStroke = n; if (n) S.play('paint', { gain: 0.5 }); }
+    if (t < end) replayRaf = requestAnimationFrame(step); else { drawAll(g, strokes); done && done(); }
+  };
+  step();
+}
+
+/* ---------- each turn ---------- */
+function render() {
+  const v = view;
+  $('gate').hidden = true; $('app').hidden = false;
+  $('title').textContent = `Doodle Duel with ${them()}`;
+  $('streak').innerHTML = '';
+  $('streak').append(`🔥 ${v.streak}`, el('small', null, `best ${v.best}`));
+  renderHistory();
+  const key = `${v.stage}|${v.turn}|${v.rounds.length}`;
+  if (key === lastKey) return;
+  lastKey = key;
+  const main = $('main'); main.textContent = '';
+  if (v.myTurn && v.stage === 'pick') renderPick(main);
+  else if (v.myTurn && v.stage === 'draw') renderDraw(main);
+  else if (v.myTurn && v.stage === 'guess') renderGuess(main);
+  else renderWaiting(main);
+}
+function renderHistory() {
+  const box = $('historyBox'), ul = $('history'); ul.textContent = '';
+  const rounds = [...view.rounds].reverse().slice(0, 6);
+  box.hidden = !rounds.length;
+  for (const r of rounds) {
+    const li = el('li'), who = r.by === view.me ? 'You' : them();
+    li.append(el('span', r.guessed ? 'ok' : 'no', r.guessed ? '✓' : '✗'), el('span', null, `${who} drew “${r.word}”${r.guessed ? ` · guessed${r.tries > 1 ? ` in ${r.tries} tries` : ' first try!'}` : ' · nobody got it'}`));
+    ul.append(li);
+  }
+}
+
+function renderPick(main) {
+  const v = view, after = v._last;
+  if (after) hostSays(after.right ? 'you got it! 🎉' : 'so close…', after.right ? `it was “${after.word}”! +${after.points} · streak ${v.streak}. now you draw!` : `it was “${after.word}”. the streak starts over. your turn to draw!`);
+  else hostSays('your turn to draw', v.rounds.length ? `pick a word for ${them()} to guess` : `you start! pick a word for ${them()} to guess`);
+  const box = el('div', 'choices');
+  v.choices.forEach((c, i) => {
+    const b = el('button', 'choice'); b.type = 'button';
+    b.append(el('span', 'stars', '★'.repeat(c.points)), el('b', null, c.word), el('span', null, ['easy', 'medium', 'tricky'][c.points - 1] + ` · ${c.points} pt${c.points > 1 ? 's' : ''}`));
+    b.addEventListener('click', async () => {
+      if (busy) return; busy = true;
+      try { view = await api('POST', '/api/game', { action: 'dd-pick', id, choice: i }); S.play('pop'); lastKey = ''; render(); } catch (e) { hostSays('hmm', e.message); }
+      busy = false;
+    });
+    box.append(b);
+  });
+  main.append(box);
+}
+
+function brushTray(onColor, onSize, tools) {
+  const tray = el('div', 'tray'), brushes = el('div', 'brushes'), sizes = el('div', 'tools');
+  let color = 8, size = 1;
+  const pick = (i) => { color = i; brushes.querySelectorAll('.brush').forEach((b, k) => b.setAttribute('aria-checked', k === i)); onColor(i); };
+  PALETTE.forEach(([col, name], i) => {
+    const b = el('button', 'brush'); b.type = 'button'; b.title = name; b.setAttribute('aria-label', name); b.setAttribute('role', 'radio');
+    b.style.setProperty('--tilt', ((i % 3) - 1) * 4 + 'deg');
+    const c = el('canvas'); c.width = 52; c.height = 136; drawBrush(c, col); b.append(c);
+    b.addEventListener('click', () => { pick(i); S.play('click'); });
+    brushes.append(b);
+  });
+  const setSize = (k) => { size = k; sizes.querySelectorAll('.size').forEach((b, j) => b.setAttribute('aria-checked', j === k)); onSize(k); };
+  SIZES.forEach(([px, name], k) => {
+    const b = el('button', 'tool size'); b.type = 'button'; b.title = name; b.setAttribute('aria-label', name + ' brush');
+    const d = Math.round(4 + px / 52 * 16), dot = el('span'); dot.style.width = dot.style.height = d + 'px'; b.append(dot);
+    b.addEventListener('click', () => { setSize(k); S.play('click'); });
+    sizes.append(b);
+  });
+  for (const t of tools) sizes.append(t);
+  tray.append(brushes, sizes);
+  pick(color); setSize(size);
+  return tray;
+}
+function drawBrush(c, col) {
+  const g = c.getContext('2d'), w = c.width, h = c.height, cx = w / 2;
+  const hg = g.createLinearGradient(cx - 7, 0, cx + 7, 0); hg.addColorStop(0, '#B98B5E'); hg.addColorStop(0.5, '#DDB585'); hg.addColorStop(1, '#A87A4F');
+  g.fillStyle = hg; g.beginPath(); g.roundRect ? g.roundRect(cx - 6, 64, 12, h - 60, 6) : g.rect(cx - 6, 64, 12, h - 60); g.fill();
+  const mg = g.createLinearGradient(cx - 9, 0, cx + 9, 0); mg.addColorStop(0, '#9AA1AE'); mg.addColorStop(0.45, '#EEF1F6'); mg.addColorStop(1, '#8C93A0');
+  g.fillStyle = mg; g.fillRect(cx - 9, 44, 18, 24);
+  g.beginPath(); g.moveTo(cx - 9, 46); g.bezierCurveTo(cx - 11, 28, cx - 4, 12, cx, 4); g.bezierCurveTo(cx + 4, 12, cx + 11, 28, cx + 9, 46); g.closePath();
+  g.fillStyle = col; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 1.5; g.stroke();
+}
+const svgIcon = (d) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round'); s.innerHTML = d; return s; };
+
+function renderDraw(main) {
+  const v = view;
+  hostSays(`draw: ${v.word}`, pick(['no words, no letters, just vibes', 'stick figures count!', 'it doesn’t have to be good, it has to be guessable', `${them()} is counting on you`]));
+  const paper = el('div', 'paper'), canvas = el('canvas'), tag = el('span', 'word', `✏️ ${v.word}`);
+  paper.append(canvas, tag); main.append(paper);
+  let g = setupCanvas(canvas);
+  const strokes = [];
+  let color = 8, size = 1, cur = null, clock = 0, lastReal = 0, lastPt = null;
+  const undo = el('button', 'tool'); undo.type = 'button'; undo.title = 'Undo'; undo.append(svgIcon('<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>'));
+  const clear = el('button', 'tool'); clear.type = 'button'; clear.title = 'Start over'; clear.append(svgIcon('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/>'));
+  undo.addEventListener('click', () => { strokes.pop(); drawAll(g, strokes); S.play('click'); update(); });
+  clear.addEventListener('click', () => { if (clear.dataset.sure !== '1') { clear.dataset.sure = '1'; setTimeout(() => { clear.dataset.sure = ''; }, 1500); return; } strokes.length = 0; drawAll(g, strokes); S.play('squish'); update(); });
+  main.append(brushTray((i) => { color = i; }, (k) => { size = k; }, [undo, clear]));
+  const send = el('button', 'btn primary', `Send to ${them()}`); send.type = 'button';
+  const r = el('div', 'row'); r.append(send); const msg = el('p', 'msg'); main.append(r, msg);
+  const update = () => { send.disabled = !strokes.length || busy; undo.disabled = !strokes.length; };
+  update();
+  // record each stroke with timing, so it can replay; long pauses between strokes are shortened
+  const at = (e) => { const b = canvas.getBoundingClientRect(); return [Math.round((e.clientX - b.left) / b.width * 1000), Math.round((e.clientY - b.top) / b.height * 1000)]; };
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    const now = performance.now();
+    clock += lastReal ? Math.min(450, now - lastReal) : 0; lastReal = now;
+    const [x, y] = at(e);
+    cur = { c: color, s: size, p: [x, y, Math.round(clock)] }; lastPt = [x, y];
+    strokes.push(cur); drawStroke(g, cur); update();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!cur) return;
+    const [x, y] = at(e);
+    if (Math.hypot(x - lastPt[0], y - lastPt[1]) < 4) return;
+    const now = performance.now();
+    clock += Math.min(120, now - lastReal); lastReal = now;
+    cur.p.push(x, y, Math.round(clock)); lastPt = [x, y];
+    drawAll(g, strokes);
+    if (Math.random() < 0.08) S.play('paint', { gain: 0.35 });
+  });
+  const end = () => { cur = null; lastReal = performance.now(); };
+  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+  addEventListener('resize', () => { g = setupCanvas(canvas); drawAll(g, strokes); }, { once: true });
+  send.addEventListener('click', async () => {
+    if (busy || !strokes.length) return;
+    busy = true; update(); msg.textContent = 'sending…';
+    try { view = await api('POST', '/api/game', { action: 'dd-send', id, strokes }); S.play('whoosh'); lastKey = ''; render(); }
+    catch (e) { msg.textContent = e.message; msg.className = 'msg bad'; }
+    busy = false; update();
+  });
+}
+
+function renderGuess(main) {
+  const v = view;
+  hostSays(`${them()} drew this!`, 'watch it come together… what is it?');
+  const paper = el('div', 'paper'), canvas = el('canvas'), again = el('button', 'btn small replay', '↻ Replay'); again.type = 'button';
+  paper.append(canvas, again); main.append(paper);
+  const g = setupCanvas(canvas);
+  replay(g, v.strokes);
+  again.addEventListener('click', () => { replay(g, v.strokes); S.play('click'); });
+  // the blanks, filled from the letter bank (or the keyboard)
+  const blanks = el('div', 'blanks'), slots = [];
+  for (const n of v.shape) { const w = el('div', 'w'); for (let i = 0; i < n; i++) { const s = el('i'); slots.push(s); w.append(s); } blanks.append(w); }
+  const bank = el('div', 'bank'), typed = [];   // typed: [{ ch, btn }]
+  const fill = () => { slots.forEach((s, i) => { s.textContent = typed[i]?.ch || ''; }); submit.disabled = typed.length !== slots.length || busy; };
+  for (const ch of v.bank) {
+    const b = el('button', null, ch); b.type = 'button';
+    b.addEventListener('click', () => { if (typed.length >= slots.length) return; typed.push({ ch, btn: b }); b.disabled = true; S.play('tick', { gain: 0.4 }); fill(); });
+    bank.append(b);
+  }
+  const back = el('button', 'btn small', '⌫'); back.type = 'button';
+  back.addEventListener('click', () => { const t = typed.pop(); if (t) t.btn.disabled = false; fill(); });
+  const submit = el('button', 'btn primary', 'Guess!'); submit.type = 'button';
+  const give = el('button', 'btn small', 'Give up'); give.type = 'button';
+  const r = el('div', 'row'); r.append(back, submit, give);
+  const msg = el('p', 'msg');
+  main.append(blanks, bank, r, msg);
+  fill();
+  // typing works too
+  addEventListener('keydown', onKey);
+  function onKey(e) {
+    if (view.stage !== 'guess' || !view.myTurn) return removeEventListener('keydown', onKey);
+    if (e.key === 'Backspace') { back.click(); e.preventDefault(); }
+    else if (e.key === 'Enter') submit.click();
+    else if (/^[a-z]$/i.test(e.key)) { const b = [...bank.children].find((x) => !x.disabled && x.textContent === e.key.toLowerCase()); if (b) b.click(); }
+  }
+  submit.addEventListener('click', async () => {
+    if (busy || typed.length !== slots.length) return;
+    busy = true; fill();
+    const guess = typed.map((t) => t.ch).join('');
+    try {
+      const res = await api('POST', '/api/game', { action: 'dd-guess', id, guess });
+      if (res.last && res.last.right) {
+        blanks.classList.add('right'); S.play('chime'); msg.textContent = '🎉';
+        setTimeout(() => { view = { ...res, _last: res.last }; lastKey = ''; render(); }, 1300);
+      } else {
+        view = res; blanks.classList.remove('shake'); void blanks.offsetWidth; blanks.classList.add('shake'); S.play('boing');
+        msg.textContent = pick(['nope! try again', 'not quite…', 'so close (maybe)', 'hmm, no']); msg.className = 'msg bad';
+        while (typed.length) typed.pop().btn.disabled = false;
+      }
+    } catch (e) { msg.textContent = e.message; msg.className = 'msg bad'; }
+    busy = false; fill();
+  });
+  give.addEventListener('click', async () => {
+    if (give.dataset.sure !== '1') { give.dataset.sure = '1'; give.textContent = `Sure? The streak resets`; return; }
+    busy = true;
+    try { const res = await api('POST', '/api/game', { action: 'dd-giveup', id }); S.play('squish'); view = { ...res, _last: res.last }; lastKey = ''; render(); }
+    catch (e) { msg.textContent = e.message; }
+    busy = false;
+  });
+}
+
+function renderWaiting(main) {
+  const v = view;
+  if (v.stage === 'guess') {
+    hostSays(`waiting for ${them()}`, `${them()} is guessing your “${v.word}”…`);
+    const paper = el('div', 'paper'), canvas = el('canvas'); paper.append(canvas); main.append(paper);
+    const g = setupCanvas(canvas); drawAll(g, v.strokes);
+  } else hostSays(`waiting for ${them()}`, v.stage === 'pick' ? `${them()} is picking a word to draw for you…` : `${them()} is drawing something for you… 🎨`);
+  const r = el('div', 'row'), back = el('a', 'btn', 'Back to the island'); back.href = '/world';
+  r.append(back); main.append(r);
+  main.append(el('p', 'msg', 'You’ll get a Discord DM when it’s your turn.'));
+}
+
+/* ---------- checking for the other player's move ---------- */
+async function poll() {
+  setTimeout(poll, 5000);
+  if (!view || view.myTurn || busy || document.hidden) return;
+  try { const v = await api('GET', `/api/game?doodle=${id}`); if (v.turn !== view.turn || v.stage !== view.stage) { view = v; S.play('ding'); render(); } } catch (e) {}
+}
+function gate(title, text, actions) {
+  $('app').hidden = true; $('gate').hidden = false;
+  $('gateTitle').textContent = title; $('gateText').textContent = text;
+  const r = $('gateRow'); r.textContent = '';
+  for (const [label, href, primary] of actions) { const a = el('a', 'btn' + (primary ? ' primary' : ''), label); a.href = href; r.append(a); }
+}
+(async () => {
+  S.bindToggle($('soundBtn')); if (!window.BudSound) $('soundBtn').hidden = true;
+  if (!id || !/^[A-Za-z0-9]{10,40}$/.test(id)) return gate('No game here', 'Start a Doodle Duel from a friend’s bud card on the island.', [['Go to the island', '/world', true]]);
+  try { view = await api('GET', `/api/game?doodle=${id}`); render(); setTimeout(poll, 5000); }
+  catch (e) {
+    if (e.status === 401) return gate('Sign in to play', 'Doodle Duel is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', `/api/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`, true]]);
+    gate('Couldn’t open this game', e.message, [['Go to the island', '/world', true]]);
+  }
+})();
+</script>
+</body>
+</html>

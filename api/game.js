@@ -4,11 +4,14 @@
 // drawing them); POST { action: 'sd-new' | 'sd-join' | 'sd-start' | 'sd-pick', room, choice }
 // Prankster rooms (lib/prankster.js) too: GET ?pk= checks in; POST { action: 'pk-new' | 'pk-join' | 'pk-start'
 // | 'pk-night' | 'pk-ready' | 'pk-vote', room, target }
+// Doodle Duel (lib/doodle.js): GET ?doodle= one game; POST { action: 'dd-new' | 'dd-pick' | 'dd-send' | 'dd-guess'
+// | 'dd-giveup', id, opponent, choice, strokes, guess }
 import { readSession, sameOrigin } from '../lib/session.js';
 import { createGame, hide, shoot, resign, getGame, myGames } from '../lib/peekaboo.js';
 import { isDiscordId } from '../lib/notes.js';
 import { newRoomId, joinRoom, checkIn, startGame, pick, budsFor } from '../lib/showdown.js';
 import * as prank from '../lib/prankster.js';
+import * as doodle from '../lib/doodle.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
 
@@ -23,6 +26,11 @@ export async function GET(request) {
   const session = readSession(request);
   if (!session) return json({ error: 'sign in first' }, 401);
   const url = new URL(request.url), id = url.searchParams.get('id'), room = url.searchParams.get('room');
+  const dd = url.searchParams.get('doodle');
+  if (dd != null) {
+    if (!/^[A-Za-z0-9]{10,40}$/.test(dd)) return json({ error: 'which game?' }, 400);
+    try { return json(await doodle.getGame(session.id, dd)); } catch (err) { return fail(err); }
+  }
   const pk = url.searchParams.get('pk');
   if (pk != null) {
     if (!okRoom(pk)) return json({ error: 'which game?' }, 400);
@@ -45,6 +53,20 @@ export async function POST(request) {
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
   const { action, id } = body || {};
+  if (typeof action === 'string' && action.startsWith('dd-')) {
+    try {
+      if (action === 'dd-new') {
+        if (!isDiscordId(body.opponent)) return json({ error: 'who are you doodling with?' }, 400);
+        return json(await doodle.createGame(session.id, body.opponent));
+      }
+      if (typeof id !== 'string' || !/^[A-Za-z0-9]{10,40}$/.test(id)) return json({ error: 'which game?' }, 400);
+      if (action === 'dd-pick') return json(await doodle.pickWord(session.id, id, Number(body.choice)));
+      if (action === 'dd-send') return json(await doodle.sendDrawing(session.id, id, body.strokes));
+      if (action === 'dd-guess') return json(await doodle.guess(session.id, id, String(body.guess || '').slice(0, 60)));
+      if (action === 'dd-giveup') return json(await doodle.giveUp(session.id, id));
+      return json({ error: 'unknown move' }, 400);
+    } catch (err) { return fail(err); }
+  }
   if (typeof action === 'string' && action.startsWith('pk-')) {
     try {
       if (action === 'pk-new') return json(await prank.joinRoom(prank.newRoomId(), session.id, session.name));

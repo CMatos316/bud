@@ -2128,8 +2128,8 @@ function renderCardBody() {
     cardBody.append(el('span', 'friends', `You and ${d.ownerName || 'them'} are friends`));
     renderInCommon(d);
     if (myBud()) {
-      const r = el('div', 'row'); r.append(peekabooButton(bud)); cardBody.append(r);
-      cardBody.append(el('p', 'muted', 'Peekaboo: you each hide 3 buds on the island and take turns finding them.'));
+      const r = el('div', 'row'); r.append(peekabooButton(bud), doodleButton(bud)); cardBody.append(r);
+      cardBody.append(el('p', 'muted', 'Peekaboo: you each hide 3 buds and take turns finding them. Doodle Duel: take turns drawing and guessing.'));
     }
     return;
   }
@@ -3296,6 +3296,20 @@ async function startGameWith(them) {
 }
 
 // the card buttons: on a friend's bud, and the list on your own
+// Doodle Duel (doodle.html): a drawing game between friends, in turns
+let myDoodles = [];
+function doodleButton(bud) {
+  const g = myDoodles.find((x) => x.them === bud.data.id);
+  const b = el('button', 'btn', g ? (g.myTurn ? '🎨 Your turn to doodle' : '🎨 Doodle Duel') : '🎨 Doodle Duel'); b.type = 'button';
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      const id = g ? g.id : (await api('POST', '/api/game', { action: 'dd-new', opponent: bud.data.id })).id;
+      location.href = `/doodle?id=${id}`;
+    } catch (e) { b.disabled = false; b.textContent = e.message; }
+  });
+  return b;
+}
 function peekabooButton(bud) {
   const g = myGames.find((x) => x.them === bud.data.id);
   const b = el('button', 'btn primary', g ? (g.myTurn ? 'Your turn in Peekaboo' : 'Open Peekaboo') : 'Play Peekaboo'); b.type = 'button';
@@ -3307,6 +3321,7 @@ function peekabooButton(bud) {
   return b;
 }
 function renderGamesList() {
+  renderDoodlesList();
   if (!myGames.length) return;
   const box = el('section', 'diary games');
   box.append(el('h3', null, 'Peekaboo'));
@@ -3323,6 +3338,21 @@ function renderGamesList() {
   cardBody.append(box);
 }
 
+function renderDoodlesList() {
+  if (!myDoodles.length) return;
+  const box = el('section', 'diary games');
+  box.append(el('h3', null, 'Doodle Duel'));
+  const ul = el('ul');
+  for (const g of myDoodles) {
+    const other = budById(g.them), who = other ? other.data.ownerName || nameOf(other) : 'a friend';
+    const li = el('li', g.myTurn ? 'fresh' : null);
+    const open = el('a', 'btn', g.myTurn ? (g.stage === 'guess' ? 'Guess it' : 'Your turn') : 'Open'); open.href = `/doodle?id=${g.id}`;
+    li.append(el('span', 'ico', '🎨'), el('span', null, `with ${who}${g.streak ? ` · streak ${g.streak}` : ''}`), open);
+    ul.append(li);
+  }
+  box.append(ul);
+  cardBody.append(box);
+}
 gameSeg.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-board]');
   if (!b || !game || b.dataset.board === game.board) return;
@@ -3434,6 +3464,7 @@ function showCenter(title, text, linkText, href = '/') {
   inbox = world.inbox || [];
   diary = world.diary || [];
   myGames = world.games || [];
+  myDoodles = world.doodles || [];
   news = world.news || null;
   if (news) {
     document.getElementById('newsBtn').hidden = false;
