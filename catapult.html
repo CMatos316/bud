@@ -69,6 +69,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 @media (orientation: landscape) and (max-height: 520px) {
   .panel { left: auto; right: max(10px, env(safe-area-inset-right)); transform: none; top: 54px; bottom: auto; max-height: calc(100% - 64px); width: min(300px, 42vw); align-content: start; overflow-y: auto; padding: 10px 12px; gap: 8px; }
   .panel h2 { font-size: 15px; } .panel p { font-size: 13px; }
+  .panel p.help { display: none; }
   .tools { grid-template-columns: repeat(3, 1fr); }
   .btn { padding: 8px 14px; font-size: 14px; }
 }
@@ -376,6 +377,21 @@ const st = {
   angle: 45, power: 0.5, busy: false, msg: '', shot: null, lastPath: [], add: [], remove: new Set(), budTo: null,
 };
 let me = null, shotBud = null, towerBud = null;
+// A real game (?id=): lib/bpgame.js keeps the forts and turns; this page shows whichever step you're on.
+const GAME_ID = /^[A-Za-z0-9]{10,40}$/.test(new URLSearchParams(location.search).get('id') || '') ? new URLSearchParams(location.search).get('id') : null;
+let gv = null;   // the game as the server last sent it
+const budMeshes = new Map();   // "uid:size" -> bud on screen (each player's bud, at catapult size and fort size)
+async function budFor(uid, w) {
+  const key = uid + ':' + w;
+  if (!budMeshes.has(key)) budMeshes.set(key, await makeBud((gv && gv.buds && gv.buds[uid]) || me.bud, w));
+  return budMeshes.get(key);
+}
+// who's in the catapult and who's in the fort
+async function cast(attacker, defender) {
+  const [a, d] = await Promise.all([budFor(attacker, SHOT_W), budFor(defender, BUD_W)]);
+  for (const b of budMeshes.values()) if (b !== a && b !== d) { b.root.visible = false; b.bubble.hidden = true; }
+  shotBud = a; towerBud = d; a.root.visible = true; d.root.visible = true;
+}
 const bodyMeshes = [];   // the fortress pieces on screen, in the same order as the state
 function clearBodies() { for (const m of bodyMeshes) scene.remove(m); bodyMeshes.length = 0; }
 // draw a fortress state ({ bodies: [{ t, x, y, a }], bud })
@@ -546,10 +562,11 @@ function renderPanel() {
   const p = $('panel'); p.textContent = ''; p.hidden = false;
   checkTurn();
   const aiming = st.mode === 'aim' || st.mode === 'fly';
-  $('rebuildBtn').hidden = st.mode !== 'aim';
+  $('rebuildBtn').hidden = st.mode !== 'aim' || !!GAME_ID;
   $('errToast').hidden = !(aiming && st.msg); $('errToast').textContent = st.msg || '';
   if (aiming) { p.hidden = true; showAimRead(); reframe(); return; }
-  setPill('test range');
+  setPill(GAME_ID && gv ? `vs ${gv.people[gv.them] || 'a friend'}${gv.stage !== 'build' && gv.stage !== 'done' ? ` · round ${gv.round} of 2` : ''}` : 'test range');
+  if (GAME_ID && (st.mode === 'wait' || st.mode === 'gresult' || st.mode === 'done')) { renderGamePanel(p); reframe(); return; }
   const msg = el('p', 'msg', st.msg);
   const launches = el('div', 'launches');
   for (let i = 0; i < LAUNCHES; i++) launches.append(el('i', i < st.launches ? 'used' : null));
@@ -557,8 +574,8 @@ function renderPanel() {
   launches.append(` launch ${shown} of ${LAUNCHES}`);
   if (st.mode === 'build' || st.mode === 'repair') {
     const repairing = st.mode === 'repair';
-    p.append(el('h2', null, repairing ? 'Patch it up' : 'Build a fort around your bud'));
-    p.append(el('p', null, repairing ? `Tap any piece to clear it away (rubble too), add up to ${REPAIRS} new pieces, and drag your bud to move it.` : 'Tap a square to place a piece, tap a piece to remove it, and drag your bud to move it. Keep it safe: if the flying bud reaches it, or knocks it loose, your fort loses.'));
+    p.append(el('h2', null, repairing ? (GAME_ID ? `Patch it up before launch ${(gv.launches || 0) + 1} of 3` : 'Patch it up') : 'Build a fort around your bud'));
+    p.append(el('p', 'help', repairing ? `Tap any piece to clear it away (rubble too), add up to ${REPAIRS} new pieces, and drag your bud to move it.` : 'Tap a square to place a piece, tap a piece to remove it, and drag your bud to move it. Keep it safe: if the flying bud reaches it, or knocks it loose, your fort loses.'));
     const tools = el('div', 'tools');
     tools.append(toolButton('wood', 'Wood', swatch(18, 18, '#D9A86C')), toolButton('stone', 'Stone', swatch(18, 18, '#A8A6B8')),
       toolButton('beam', 'Beam', swatch(30, 10, '#D9A86C')), toolButton('pillar', 'Pillar', swatch(10, 22, '#D9A86C')));
@@ -577,11 +594,11 @@ function renderPanel() {
     } else {
       const undo = el('button', 'btn', 'Undo all'); undo.type = 'button'; undo.disabled = !st.add.length && !st.remove.size && !st.budTo;
       undo.addEventListener('click', () => { st.add = []; st.remove = new Set(); st.budTo = null; showRepair(); renderPanel(); });
-      const skip = el('button', 'btn', 'Skip'); skip.type = 'button'; skip.addEventListener('click', () => { st.add = []; st.remove = new Set(); st.budTo = null; showState(st.fort); toAim(); });
+      const skip = el('button', 'btn', 'Skip'); skip.type = 'button'; skip.addEventListener('click', () => { st.add = []; st.remove = new Set(); st.budTo = null; if (GAME_ID) return finishRepair(true); showState(st.fort); toAim(); });
       r.append(undo, skip);
     }
     const go = el('button', 'btn primary', repairing ? 'Done' : 'Ready!'); go.type = 'button'; go.disabled = st.busy;
-    go.addEventListener('click', repairing ? finishRepair : finishBuild);
+    go.addEventListener('click', repairing ? () => finishRepair() : finishBuild);
     r.append(go); p.append(r);
   } else if (st.mode === 'result') {
     const s = st.shot, won = !!s.ko, over = won || st.launches >= LAUNCHES;
@@ -608,6 +625,7 @@ function renderPanel() {
 }
 function reframe() {
   if (st.mode === 'build' || st.mode === 'repair') frameFort();
+  else if (st.mode === 'wait' || st.mode === 'gresult' || st.mode === 'done') frame(FORT_X - 2.5, FORT_X + COLS * CELL + 2.5, -0.5, ROWS * CELL + 0.5);
   else if (st.mode === 'aim') frameField();
   else if (st.mode === 'result') frame(FORT_X - 2.5, FORT_X + COLS * CELL + 2.5, -0.5, ROWS * CELL + 0.5);
 }
@@ -615,6 +633,11 @@ function reframe() {
 /* ---------- moves ---------- */
 async function finishBuild() {
   st.busy = true; st.msg = ''; renderPanel();
+  if (GAME_ID) {
+    try { const v = await api('POST', '/api/game', { action: 'bpg-build', id: GAME_ID, pieces: st.build.pieces, bud: st.build.bud }); S.play('chime'); await applyView(v); }
+    catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
+    return;
+  }
   try {
     const { state } = await api('POST', '/api/game', { action: 'bp-build', pieces: st.build.pieces, bud: st.build.bud });
     st.fort = state; st.fortStart = JSON.parse(JSON.stringify(state)); st.launches = 0; st.busy = false; setDizzy(0);
@@ -622,7 +645,16 @@ async function finishBuild() {
     toAim();
   } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
 }
-async function finishRepair() {
+async function finishRepair(skip) {
+  if (GAME_ID) {
+    const nothing = skip === true || (!st.add.length && !st.remove.size && !st.budTo);
+    st.busy = true; st.msg = ''; renderPanel();
+    try {
+      const v = await api('POST', '/api/game', nothing ? { action: 'bpg-patch', id: GAME_ID, skip: true } : { action: 'bpg-patch', id: GAME_ID, add: st.add, remove: [...st.remove], bud: st.budTo });
+      st.add = []; st.remove = new Set(); st.budTo = null; S.play('chime'); await applyView(v);
+    } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
+    return;
+  }
   if (!st.add.length && !st.remove.size && !st.budTo) { showState(st.fort); return toAim(); }
   st.busy = true; st.msg = ''; renderPanel();
   try {
@@ -662,6 +694,15 @@ function showAimRead() {
 async function launch() {
   if (st.busy) return;
   st.busy = true; st.msg = ''; renderPanel();
+  if (GAME_ID) {
+    try {
+      const v = await api('POST', '/api/game', { action: 'bpg-shoot', id: GAME_ID, angle: st.angle, power: st.power });
+      gv = v; st.busy = false; st.launches++;
+      const shot = { ...JSON.parse(v.shot.data), by: v.shot.by, n: v.shot.n, round: v.shot.round };
+      st.shot = shot; playShot(shot, false);
+    } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
+    return;
+  }
   try {
     const shot = await api('POST', '/api/game', { action: 'bp-shoot', state: st.fort, angle: st.angle, power: st.power });
     st.busy = false; st.launches++; st.shot = shot;
@@ -685,10 +726,17 @@ function playShot(shot, again) {
 }
 function endShot() {
   const shot = play.shot; play = null;
+  if (GAME_ID) {
+    markSeen(shot.n);
+    const def = gv.players.find((x) => x !== shot.by);
+    st.fort = gv.forts[def] || st.fort; showState(st.fort); shotBud.root.visible = false;
+    st.mode = 'gresult'; renderPanel();
+  } else {
   if (!shot._applied) { shot._applied = true; st.fort = shot.after; setDizzy(shot.dizzy ? shot.dizzy.after : 0, true); setLastPath(shot.frames.filter((_, i) => i % 3 === 0 && (shot.firstHit == null || i <= shot.firstHit)).map((f) => f[f.length - 1]).slice(0, 40)); }
   showState(st.fort);
   shotBud.root.visible = false;
   st.mode = 'result'; renderPanel();
+  }
   if (!shot.ko) {
     const gain = shot.dizzy ? shot.dizzy.gain : 0, total = shot.dizzy ? shot.dizzy.after : 0;
     const lines = total >= 70 && gain > 0 ? LINES.wobbly : gain >= 15 ? LINES.shaken : gain > 0 ? LINES.nudged : LINES.untouched;
@@ -938,6 +986,104 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+/* ---------- the game: which step you're on ---------- */
+const seenKey = () => `bpg-seen-${GAME_ID}`;
+function seenShot() { try { return Number(localStorage.getItem(seenKey())) || 0; } catch (e) { return 0; } }
+function markSeen(n) { try { localStorage.setItem(seenKey(), String(Math.max(n, seenShot()))); } catch (e) {} }
+const themName = () => (gv && gv.people[gv.them]) || 'your friend';
+const budName = (uid) => (gv && gv.budNames[uid]) || 'a bud';
+const KO_HOW = { direct: 'a direct hit', knocked: 'knocked flying', fell: 'tumbled out of its spot', dizzy: 'too dizzy to go on' };
+
+async function applyView(v, { replay = true } = {}) {
+  gv = v; st.busy = false; st.msg = '';
+  const mine = v.me, them = v.them;
+  gridMesh.visible = false; cursor.visible = false; drawArc();
+  // a shot you haven't watched yet (theirs at your fort, or yours from another device): watch it first
+  if (replay && v.shot && v.shot.n > seenShot()) {
+    const shot = { ...JSON.parse(v.shot.data), by: v.shot.by, n: v.shot.n, round: v.shot.round };
+    const def = v.players.find((x) => x !== shot.by);
+    await cast(shot.by, def);
+    st.fort = v.forts[def]; st.shot = shot;
+    st.launches = v.results[shot.round] ? v.results[shot.round].launches : v.launches;
+    playShot(shot, false);
+    return;
+  }
+  if (v.stage === 'build') {
+    await cast(them, mine);
+    if (!v.built[mine]) { st.build = JSON.parse(JSON.stringify(STARTER)); st.launches = 0; toBuild(); return; }
+    st.fort = v.forts[mine]; showState(st.fort); placeShotInCup(); st.mode = 'wait'; renderPanel(); return;
+  }
+  if (v.stage === 'done') {
+    await cast(v.players[1], v.players[0]);
+    st.fort = v.forts[v.players[0]] || st.fort; if (st.fort) showState(st.fort); shotBud.root.visible = false;
+    st.mode = 'done'; renderPanel(); return;
+  }
+  const A = v.attacker, D = v.players.find((x) => x !== A);
+  await cast(A, D);
+  st.fort = v.forts[D]; st.launches = v.launches;
+  if (v.stage === 'launch' && A === mine) { showState(st.fort); toAim(); return; }
+  if (v.stage === 'patch' && D === mine) { toRepair(); return; }
+  showState(st.fort); placeShotInCup(); st.mode = 'wait'; renderPanel();
+}
+
+// one round, from your side: "You knocked out Noodle in 2 launches" / "Liv couldn't knock out Mochi"
+function roundLine(r) {
+  if (!r) return null;
+  const you = r.attacker === gv.me, who = you ? 'You' : themName(), target = budName(gv.players.find((x) => x !== r.attacker));
+  return r.ko ? `${who} knocked out ${target} in ${r.launches} launch${r.launches > 1 ? 'es' : ''} (${KO_HOW[r.ko] || 'bonk'})`
+    : `${who} couldn’t knock out ${target}${r.dizzy ? ` (left it ${r.dizzy}% dizzy)` : ''}`;
+}
+function renderGamePanel(p) {
+  const v = gv, mine = v.me, row = el('div', 'row');
+  const btn = (label, fn, primary) => { const b = el('button', 'btn' + (primary ? ' primary' : ''), label); b.type = 'button'; b.disabled = st.busy; b.addEventListener('click', fn); row.append(b); return b; };
+  const link = (label, href, primary) => { const a = el('a', 'btn' + (primary ? ' primary' : ''), label); a.href = href; row.append(a); return a; };
+  const giveUp = () => { const b = btn('Give up', async () => { if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Sure? They win'; return; } st.busy = true; try { await applyView(await api('POST', '/api/game', { action: 'bpg-resign', id: GAME_ID }), { replay: false }); } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); } }); };
+  const launchesDots = (n) => { const d = el('div', 'launches'); for (let i = 0; i < 3; i++) d.append(el('i', i < n ? 'used' : null)); d.append(` launch ${Math.max(1, n)} of 3`); return d; };
+  if (st.mode === 'wait') {
+    if (v.stage === 'build') {
+      p.append(el('h2', null, 'Your fort is ready!'), el('p', null, `Waiting for ${themName()} to build theirs. We’ll DM you when it’s time to fling.`));
+    } else if (v.stage === 'launch') {
+      p.append(el('h2', null, `${themName()} is aiming at your fort…`), launchesDots(v.launches + 1), el('p', null, `Launch ${v.launches + 1} of 3. We’ll DM you when it lands, so you can watch and patch up.`));
+    } else if (v.stage === 'patch') {
+      p.append(el('h2', null, `${themName()} is patching up their fort`), launchesDots(v.launches), el('p', null, `Your launch ${v.launches + 1} of 3 is next. We’ll DM you when it’s your turn.`));
+    }
+    link('Back to the island', '/world', true); giveUp();
+  } else if (st.mode === 'gresult') {
+    const shot = st.shot, mineShot = shot.by === mine, roundDone = v.results[shot.round], n = roundDone ? roundDone.launches : v.launches;
+    const target = budName(v.players.find((x) => x !== shot.by));
+    p.append(el('h2', null, shot.ko ? (shot.ko.how === 'dizzy' ? `🌀 ${target} got too dizzy!` : `💥 ${target} got knocked out!`)
+      : roundDone ? '🛡️ The fort held all 3 launches!' : shot.firstHit == null ? 'Way off!' : `${target} is still standing`));
+    p.append(launchesDots(n));
+    let text;
+    if (v.stage === 'done') text = 'That’s the game! See how it went.';
+    else if (roundDone && shot.round === 1) text = mineShot ? `Round 1 is over. Now ${themName()} flings ${budName(v.them)} at your fort.` : `Round 1 is over. Your turn to fling ${budName(mine)} at ${themName()}’s fort!`;
+    else if (v.stage === 'patch') text = mineShot ? `Now ${themName()} gets to patch up their fort. We’ll DM you when it’s your turn.` : `${themName()} flung ${budName(shot.by)} at your fort. Patch it up before their next launch!`;
+    else text = mineShot ? 'Nice one.' : `${themName()} flung ${budName(shot.by)} at your fort.`;
+    p.append(el('p', null, text));
+    btn('↻ Replay', () => playShot(st.shot, true));
+    const next = v.stage === 'done' ? 'See results' : v.myTurn ? (v.stage === 'patch' ? 'Patch it up' : 'Your turn!') : 'OK';
+    btn(next, () => applyView(gv, { replay: false }), true);
+  } else if (st.mode === 'done') {
+    const won = v.winner === mine, tie = v.winner === 'tie';
+    p.append(el('h2', null, v.resigned ? (v.resigned === mine ? 'You gave up' : `${themName()} gave up. You win! 🪖`) : tie ? 'It’s a tie!' : won ? 'You win! 🪖' : `${themName()} wins!`));
+    const ul = el('p'); [roundLine(v.results[1]), roundLine(v.results[2])].filter(Boolean).forEach((l, i) => { if (i) ul.append(el('br')); ul.append(l); });
+    if (ul.childNodes.length) p.append(ul);
+    if (won) p.append(el('p', null, `${budName(mine)} got a Bud-a-pult helmet for its wardrobe.`));
+    link('Back to the island', '/world');
+    btn('Rematch', async () => { st.busy = true; renderPanel(); try { const r = await api('POST', '/api/game', { action: 'bpg-new', opponent: v.them }); location.href = `/catapult?id=${r.id}`; } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); } }, true);
+  }
+  if (st.msg) p.append(el('p', 'msg', st.msg));
+  p.append(row);
+}
+// waiting for them: check every few seconds
+setInterval(async () => {
+  if (!GAME_ID || !gv || play || st.busy || document.hidden || st.mode !== 'wait') return;
+  try {
+    const v = await api('GET', `/api/game?bpg=${GAME_ID}`);
+    if ((v.shot && v.shot.n) !== (gv.shot && gv.shot.n) || v.stage !== gv.stage || v.turn !== gv.turn || v.built[v.them] !== gv.built[gv.them]) { S.play('ding'); await applyView(v); }
+  } catch (e) {}
+}, 5000);
+
 function gate(title, text, actions) {
   $('gate').hidden = false; $('panel').hidden = true;
   $('gateTitle').textContent = title; $('gateText').textContent = text;
@@ -950,13 +1096,21 @@ function gate(title, text, actions) {
   requestAnimationFrame(loop);
   try { me = await api('GET', '/api/me'); }
   catch (e) {
-    if (e.status === 401) return gate('Sign in first', 'Bud-a-pult is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', `/api/auth/login?next=${encodeURIComponent(location.pathname)}`, true]]);
+    if (e.status === 401) return gate('Sign in first', 'Bud-a-pult is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', `/api/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`, true]]);
     return gate('Couldn’t load your bud', e.message, [['Go to the island', '/world', true]]);
   }
   if (!me.bud) return gate('Make your bud first', 'You need a bud to put in the catapult!', [['Make your bud', '/', true]]);
+  budIcon = budSnapshot(me.bud);
+  if (GAME_ID) {
+    let v;
+    try { v = await api('GET', `/api/game?bpg=${GAME_ID}`); }
+    catch (e) { return gate('Couldn’t open this game', e.message, [['Go to the island', '/world', true]]); }
+    $('turn').hidden = true;
+    await applyView(v);
+    return;
+  }
   // on the test range you fling your bud at a fort guarding... your bud (in a real game, it's your friend's)
   [shotBud, towerBud] = await Promise.all([makeBud(me.bud, SHOT_W), makeBud(me.bud, BUD_W)]);
-  budIcon = budSnapshot(me.bud);
   placeShotInCup();
   toBuild();
 })();

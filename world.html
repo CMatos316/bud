@@ -950,6 +950,15 @@ const HEAD = {
     }
     g.position.set(top.x, -top.y + u * 0.01, 0); g.rotation.z = -0.15; return g;
   },
+  helmet(bud) {
+    // won at Bud-a-pult: a little red crash helmet with a white stripe
+    const b = bud.b, u = b.w, top = topOf(b), g = new THREE.Group();
+    const r = u * 0.28, dome = mesh(new THREE.SphereGeometry(r, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2), '#E8394B', { roughness: 0.35 }); dome.scale.set(1, 0.72, 1); g.add(dome);
+    // a white stripe curving over the top, front to back
+    const stripe = mesh(new THREE.TorusGeometry(r * 1.01, u * 0.028, 8, 28, Math.PI), '#FFFFFF'); stripe.rotation.y = Math.PI / 2; stripe.scale.set(1, 0.72, 1); g.add(stripe);
+    const rim = mesh(new THREE.TorusGeometry(r, u * 0.022, 8, 36), '#B8283C'); rim.rotation.x = Math.PI / 2; g.add(rim);
+    g.position.set(top.x, -top.y - u * 0.07, 0); g.rotation.z = -0.1; return g;
+  },
   buckethat(bud) {
     const b = bud.b, u = b.w, top = topOf(b), g = new THREE.Group();
     g.add(mesh(new THREE.CylinderGeometry(u * 0.13, u * 0.16, u * 0.1, 24), '#C9B27C'));
@@ -2143,8 +2152,8 @@ function renderCardBody() {
     cardBody.append(el('span', 'friends', `You and ${d.ownerName || 'them'} are friends`));
     renderInCommon(d);
     if (myBud()) {
-      const r = el('div', 'row'); r.append(peekabooButton(bud), sendDoodleButton(bud), doodleButton(bud)); cardBody.append(r);
-      cardBody.append(el('p', 'muted', `Peekaboo: hide 3 buds each, then take turns finding them. Send a doodle: draw ${d.ownerName || 'them'} something for their DMs. Doodle Duel: take turns drawing and guessing.`));
+      const r = el('div', 'row'); r.append(peekabooButton(bud), pultButton(bud), sendDoodleButton(bud), doodleButton(bud)); cardBody.append(r);
+      cardBody.append(el('p', 'muted', `Peekaboo: hide 3 buds each, then take turns finding them. Bud-a-pult: build forts, then fling your buds at each other’s. Send a doodle: draw ${d.ownerName || 'them'} something for their DMs. Doodle Duel: take turns drawing and guessing.`));
     }
     return;
   }
@@ -2239,7 +2248,7 @@ function renderAboutMe(bud) {
 let openAbout = false;
 
 // The wardrobe: one thing on the head, one in hand. Interests unlock props; the crown and seasonal gear are kept.
-const FROM_LABEL = (f) => (f === 'interest' ? '' : f === 'peekaboo' ? 'won at Peekaboo' : f ? `from ${f.replace(/^\w/, (c) => c.toUpperCase())}` : '');
+const FROM_LABEL = (f) => (f === 'interest' ? '' : f === 'peekaboo' ? 'won at Peekaboo' : f === 'bud-a-pult' ? 'won at Bud-a-pult' : f ? `from ${f.replace(/^\w/, (c) => c.toUpperCase())}` : '');
 let openWardrobe = false;
 function renderWardrobe(bud) {
   const w = myWardrobe;
@@ -3369,6 +3378,33 @@ function renderDoodleBox(bud) {
   if (openDoodles) { det.open = true; openDoodles = false; load(); }
   cardBody.append(det);
 }
+// Bud-a-pult (catapult.html?id=): build forts, then fling your buds at each other's
+let myPults = [];
+function pultButton(bud) {
+  const g = myPults.find((x) => x.them === bud.data.id);
+  const b = el('button', 'btn', g ? (g.myTurn ? '🎯 Your turn: Bud-a-pult' : '🎯 Bud-a-pult') : '🎯 Bud-a-pult'); b.type = 'button';
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { location.href = `/catapult?id=${g ? g.id : (await api('POST', '/api/game', { action: 'bpg-new', opponent: bud.data.id })).id}`; }
+    catch (e) { b.disabled = false; b.textContent = e.message; }
+  });
+  return b;
+}
+function renderPultList() {
+  if (!myPults.length) return;
+  const box = el('section', 'diary games');
+  box.append(el('h3', null, 'Bud-a-pult'));
+  const ul = el('ul');
+  for (const g of myPults) {
+    const other = budById(g.them), who = other ? other.data.ownerName || nameOf(other) : 'a friend';
+    const li = el('li', g.myTurn ? 'fresh' : null);
+    const open = el('a', 'btn', g.myTurn ? (g.stage === 'build' ? 'Build your fort' : 'Your turn') : 'Open'); open.href = `/catapult?id=${g.id}`;
+    li.append(el('span', 'ico', '🎯'), el('span', null, `with ${who}`), open);
+    ul.append(li);
+  }
+  box.append(ul);
+  cardBody.append(box);
+}
 function peekabooButton(bud) {
   const g = myGames.find((x) => x.them === bud.data.id);
   const b = el('button', 'btn primary', g ? (g.myTurn ? 'Your turn in Peekaboo' : 'Open Peekaboo') : 'Play Peekaboo'); b.type = 'button';
@@ -3380,6 +3416,7 @@ function peekabooButton(bud) {
   return b;
 }
 function renderGamesList() {
+  renderPultList();
   renderDoodlesList();
   if (!myGames.length) return;
   const box = el('section', 'diary games');
@@ -3525,6 +3562,7 @@ function showCenter(title, text, linkText, href = '/') {
   myGames = world.games || [];
   myDoodles = world.doodles || [];
   myMail = world.doodleMail || { count: 0, fresh: 0 };
+  myPults = world.catapults || [];
   news = world.news || null;
   if (news) {
     document.getElementById('newsBtn').hidden = false;

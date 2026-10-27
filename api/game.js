@@ -8,6 +8,8 @@
 // | 'dd-giveup', id, opponent, choice, strokes, guess }
 // Bud-a-pult test range (lib/catapult.js, the physics runs here): POST { action: 'bp-build' | 'bp-shoot' |
 // 'bp-repair', pieces, bud, state, angle, power, add, remove }
+// Bud-a-pult the game (lib/bpgame.js): GET ?bpg= one game; POST { action: 'bpg-new' | 'bpg-build' | 'bpg-shoot' |
+// 'bpg-patch' | 'bpg-resign', id, opponent, pieces, bud, angle, power, add, remove, skip }
 // Doodle mail (lib/doodlemail.js): GET ?mail=list (your bud's doodles) | ?mail=<id> (one, to replay) | ?mailto=<user>;
 // POST { action: 'mail-send' | 'mail-star' | 'mail-toss', to, strokes, caption, id, fav }
 import { readSession, sameOrigin } from '../lib/session.js';
@@ -18,6 +20,7 @@ import * as prank from '../lib/prankster.js';
 import * as doodle from '../lib/doodle.js';
 import * as mail from '../lib/doodlemail.js';
 import * as pult from '../lib/catapult.js';
+import * as bpg from '../lib/bpgame.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
 
@@ -36,6 +39,11 @@ export async function GET(request) {
   if (dd != null) {
     if (!/^[A-Za-z0-9]{10,40}$/.test(dd)) return json({ error: 'which game?' }, 400);
     try { return json(await doodle.getGame(session.id, dd)); } catch (err) { return fail(err); }
+  }
+  const bg = url.searchParams.get('bpg');
+  if (bg != null) {
+    if (!/^[A-Za-z0-9]{10,40}$/.test(bg)) return json({ error: 'which game?' }, 400);
+    try { return json(await bpg.getGame(session.id, bg)); } catch (err) { return fail(err); }
   }
   const ml = url.searchParams.get('mail'), mailTo = url.searchParams.get('mailto');
   if (ml != null || mailTo != null) {
@@ -79,6 +87,20 @@ export async function POST(request) {
       if (action === 'dd-send') return json(await doodle.sendDrawing(session.id, id, body.strokes));
       if (action === 'dd-guess') return json(await doodle.guess(session.id, id, String(body.guess || '').slice(0, 60)));
       if (action === 'dd-giveup') return json(await doodle.giveUp(session.id, id));
+      return json({ error: 'unknown move' }, 400);
+    } catch (err) { return fail(err); }
+  }
+  if (typeof action === 'string' && action.startsWith('bpg-')) {
+    try {
+      if (action === 'bpg-new') {
+        if (!isDiscordId(body.opponent)) return json({ error: 'who are you playing?' }, 400);
+        return json(await bpg.createGame(session.id, body.opponent));
+      }
+      if (typeof id !== 'string' || !/^[A-Za-z0-9]{10,40}$/.test(id)) return json({ error: 'which game?' }, 400);
+      if (action === 'bpg-build') return json(await bpg.build(session.id, id, body.pieces, body.bud));
+      if (action === 'bpg-shoot') return json(await bpg.shoot(session.id, id, body.angle, body.power));
+      if (action === 'bpg-patch') return json(await bpg.patch(session.id, id, body.skip ? null : { add: body.add, remove: body.remove, bud: body.bud }));
+      if (action === 'bpg-resign') return json(await bpg.resign(session.id, id));
       return json({ error: 'unknown move' }, 400);
     } catch (err) { return fail(err); }
   }
