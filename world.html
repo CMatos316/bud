@@ -3335,8 +3335,10 @@ function renderDoodleBox(bud) {
     body.textContent = '';
     if (!mailList) { body.append(el('p', 'muted', 'Opening the doodle drawer…')); return; }
     const { got, sent } = mailList;
-    if (!got.length && !sent.length) body.append(el('p', 'muted', `No doodles yet. When a friend draws you one, ${nameOf(bud)} keeps it here (and you get it in your Discord DMs). Send one from a friend’s bud card!`));
-    for (const [list, label] of [[got, 'From friends'], [sent, 'You sent']]) {
+    if (!got.length && !sent.length) body.append(el('p', 'muted', `No doodles yet. When a friend draws you one, ${nameOf(bud)} keeps it here (and you get it in your Discord DMs). Send one from a friend’s bud card, or draw yourself one!`));
+    const mineBtn = el('a', 'btn', '✏️ Draw yourself one'); mineBtn.href = `/doodle?to=${bud.data.id}`;
+    const r = el('div', 'row'); r.append(mineBtn); body.append(r);
+    for (const [list, label] of [[got, 'For you'], [sent, 'You sent']]) {
       if (!list.length) continue;
       body.append(el('h4', null, label));
       const grid = el('div', 'grid');
@@ -3344,7 +3346,7 @@ function renderDoodleBox(bud) {
         const a = el('a', 'dd' + (!m.mine && !m.seen ? ' fresh' : '')); a.href = `/doodle?mail=${m.id}`;
         a.title = (m.mine ? `for ${m.toName}` : `from ${m.fromName}`) + (m.caption ? `: ${m.caption}` : '');
         const img = el('img'); img.alt = a.title; img.loading = 'lazy'; img.src = `data:image/png;base64,${m.thumb}`;
-        a.append(img, el('span', 'by', m.mine ? `to ${m.toName}` : m.fromName));
+        a.append(img, el('span', 'by', m.from === m.to ? 'you' : m.mine ? `to ${m.toName}` : m.fromName));
         if (m.fav) a.append(el('span', 'star', '⭐'));
         grid.append(a);
       }

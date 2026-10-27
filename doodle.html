@@ -383,16 +383,17 @@ function renderWaiting(main) {
 let mailMaxCaption = 80;
 function renderMailDraw(who) {
   $('gate').hidden = true; $('app').hidden = false; $('historyBox').hidden = true;
-  $('title').textContent = `A doodle for ${who.name}`; $('streak').hidden = true;
-  document.title = `A doodle for ${who.name} · the buddie system`;
-  hostSays(`for ${who.name}`, pick([`draw ${who.name} anything! it goes to their Discord DMs`, `${who.bud} would love a drawing. anything goes!`, 'a doodle a day keeps the boredom away', `what would make ${who.name} smile?`]));
+  $('title').textContent = who.self ? 'A doodle for you' : `A doodle for ${who.name}`; $('streak').hidden = true;
+  document.title = `${$('title').textContent} · the buddie system`;
+  if (who.self) hostSays('just for you', `draw anything! it goes to your Discord DMs and ${who.bud}’s inventory`);
+  else hostSays(`for ${who.name}`, pick([`draw ${who.name} anything! it goes to their Discord DMs`, `${who.bud} would love a drawing. anything goes!`, 'a doodle a day keeps the boredom away', `what would make ${who.name} smile?`]));
   const main = $('main'); main.textContent = '';
-  const send = el('button', 'btn primary', `Send to ${who.name}`); send.type = 'button';
+  const send = el('button', 'btn primary', who.self ? 'Send it to me' : `Send to ${who.name}`); send.type = 'button';
   const { strokes, update } = drawingPad(main, null, (st) => { send.disabled = !st.length || busy; });
   const cap = el('input', 'caption'); cap.type = 'text'; cap.maxLength = mailMaxCaption; cap.placeholder = 'Add a little message (optional)'; cap.setAttribute('aria-label', 'A little message');
   const r = el('div', 'row'), back = el('a', 'btn', 'Back to the island'); back.href = '/world';
   r.append(back, send);
-  const msg = el('p', 'msg', `It’ll land in ${who.name}’s Discord DMs, and ${who.bud} keeps it in its inventory.`);
+  const msg = el('p', 'msg', who.self ? `It’ll land in your Discord DMs, and ${who.bud} keeps it in its inventory.` : `It’ll land in ${who.name}’s Discord DMs, and ${who.bud} keeps it in its inventory.`);
   main.append(cap, r, msg);
   update();
   send.addEventListener('click', async () => {
@@ -407,7 +408,8 @@ function renderMailDraw(who) {
   });
 }
 function renderMailSent(who, res, strokes) {
-  hostSays('sent! 💌', res.dm ? `it’s in ${who.name}’s DMs and in ${who.bud}’s inventory` : `it’s in ${who.bud}’s inventory. (Discord wouldn’t let me DM ${who.name}, so they’ll find it on the island.)`);
+  if (who.self) hostSays('sent! 💌', res.dm ? `check your Discord DMs! it’s also in ${who.bud}’s inventory` : `it’s in ${who.bud}’s inventory. (Discord wouldn’t let me DM you: are DMs from server members turned off?)`);
+  else hostSays('sent! 💌', res.dm ? `it’s in ${who.name}’s DMs and in ${who.bud}’s inventory` : `it’s in ${who.bud}’s inventory. (Discord wouldn’t let me DM ${who.name}, so they’ll find it on the island.)`);
   const main = $('main'); main.textContent = '';
   const paper = el('div', 'paper'), canvas = el('canvas'); paper.append(canvas); main.append(paper);
   drawAll(setupCanvas(canvas), strokes);
@@ -419,9 +421,11 @@ function renderMailSent(who, res, strokes) {
 // one doodle, replayed stroke by stroke. Yours to keep, star or throw away.
 function renderMailView(d) {
   $('gate').hidden = true; $('app').hidden = false; $('historyBox').hidden = true; $('streak').hidden = true;
-  const title = d.received ? `A doodle from ${d.fromName}` : `Your doodle for ${d.toName}`;
+  const self = d.from === d.to;
+  const title = self ? 'A doodle you drew' : d.received ? `A doodle from ${d.fromName}` : `Your doodle for ${d.toName}`;
   $('title').textContent = title; document.title = `${title} · the buddie system`;
-  hostSays(d.received ? `from ${d.fromName}` : `for ${d.toName}`, d.received
+  if (self) hostSays('your doodle', 'here it is again, stroke by stroke:');
+  else hostSays(d.received ? `from ${d.fromName}` : `for ${d.toName}`, d.received
     ? pick([`${d.fromName} drew you this! watch…`, `look what ${d.fromName} made for you`, `a doodle, hand-delivered by ${d.fromBud}`])
     : `${d.toName} got it${d.dm ? ' in their DMs' : ''}. here it is again:`);
   const main = $('main'); main.textContent = '';
@@ -443,7 +447,7 @@ function renderMailView(d) {
       catch (e) { msg.textContent = e.message; }
       busy = false;
     });
-    const back = el('a', 'btn primary', 'Doodle back'); back.href = `/doodle?to=${d.from}`;
+    const back = el('a', 'btn primary', self ? 'Draw another' : 'Doodle back'); back.href = `/doodle?to=${d.from}`;
     r.append(star, back);
   } else {
     const more = el('a', 'btn primary', 'Draw another'); more.href = `/doodle?to=${d.to}`;
