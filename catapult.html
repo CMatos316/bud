@@ -104,6 +104,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 /* what the buds say: a little speech bubble that follows them */
 .say { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; background: #fff; color: #2B2A3A; font: 600 14px/1.25 var(--font); padding: 7px 11px; border-radius: 14px; max-width: 200px; text-align: center; box-shadow: 0 6px 16px -8px rgba(30,25,60,.45); transition: opacity .2s; }
 .say::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: inherit; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
+/* the defending bud's dizziness: fills up with every knock that isn't a knockout */
+.dizzy { position: fixed; left: 0; top: 0; z-index: 2; pointer-events: none; display: flex; align-items: center; gap: 5px; background: rgba(255,255,255,.92); border-radius: 999px; padding: 3px 8px 3px 5px; box-shadow: 0 4px 12px -6px rgba(30,25,60,.45); }
+.dizzy .sw { font-size: 14px; line-height: 1; display: inline-block; }
+.dizzy.spin .sw { animation: dz-spin 1.2s linear infinite; }
+@keyframes dz-spin { to { transform: rotate(360deg); } }
+.dizzy .bar { width: 52px; height: 7px; border-radius: 99px; background: rgba(29,28,43,.12); overflow: hidden; }
+.dizzy .bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #C9B8FF, #9B7CFF, #FF7EB6); }
+.dizzy.bump { animation: dz-bump .5s cubic-bezier(.3,1.8,.5,1); }
+@keyframes dz-bump { 40% { transform: var(--at) scale(1.25); } }
 .band { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .band line { stroke: #FF7A59; stroke-width: 6; stroke-dasharray: 2 10; }
 .band #bandStart { fill: none; stroke: rgba(255,255,255,.9); stroke-width: 3; }
@@ -122,6 +131,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
   <button class="icon-btn" id="soundBtn" type="button"></button>
 </header>
 <div class="banner" id="banner" aria-live="assertive"></div>
+<div class="dizzy" id="dizzy" hidden role="meter" aria-label="Dizziness" aria-valuemin="0" aria-valuemax="100"><span class="sw" aria-hidden="true">🌀</span><span class="bar"><i id="dizzyFill"></i></span></div>
 <div class="gesture" id="gesture" hidden aria-hidden="true">
   <span class="trail"></span><span class="ring"></span>
   <svg class="fling" viewBox="0 0 70 70" fill="none" stroke="#FF7A59" stroke-width="5" stroke-linecap="round"><path d="M12 58 Q 30 18 60 10" stroke-dasharray="3 9"/><path d="M48 6 L61 9 L56 21" stroke-dasharray="none"/></svg>
@@ -585,15 +595,15 @@ function renderPanel() {
     r.append(go); p.append(r);
   } else if (st.mode === 'result') {
     const s = st.shot, won = !!s.ko, over = won || st.launches >= LAUNCHES;
-    p.append(el('h2', null, won ? `💥 Knocked out on launch ${st.launches}!` : over ? '🛡️ The fort held!' : s.firstHit == null ? 'Way off!' : 'The bud’s still standing'));
+    p.append(el('h2', null, won && s.ko.how === 'dizzy' ? `🌀 Too dizzy on launch ${st.launches}!` : won ? `💥 Knocked out on launch ${st.launches}!` : over ? '🛡️ The fort held!' : s.firstHit == null ? 'Way off!' : 'The bud’s still standing'));
     p.append(launches);
-    p.append(el('p', null, won ? ({ direct: 'A direct hit on the bud inside.', knocked: 'The bud got knocked flying.', fell: 'The bud tumbled out of its spot.' })[s.ko.how] || ''
+    p.append(el('p', null, won ? ({ direct: 'A direct hit on the bud inside.', knocked: 'The bud got knocked flying.', fell: 'The bud tumbled out of its spot.', dizzy: 'All those bumps added up: the bud got too dizzy to go on.' })[s.ko.how] || ''
       : over ? `${LAUNCHES} launches and the bud inside is still safe. In a real game, the defender would win this one.`
-      : 'In a real game, your friend gets to add 2 pieces before your next launch. Try it out:'));
+      : `${s.dizzy && s.dizzy.gain > 0 ? `🌀 That shook it up: ${Math.round(s.dizzy.after)}% dizzy. ` : ''}In a real game, your friend gets to patch up the fort before your next launch. Try it out:`));
     const r = el('div', 'row');
     if (over) {
       const again = el('button', 'btn', 'Same fort again'); again.type = 'button';
-      again.addEventListener('click', () => { st.fort = JSON.parse(JSON.stringify(st.fortStart)); st.launches = 0; showState(st.fort); toAim(); });
+      again.addEventListener('click', () => { st.fort = JSON.parse(JSON.stringify(st.fortStart)); st.launches = 0; setDizzy(0); showState(st.fort); toAim(); });
       const rebuild = el('button', 'btn primary', 'Build a new fort'); rebuild.type = 'button'; rebuild.addEventListener('click', toBuild);
       r.append(again, rebuild);
     } else {
@@ -617,7 +627,7 @@ async function finishBuild() {
   st.busy = true; st.msg = ''; renderPanel();
   try {
     const { state } = await api('POST', '/api/game', { action: 'bp-build', pieces: st.build.pieces, bud: st.build.bud });
-    st.fort = state; st.fortStart = JSON.parse(JSON.stringify(state)); st.launches = 0; st.busy = false;
+    st.fort = state; st.fortStart = JSON.parse(JSON.stringify(state)); st.launches = 0; st.busy = false; setDizzy(0);
     showState(st.fort); S.play('chime');
     toAim();
   } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
@@ -683,11 +693,12 @@ function playShot(shot, again) {
 }
 function endShot() {
   const shot = play.shot; play = null;
-  if (!shot._applied) { shot._applied = true; st.fort = shot.after; setLastPath(shot.frames.filter((_, i) => i % 3 === 0 && (shot.firstHit == null || i <= shot.firstHit)).map((f) => f[f.length - 1]).slice(0, 40)); }
+  if (!shot._applied) { shot._applied = true; st.fort = shot.after; setDizzy(shot.dizzy ? shot.dizzy.after : 0, true); setLastPath(shot.frames.filter((_, i) => i % 3 === 0 && (shot.firstHit == null || i <= shot.firstHit)).map((f) => f[f.length - 1]).slice(0, 40)); }
   showState(st.fort);
   shotBud.root.visible = false;
   st.mode = 'result'; renderPanel();
-  if (!shot.ko) { towerBud.happy = true; say(towerBud, pick(LINES.safeTower), 2200); setTimeout(() => { towerBud.happy = false; }, 1600); }
+  if (!shot.ko && shot.dizzy && shot.dizzy.gain > 0) say(towerBud, pick(LINES.dizzy), 2600);
+  else if (!shot.ko) { towerBud.happy = true; say(towerBud, pick(LINES.safeTower), 2200); setTimeout(() => { towerBud.happy = false; }, 1600); }
 }
 // Buds are squishy and love this. They make sure you know nothing hurts.
 const LINES = {
@@ -695,6 +706,8 @@ const LINES = {
   pullHard: ['ooh, a big one!', 'a little more… ok that’s plenty', 'this is my favorite ride', 'whoa, I can see my house from here', 'maximum squish!'],
   launch: ['wheeee!', 'cannonbuuud!', 'see you over there!', 'weeeeee!', 'to infinity!'],
   land: ['boing! I’m fine!', 'didn’t even feel it', 'ta-da!', 'again! again!', 'soft landing!', 'nailed it (kind of)'],
+  dizzy: ['whoa… the room is spinning', 'I’m fine! just a little wobbly', 'which way is up?', 'seeing stars. nice ones though', 'hehe, do that again (don’t)', 'everything’s twirly'],
+  dizzyOut: ['too… dizzy… I’m fine though!', 'I need a little sit-down', 'the island won’t stop spinning!'],
   koTower: ['I’m okay!! just squished', 'oof, that tickled!', 'no harm done! nice shot', 'bonk! I’m fine, I promise'],
   safeTower: ['phew!', 'missed me!', 'nice try!', 'my fort is undefeated'],
 };
@@ -702,12 +715,45 @@ function say(bud, text, ms = 2600) {
   if (!bud) return;
   bud.bubble.textContent = text; bud.bubble.hidden = false; bud.bubbleUntil = performance.now() + ms;
 }
+// the dizziness meter above the defending bud, and stars circling its head when it's woozy
+let dizzyShown = 0, dizzyTarget = 0;
+const stars = [];
+{
+  const starGeo = new THREE.OctahedronGeometry(0.06, 0), starMat = new THREE.MeshStandardMaterial({ color: toLinear('#FFD23F'), emissive: toLinear('#FFB800'), emissiveIntensity: 0.6 });
+  for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(starGeo, starMat); m.scale.set(1, 1, 0.5); m.visible = false; scene.add(m); stars.push(m); }
+}
+function setDizzy(v, animate = false) {
+  dizzyTarget = clamp(v || 0, 0, 100);
+  if (!animate) dizzyShown = dizzyTarget;
+  else { const d = $('dizzy'); d.classList.remove('bump'); void d.offsetWidth; d.classList.add('bump'); }
+}
+function placeDizzy(dt) {
+  const d = $('dizzy'), show = !!towerBud && towerBud.root.visible && !!st.fort && st.mode !== 'build';
+  if (d.hidden === show) d.hidden = !show;
+  dizzyShown += (dizzyTarget - dizzyShown) * Math.min(1, dt * 2.5);
+  const n = !show ? 0 : dizzyShown >= 70 ? 3 : dizzyShown >= 40 ? 2 : dizzyShown >= 15 ? 1 : 0;
+  stars.forEach((m, i) => {
+    m.visible = i < n;
+    if (!m.visible) return;
+    const a = T * 3 + i * Math.PI * 2 / n, p = towerBud.root.position;
+    m.position.set(p.x + Math.cos(a) * BUD_W * 0.55, p.y + BUD_W * 0.62 + Math.sin(T * 6 + i) * 0.03, Math.sin(a) * BUD_W * 0.55);
+    m.rotation.y += dt * 4;
+  });
+  if (!show) return;
+  $('dizzyFill').style.width = dizzyShown.toFixed(1) + '%';
+  d.setAttribute('aria-valuenow', Math.round(dizzyTarget));
+  d.classList.toggle('spin', dizzyShown >= 40);
+  const v = towerBud.root.position.clone().add(new THREE.Vector3(0, BUD_W * 0.95, 0)).project(camera);
+  const at = `translate(${(v.x + 1) / 2 * innerWidth - d.offsetWidth / 2}px, ${(1 - v.y) / 2 * innerHeight - d.offsetHeight}px)`;
+  d.style.setProperty('--at', at); d.style.transform = at;
+}
 function placeBubble(bud) {
   if (!bud || bud.bubble.hidden) return;
   if (performance.now() > bud.bubbleUntil || !bud.root.visible) { bud.bubble.hidden = true; return; }
   const v = bud.root.position.clone().add(new THREE.Vector3(0, bud.size * 0.55, 0)).project(camera);
   const w = bud.bubble.offsetWidth, h = bud.bubble.offsetHeight;
-  const x = clamp((v.x + 1) / 2 * innerWidth - w / 2, 8, innerWidth - w - 8), y = Math.max(56, (1 - v.y) / 2 * innerHeight - h - 12);
+  const lift = bud === towerBud && !$('dizzy').hidden ? 30 : 0;
+  const x = clamp((v.x + 1) / 2 * innerWidth - w / 2, 8, innerWidth - w - 8), y = Math.max(56, (1 - v.y) / 2 * innerHeight - h - 12 - lift);
   bud.bubble.style.transform = `translate(${x}px, ${y}px)`;
 }
 function banner(text) { const b = $('banner'); b.textContent = text; b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 1500); }
@@ -751,8 +797,10 @@ function playTick(dt) {
   }
   if (sh.ko && !play.koShown && f >= sh.ko.frame) {
     play.koShown = true; towerBud.ouch = true; shotBud.happy = true;
-    banner(pick(['KNOCKOUT!', 'BONK!', 'GOT IT!'])); S.play('sparkle', { gain: 0.9 });
-    setTimeout(() => say(towerBud, pick(LINES.koTower), 2800), 900);
+    const dizzyOut = sh.ko.how === 'dizzy';
+    if (dizzyOut) setDizzy(100, true);
+    banner(dizzyOut ? 'TOO DIZZY!' : pick(['KNOCKOUT!', 'BONK!', 'GOT IT!'])); S.play('sparkle', { gain: 0.9 });
+    setTimeout(() => say(towerBud, pick(dizzyOut ? LINES.dizzyOut : LINES.koTower), 2800), 900);
   }
   // camera: follow the flying bud, then the fortress; zoom in for the knockout
   if (near) frame(tb[0] - 2.2, tb[0] + 2.2, tb[1] - 1.6, tb[1] + 1.6);
@@ -893,7 +941,7 @@ function loop(now) {
     if (!play) towerBud.look = { x: -0.6, y: 0 };
   }
   placeCamera(dt, false);
-  placeGesture(); placeBubble(shotBud); placeBubble(towerBud);
+  placeGesture(); placeDizzy(dt); placeBubble(shotBud); placeBubble(towerBud);
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
