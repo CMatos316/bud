@@ -589,7 +589,7 @@ function renderPanel() {
     p.append(launches);
     p.append(el('p', null, won ? ({ direct: 'A direct hit on the bud inside.', knocked: 'The bud got knocked flying.', fell: 'The bud tumbled out of its spot.', dizzy: 'All those bumps added up: the bud got too dizzy to go on.' })[s.ko.how] || ''
       : over ? `${LAUNCHES} launches and the bud inside is still safe. In a real game, the defender would win this one.`
-      : `${s.dizzy && s.dizzy.gain > 0 ? `🌀 That shook it up: ${Math.round(s.dizzy.after)}% dizzy. ` : ''}In a real game, your friend gets to patch up the fort before your next launch. Try it out:`));
+      : 'In a real game, your friend gets to patch up the fort before your next launch. Try it out:'));
     const r = el('div', 'row');
     if (over) {
       const again = el('button', 'btn', 'Same fort again'); again.type = 'button';
@@ -631,11 +631,12 @@ async function finishRepair() {
   } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
 }
 function unlockTurn() { try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {} }
-function toBuild() { unlockTurn(); st.mode = 'build'; st.add = []; st.msg = ''; gridMesh.visible = true; setLastPath([]); showBuild(); renderPanel(); drawArc(); }
+function toBuild() { starsOn = false; unlockTurn(); st.mode = 'build'; st.add = []; st.msg = ''; gridMesh.visible = true; setLastPath([]); showBuild(); renderPanel(); drawArc(); }
 function toRepair() { unlockTurn(); st.mode = 'repair'; st.add = []; st.remove = new Set(); st.budTo = null; st.msg = ''; st.tool = 'wood'; gridMesh.visible = true; showRepair(); renderPanel(); drawArc(); }
 let aimIdleAt = 0, everPulled = false;
 let readyTalk = 0;
 function toAim() {
+  starsOn = false;
   clearTimeout(readyTalk);
   readyTalk = setTimeout(() => { if (st.mode === 'aim' && !pull) say(shotBud, pick(LINES.ready), 3200); }, 700);
   aimIdleAt = performance.now(); st.mode = 'aim'; st.msg = ''; gridMesh.visible = false; cursor.visible = false; placeShotInCup(); renderPanel(); drawArc(); }
@@ -671,6 +672,7 @@ async function launch() {
 /* ---------- the replay ---------- */
 let play = null;   // { shot, t (seconds of replay time), slow, ... }
 function playShot(shot, again) {
+  starsOn = false;
   st.mode = 'fly'; renderPanel(); drawArc();
   showState(st.fort && !again ? st.fort : st.fort);
   // bodies in the replay: the fortress as it was before the shot
@@ -687,8 +689,12 @@ function endShot() {
   showState(st.fort);
   shotBud.root.visible = false;
   st.mode = 'result'; renderPanel();
-  if (!shot.ko && shot.dizzy && shot.dizzy.gain > 0) say(towerBud, pick(LINES.dizzy), 2600);
-  else if (!shot.ko) { towerBud.happy = true; say(towerBud, pick(LINES.safeTower), 2200); setTimeout(() => { towerBud.happy = false; }, 1600); }
+  if (!shot.ko) {
+    const gain = shot.dizzy ? shot.dizzy.gain : 0, total = shot.dizzy ? shot.dizzy.after : 0;
+    const lines = total >= 70 && gain > 0 ? LINES.wobbly : gain >= 15 ? LINES.shaken : gain > 0 ? LINES.nudged : LINES.untouched;
+    if (lines === LINES.untouched) { towerBud.happy = true; setTimeout(() => { towerBud.happy = false; }, 1600); }
+    say(towerBud, pick(lines), 2800);
+  }
 }
 // Buds are squishy and love this. They make sure you know nothing hurts.
 const LINES = {
@@ -696,20 +702,23 @@ const LINES = {
   pullHard: ['ooh, a big one!', 'a little more… ok that’s plenty', 'this is my favorite ride', 'whoa, I can see my house from here', 'maximum squish!'],
   launch: ['wheeee!', 'cannonbuuud!', 'see you over there!', 'weeeeee!', 'to infinity!'],
   land: ['boing! I’m fine!', 'didn’t even feel it', 'ta-da!', 'again! again!', 'soft landing!', 'nailed it (kind of)'],
-  dizzy: ['whoa… the room is spinning', 'I’m fine! just a little wobbly', 'which way is up?', 'seeing stars. nice ones though', 'hehe, do that again (don’t)', 'everything’s twirly'],
+  // after a shot that didn't knock the fort's bud out, by how much it got shaken (and how dizzy it is overall)
+  untouched: ['did you even touch me?', 'was that a warm-up?', 'I didn’t feel a thing', 'missed me!', 'zzz… oh, was that your shot?', 'my fort is undefeated'],
+  nudged: ['hmm, did something happen?', 'a tiny bump. cute', 'barely a wobble!', 'that tickled, a little'],
+  shaken: ['I’m feeling a little queasy after that', 'whoa… the room is spinning', 'ok that one I felt', 'which way is up?', 'hehe, do that again (don’t)'],
+  wobbly: ['I don’t feel so good…', 'one more like that and I’m done for', 'everything’s twirly…', 'is the island spinning or is it me?'],
   dizzyOut: ['too… dizzy… I’m fine though!', 'I need a little sit-down', 'the island won’t stop spinning!'],
   koTower: ['I’m okay!! just squished', 'oof, that tickled!', 'no harm done! nice shot', 'bonk! I’m fine, I promise'],
-  safeTower: ['phew!', 'missed me!', 'nice try!', 'my fort is undefeated'],
 };
 function say(bud, text, ms = 2600) {
   if (!bud) return;
   bud.bubble.textContent = text; bud.bubble.hidden = false; bud.bubbleUntil = performance.now() + ms;
 }
 // how dizzy the defending bud is shows as stars circling its head (no meter: it got in the way)
-let dizzyShown = 0, dizzyTarget = 0;
+let dizzyShown = 0, dizzyTarget = 0, starsOn = false;
 const stars = [];
 {
-  const starGeo = new THREE.OctahedronGeometry(0.06, 0), starMat = new THREE.MeshStandardMaterial({ color: toLinear('#FFD23F'), emissive: toLinear('#FFB800'), emissiveIntensity: 0.6 });
+  const starGeo = new THREE.OctahedronGeometry(0.13, 0), starMat = new THREE.MeshStandardMaterial({ color: toLinear('#FFD23F'), emissive: toLinear('#FFB800'), emissiveIntensity: 0.6 });
   for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(starGeo, starMat); m.scale.set(1, 1, 0.5); m.visible = false; scene.add(m); stars.push(m); }
 }
 function setDizzy(v, animate = false) {
@@ -719,12 +728,13 @@ function setDizzy(v, animate = false) {
 function placeDizzy(dt) {
   const show = !!towerBud && towerBud.root.visible && !!st.fort && st.mode !== 'build';
   dizzyShown += (dizzyTarget - dizzyShown) * Math.min(1, dt * 2.5);
-  const n = !show ? 0 : dizzyShown >= 70 ? 3 : dizzyShown >= 40 ? 2 : dizzyShown >= 15 ? 1 : 0;
+  // stars only once the bud is finished (knocked out), circling its head
+  const n = show && starsOn ? 3 : 0;
   stars.forEach((m, i) => {
     m.visible = i < n;
     if (!m.visible) return;
     const a = T * 3 + i * Math.PI * 2 / n, p = towerBud.root.position;
-    m.position.set(p.x + Math.cos(a) * BUD_W * 0.55, p.y + BUD_W * 0.62 + Math.sin(T * 6 + i) * 0.03, Math.sin(a) * BUD_W * 0.55);
+    m.position.set(p.x + Math.cos(a) * BUD_W * 0.75, p.y + BUD_W * 0.75 + Math.sin(T * 6 + i) * 0.04, Math.sin(a) * BUD_W * 0.75);
     m.rotation.y += dt * 4;
   });
 }
@@ -780,6 +790,7 @@ function playTick(dt) {
     play.koShown = true; towerBud.ouch = true; shotBud.happy = true;
     const dizzyOut = sh.ko.how === 'dizzy';
     if (dizzyOut) setDizzy(100, true);
+    starsOn = true;
     banner(dizzyOut ? 'TOO DIZZY!' : pick(['KNOCKOUT!', 'BONK!', 'GOT IT!'])); S.play('sparkle', { gain: 0.9 });
     setTimeout(() => say(towerBud, pick(dizzyOut ? LINES.dizzyOut : LINES.koTower), 2800), 900);
   }
