@@ -219,6 +219,13 @@ body { transition: background 2s linear; }
 .wardrobe .item { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--chip-line); background: rgba(127,127,160,.08); color: inherit; border-radius: 12px; padding: 5px 10px 5px 7px; font: 500 13px var(--font, inherit); cursor: pointer; }
 .wardrobe .item .ico { font-size: 17px; line-height: 1; }
 .wardrobe .item.on { border-color: currentColor; background: rgba(127,127,160,.2); font-weight: 650; }
+.doodles .new { display: inline-block; margin-left: 6px; background: #FF6B5B; color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11.5px; font-weight: 700; vertical-align: 1px; }
+.doodles .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+.doodles .dd { position: relative; display: block; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #FFFBEF; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); text-decoration: none; }
+.doodles .dd img { width: 100%; height: 100%; display: block; }
+.doodles .dd .by { position: absolute; left: 4px; right: 4px; bottom: 4px; font-size: 10.5px; font-weight: 600; color: #2B2A3A; background: rgba(255,255,255,.82); border-radius: 6px; padding: 1px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doodles .dd .star { position: absolute; right: 4px; top: 3px; font-size: 14px; }
+.doodles .dd.fresh { box-shadow: 0 0 0 2.5px #FF6B5B; }
 .tree-h { margin: 10px 0 6px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; opacity: .7; }
 .tree-friends { gap: 6px; flex-wrap: wrap; }
 .about { margin: 4px 0 10px; }
@@ -2099,6 +2106,7 @@ function renderCardBody() {
       if (!diary.length) cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
       renderAboutMe(bud);
       renderWardrobe(bud);
+      renderDoodleBox(bud);
       renderGamesList();
       renderDiary(bud);
       renderDmToggle(bud);
@@ -2118,6 +2126,7 @@ function renderCardBody() {
     }
     renderAboutMe(bud);
     renderWardrobe(bud);
+    renderDoodleBox(bud);
     renderGamesList();
     renderDiary(bud);
     renderDmToggle(bud);
@@ -2128,8 +2137,8 @@ function renderCardBody() {
     cardBody.append(el('span', 'friends', `You and ${d.ownerName || 'them'} are friends`));
     renderInCommon(d);
     if (myBud()) {
-      const r = el('div', 'row'); r.append(peekabooButton(bud), doodleButton(bud)); cardBody.append(r);
-      cardBody.append(el('p', 'muted', 'Peekaboo: you each hide 3 buds and take turns finding them. Doodle Duel: take turns drawing and guessing.'));
+      const r = el('div', 'row'); r.append(peekabooButton(bud), sendDoodleButton(bud), doodleButton(bud)); cardBody.append(r);
+      cardBody.append(el('p', 'muted', `Peekaboo: hide 3 buds each, then take turns finding them. Send a doodle: draw ${d.ownerName || 'them'} something for their DMs. Doodle Duel: take turns drawing and guessing.`));
     }
     return;
   }
@@ -2161,7 +2170,7 @@ function renderCardBody() {
 }
 
 /* ---------------- your bud's diary ---------------- */
-const DIARY_ICON = { play: '✦', solo: '•', note: '✎', friend: '♥', photo: '◉', game: '◆' };
+const DIARY_ICON = { play: '✦', solo: '•', note: '✎', friend: '♥', photo: '◉', game: '◆', doodle: '✏' };
 const firstPerson = (e) => (e.kind === 'play' || e.kind === 'solo' ? `I ${e.text}` : e.text);
 function whenLabel(ms) {
   const now = new Date(), t = new Date(ms), mins = (now - t) / 60e3;
@@ -3310,6 +3319,48 @@ function doodleButton(bud) {
   });
   return b;
 }
+// Doodle mail (doodle.html?to=): draw a friend something; it goes to their DMs and their bud's inventory
+function sendDoodleButton(bud) {
+  const a = el('a', 'btn', '✏️ Send a doodle'); a.href = `/doodle?to=${bud.data.id}`;
+  return a;
+}
+// your bud's inventory of doodles from friends (and the ones you sent), loaded when you open it
+let myMail = { count: 0, fresh: 0 }, mailList = null, openDoodles = false;
+function renderDoodleBox(bud) {
+  const det = el('details', 'wardrobe doodles'), sum = el('summary', null, `Doodles${myMail.count ? ` (${myMail.count})` : ''}`);
+  if (myMail.fresh) sum.append(el('span', 'new', `${myMail.fresh} new`));
+  det.append(sum);
+  const body = el('div'); det.append(body);
+  const fill = () => {
+    body.textContent = '';
+    if (!mailList) { body.append(el('p', 'muted', 'Opening the doodle drawer…')); return; }
+    const { got, sent } = mailList;
+    if (!got.length && !sent.length) body.append(el('p', 'muted', `No doodles yet. When a friend draws you one, ${nameOf(bud)} keeps it here (and you get it in your Discord DMs). Send one from a friend’s bud card!`));
+    for (const [list, label] of [[got, 'From friends'], [sent, 'You sent']]) {
+      if (!list.length) continue;
+      body.append(el('h4', null, label));
+      const grid = el('div', 'grid');
+      for (const m of list) {
+        const a = el('a', 'dd' + (!m.mine && !m.seen ? ' fresh' : '')); a.href = `/doodle?mail=${m.id}`;
+        a.title = (m.mine ? `for ${m.toName}` : `from ${m.fromName}`) + (m.caption ? `: ${m.caption}` : '');
+        const img = el('img'); img.alt = a.title; img.loading = 'lazy'; img.src = `data:image/png;base64,${m.thumb}`;
+        a.append(img, el('span', 'by', m.mine ? `to ${m.toName}` : m.fromName));
+        if (m.fav) a.append(el('span', 'star', '⭐'));
+        grid.append(a);
+      }
+      body.append(grid);
+    }
+  };
+  const load = async () => {
+    if (mailList) return fill();
+    fill();
+    try { mailList = await api('GET', '/api/game?mail=list'); } catch (e) { mailList = { got: [], sent: [] }; }
+    if (det.isConnected) fill();
+  };
+  det.addEventListener('toggle', () => { if (det.open) load(); });
+  if (openDoodles) { det.open = true; openDoodles = false; load(); }
+  cardBody.append(det);
+}
 function peekabooButton(bud) {
   const g = myGames.find((x) => x.them === bud.data.id);
   const b = el('button', 'btn primary', g ? (g.myTurn ? 'Your turn in Peekaboo' : 'Open Peekaboo') : 'Play Peekaboo'); b.type = 'button';
@@ -3465,6 +3516,7 @@ function showCenter(title, text, linkText, href = '/') {
   diary = world.diary || [];
   myGames = world.games || [];
   myDoodles = world.doodles || [];
+  myMail = world.doodleMail || { count: 0, fresh: 0 };
   news = world.news || null;
   if (news) {
     document.getElementById('newsBtn').hidden = false;
@@ -3477,6 +3529,12 @@ function showCenter(title, text, linkText, href = '/') {
   dmsOn = world.me.dms !== false;
   myProfile = world.me.profile || null;
   myWardrobe = world.me.wardrobe || null;
+  // a friend drew you something: your bud mentions it, and ?doodles=1 (from the doodle page) opens the drawer
+  if (params.get('doodles') === '1') openDoodles = true;
+  else if (myMail.fresh) setTimeout(() => {
+    const me = myBud(); if (!me || !card.hidden) return;
+    say(me, myMail.fresh === 1 ? 'a friend drew us a doodle! it’s in my inventory' : `${myMail.fresh} new doodles from friends! they’re in my inventory`, 4200); me.syv -= 0.15;
+  }, 2600);
   // seasonal gear that turned up since last time: "a witch hat washed up on the shore!"
   const found = (world.me.found || []).map((id) => myWardrobe?.owned.find((o) => o.id === id)).filter(Boolean);
   if (found.length) setTimeout(() => {

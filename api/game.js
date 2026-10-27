@@ -6,12 +6,15 @@
 // | 'pk-night' | 'pk-ready' | 'pk-vote', room, target }
 // Doodle Duel (lib/doodle.js): GET ?doodle= one game; POST { action: 'dd-new' | 'dd-pick' | 'dd-send' | 'dd-guess'
 // | 'dd-giveup', id, opponent, choice, strokes, guess }
+// Doodle mail (lib/doodlemail.js): GET ?mail=list (your bud's doodles) | ?mail=<id> (one, to replay) | ?mailto=<user>;
+// POST { action: 'mail-send' | 'mail-star' | 'mail-toss', to, strokes, caption, id, fav }
 import { readSession, sameOrigin } from '../lib/session.js';
 import { createGame, hide, shoot, resign, getGame, myGames } from '../lib/peekaboo.js';
 import { isDiscordId } from '../lib/notes.js';
 import { newRoomId, joinRoom, checkIn, startGame, pick, budsFor } from '../lib/showdown.js';
 import * as prank from '../lib/prankster.js';
 import * as doodle from '../lib/doodle.js';
+import * as mail from '../lib/doodlemail.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
 
@@ -30,6 +33,15 @@ export async function GET(request) {
   if (dd != null) {
     if (!/^[A-Za-z0-9]{10,40}$/.test(dd)) return json({ error: 'which game?' }, 400);
     try { return json(await doodle.getGame(session.id, dd)); } catch (err) { return fail(err); }
+  }
+  const ml = url.searchParams.get('mail'), mailTo = url.searchParams.get('mailto');
+  if (ml != null || mailTo != null) {
+    try {
+      if (mailTo != null) return isDiscordId(mailTo) ? json(await mail.target(session.id, mailTo)) : json({ error: 'who is it for?' }, 400);
+      if (ml === 'list') return json(await mail.inventory(session.id));
+      if (!/^[A-Za-z0-9]{10,40}$/.test(ml)) return json({ error: 'which doodle?' }, 400);
+      return json(await mail.open(session.id, ml));
+    } catch (err) { return fail(err); }
   }
   const pk = url.searchParams.get('pk');
   if (pk != null) {
@@ -64,6 +76,18 @@ export async function POST(request) {
       if (action === 'dd-send') return json(await doodle.sendDrawing(session.id, id, body.strokes));
       if (action === 'dd-guess') return json(await doodle.guess(session.id, id, String(body.guess || '').slice(0, 60)));
       if (action === 'dd-giveup') return json(await doodle.giveUp(session.id, id));
+      return json({ error: 'unknown move' }, 400);
+    } catch (err) { return fail(err); }
+  }
+  if (typeof action === 'string' && action.startsWith('mail-')) {
+    try {
+      if (action === 'mail-send') {
+        if (!isDiscordId(body.to)) return json({ error: 'who is it for?' }, 400);
+        return json(await mail.send(session.id, session.name, body.to, body.strokes, body.caption));
+      }
+      if (typeof id !== 'string' || !/^[A-Za-z0-9]{10,40}$/.test(id)) return json({ error: 'which doodle?' }, 400);
+      if (action === 'mail-star') return json(await mail.star(session.id, id, !!body.fav));
+      if (action === 'mail-toss') return json(await mail.toss(session.id, id));
       return json({ error: 'unknown move' }, 400);
     } catch (err) { return fail(err); }
   }

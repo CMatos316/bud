@@ -9,6 +9,7 @@ import { sameOrigin } from '../lib/session.js';
 import { lifeDiary, hobbyOf, HOBBY_LABEL } from '../lib/life.js';
 import { games as gamesRef } from '../lib/peekaboo.js';
 import { myDoodles } from '../lib/doodle.js';
+import { counts as doodleCounts } from '../lib/doodlemail.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
 import { waitUntil } from '@vercel/functions';
@@ -98,6 +99,8 @@ export async function GET(request) {
     const budNames = new Map(list.map((b) => [b.id, b.nickname || b.trueName]));
     inbox.sort((a, b) => a.at - b.at);
 
+    // doodles friends sent you: how many are in your bud's inventory, and how many you haven't looked at
+    const mailInfo = await doodleCounts(me).catch(() => ({ count: 0, fresh: 0, recent: [] }));
     // Your bud's diary: what it got up to on its own, plus what other people did with it.
     const now = Date.now(), since = Math.min(lastVisit ?? now, now - DIARY_WINDOW_MS);
     let diary = [];
@@ -115,6 +118,7 @@ export async function GET(request) {
         const others = p.get('buds').filter((id) => id !== me).map((id) => budNames.get(id)).filter(Boolean);
         diary.push({ at, kind: 'photo', text: `${names.get(by) || 'someone'} took a photo of me${others.length ? ` with ${others.slice(0, 3).join(', ')}` : ''}!` });
       }
+      for (const m of mailInfo.recent) if (m.at > since) diary.push({ at: m.at, kind: 'doodle', with: m.from, text: `${names.get(m.from) || 'a friend'} drew me a doodle!` });
       for (const g of gameSnap.docs) {
         const at = g.get('finishedAt')?.toMillis() ?? 0, them = g.get('players').find((id) => id !== me);
         if (at <= since || !['done', 'resigned'].includes(g.get('status'))) continue;
@@ -148,6 +152,8 @@ export async function GET(request) {
       diary,
       // Doodle Duel games, whose turn it is
       doodles: await myDoodles(me).catch(() => []),
+      // doodle mail in your bud's inventory (the pictures load when you open it)
+      doodleMail: { count: mailInfo.count, fresh: mailInfo.fresh },
       games: gameSnap.docs.map((d) => d.data()).filter((g) => ['setup', 'playing'].includes(g.status)).map((g) => {
         const them = g.players.find((id) => id !== me);
         return { id: g.id, them, myTurn: g.status === 'playing' ? g.turn === me : !g.ready?.[me], status: g.status };

@@ -81,6 +81,10 @@ body { margin: 0; color: var(--ink); font-family: var(--font); background: linea
 .history { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
 .history li { display: flex; gap: 8px; }
 .history .ok { color: var(--good); } .history .no { color: var(--bad); }
+.caption { width: 100%; max-width: min(100%, 54vh); margin: 0 auto; display: block; font: 500 15px var(--font); color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; }
+.caption::placeholder { color: var(--muted); }
+.said { text-align: center; margin: 0; font-size: 16px; font-weight: 600; }
+.said::before { content: "“"; } .said::after { content: "”"; }
 .typed { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; }
 .center { display: grid; place-items: center; text-align: center; min-height: 100vh; padding: 16px; }
 .center .panel { max-width: 420px; }
@@ -111,7 +115,9 @@ const S = window.BudSound || { play() {}, bindToggle() {}, muted: true };
 // the bud maker's paints and brush sizes (canvas units: the paper is 1000 x 1000)
 const PALETTE = [['#FF6B5B', 'Tomato'], ['#FF9F43', 'Tangerine'], ['#FFD23F', 'Sunny'], ['#5ED6A0', 'Mint'], ['#4FB3FF', 'Sky'], ['#7C6CFF', 'Iris'], ['#FF7EB6', 'Bubblegum'], ['#F6F2EC', 'Cream'], ['#2B2B3A', 'Ink']];
 const SIZES = [[12, 'Small'], [26, 'Medium'], [52, 'Large']];
-const id = new URLSearchParams(location.search).get('id');
+const q = new URLSearchParams(location.search), id = q.get('id');
+// doodle mail: ?to=<friend> draws one for them, ?mail=<id> opens one (to replay it)
+const mailTo = q.get('to'), mailId = q.get('mail');
 let view = null, busy = false, lastKey = '';
 
 async function api(method, path, body) {
@@ -243,11 +249,11 @@ function drawBrush(c, col) {
 }
 const svgIcon = (d) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round'); s.innerHTML = d; return s; };
 
-function renderDraw(main) {
-  const v = view;
-  hostSays(`draw: ${v.word}`, pick(['no words, no letters, just vibes', 'stick figures count!', 'it doesn’t have to be good, it has to be guessable', `${them()} is counting on you`]));
-  const paper = el('div', 'paper'), canvas = el('canvas'), tag = el('span', 'word', `✏️ ${v.word}`);
-  paper.append(canvas, tag); main.append(paper);
+// The drawing pad: paper, brushes, undo and start over. onChange runs whenever the drawing changes.
+function drawingPad(main, label, onChange) {
+  const paper = el('div', 'paper'), canvas = el('canvas');
+  paper.append(canvas); if (label) paper.append(el('span', 'word', label));
+  main.append(paper);
   let g = setupCanvas(canvas);
   const strokes = [];
   let color = 8, size = 1, cur = null, clock = 0, lastReal = 0, lastPt = null;
@@ -256,13 +262,11 @@ function renderDraw(main) {
   undo.addEventListener('click', () => { strokes.pop(); drawAll(g, strokes); S.play('click'); update(); });
   clear.addEventListener('click', () => { if (clear.dataset.sure !== '1') { clear.dataset.sure = '1'; setTimeout(() => { clear.dataset.sure = ''; }, 1500); return; } strokes.length = 0; drawAll(g, strokes); S.play('squish'); update(); });
   main.append(brushTray((i) => { color = i; }, (k) => { size = k; }, [undo, clear]));
-  const send = el('button', 'btn primary', `Send to ${them()}`); send.type = 'button';
-  const r = el('div', 'row'); r.append(send); const msg = el('p', 'msg'); main.append(r, msg);
-  const update = () => { send.disabled = !strokes.length || busy; undo.disabled = !strokes.length; };
-  update();
+  const update = () => { undo.disabled = !strokes.length; onChange(strokes); };
   // record each stroke with timing, so it can replay; long pauses between strokes are shortened
   const at = (e) => { const b = canvas.getBoundingClientRect(); return [Math.round((e.clientX - b.left) / b.width * 1000), Math.round((e.clientY - b.top) / b.height * 1000)]; };
   canvas.addEventListener('pointerdown', (e) => {
+    if (busy) return;
     canvas.setPointerCapture(e.pointerId);
     const now = performance.now();
     clock += lastReal ? Math.min(450, now - lastReal) : 0; lastReal = now;
@@ -283,6 +287,17 @@ function renderDraw(main) {
   const end = () => { cur = null; lastReal = performance.now(); };
   canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
   addEventListener('resize', () => { g = setupCanvas(canvas); drawAll(g, strokes); }, { once: true });
+  update();
+  return { strokes, update };
+}
+
+function renderDraw(main) {
+  const v = view;
+  hostSays(`draw: ${v.word}`, pick(['no words, no letters, just vibes', 'stick figures count!', 'it doesn’t have to be good, it has to be guessable', `${them()} is counting on you`]));
+  const send = el('button', 'btn primary', `Send to ${them()}`); send.type = 'button';
+  const { strokes, update } = drawingPad(main, `✏️ ${v.word}`, (st) => { send.disabled = !st.length || busy; });
+  const r = el('div', 'row'); r.append(send); const msg = el('p', 'msg'); main.append(r, msg);
+  update();
   send.addEventListener('click', async () => {
     if (busy || !strokes.length) return;
     busy = true; update(); msg.textContent = 'sending…';
@@ -364,6 +379,88 @@ function renderWaiting(main) {
   main.append(el('p', 'msg', 'You’ll get a Discord DM when it’s your turn.'));
 }
 
+/* ---------- doodle mail: draw a friend something ---------- */
+let mailMaxCaption = 80;
+function renderMailDraw(who) {
+  $('gate').hidden = true; $('app').hidden = false; $('historyBox').hidden = true;
+  $('title').textContent = `A doodle for ${who.name}`; $('streak').hidden = true;
+  document.title = `A doodle for ${who.name} · the buddie system`;
+  hostSays(`for ${who.name}`, pick([`draw ${who.name} anything! it goes to their Discord DMs`, `${who.bud} would love a drawing. anything goes!`, 'a doodle a day keeps the boredom away', `what would make ${who.name} smile?`]));
+  const main = $('main'); main.textContent = '';
+  const send = el('button', 'btn primary', `Send to ${who.name}`); send.type = 'button';
+  const { strokes, update } = drawingPad(main, null, (st) => { send.disabled = !st.length || busy; });
+  const cap = el('input', 'caption'); cap.type = 'text'; cap.maxLength = mailMaxCaption; cap.placeholder = 'Add a little message (optional)'; cap.setAttribute('aria-label', 'A little message');
+  const r = el('div', 'row'), back = el('a', 'btn', 'Back to the island'); back.href = '/world';
+  r.append(back, send);
+  const msg = el('p', 'msg', `It’ll land in ${who.name}’s Discord DMs, and ${who.bud} keeps it in its inventory.`);
+  main.append(cap, r, msg);
+  update();
+  send.addEventListener('click', async () => {
+    if (busy || !strokes.length) return;
+    busy = true; update(); msg.className = 'msg'; msg.textContent = 'painting it up…';
+    try {
+      const res = await api('POST', '/api/game', { action: 'mail-send', to: who.id, strokes, caption: cap.value });
+      S.play('whoosh');
+      renderMailSent(who, res, strokes);
+    } catch (e) { msg.textContent = e.message; msg.className = 'msg bad'; }
+    busy = false; update();
+  });
+}
+function renderMailSent(who, res, strokes) {
+  hostSays('sent! 💌', res.dm ? `it’s in ${who.name}’s DMs and in ${who.bud}’s inventory` : `it’s in ${who.bud}’s inventory. (Discord wouldn’t let me DM ${who.name}, so they’ll find it on the island.)`);
+  const main = $('main'); main.textContent = '';
+  const paper = el('div', 'paper'), canvas = el('canvas'); paper.append(canvas); main.append(paper);
+  drawAll(setupCanvas(canvas), strokes);
+  const r = el('div', 'row'), again = el('a', 'btn', 'Draw another'), back = el('a', 'btn primary', 'Back to the island');
+  again.href = `/doodle?to=${who.id}`; back.href = '/world';
+  r.append(again, back); main.append(r);
+}
+
+// one doodle, replayed stroke by stroke. Yours to keep, star or throw away.
+function renderMailView(d) {
+  $('gate').hidden = true; $('app').hidden = false; $('historyBox').hidden = true; $('streak').hidden = true;
+  const title = d.received ? `A doodle from ${d.fromName}` : `Your doodle for ${d.toName}`;
+  $('title').textContent = title; document.title = `${title} · the buddie system`;
+  hostSays(d.received ? `from ${d.fromName}` : `for ${d.toName}`, d.received
+    ? pick([`${d.fromName} drew you this! watch…`, `look what ${d.fromName} made for you`, `a doodle, hand-delivered by ${d.fromBud}`])
+    : `${d.toName} got it${d.dm ? ' in their DMs' : ''}. here it is again:`);
+  const main = $('main'); main.textContent = '';
+  const paper = el('div', 'paper'), canvas = el('canvas'), again = el('button', 'btn small replay', '↻ Replay'); again.type = 'button';
+  paper.append(canvas, again); main.append(paper);
+  const g = setupCanvas(canvas);
+  replay(g, d.strokes);
+  again.addEventListener('click', () => { replay(g, d.strokes); S.play('click'); });
+  if (d.caption) main.append(el('p', 'said', d.caption));
+  main.append(el('p', 'msg', new Date(d.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
+  const r = el('div', 'row'), msg = el('p', 'msg');
+  const toInv = el('a', 'btn', d.received ? 'All my doodles' : 'Back to the island');
+  toInv.href = d.received ? `/world?bud=${d.to}&doodles=1` : `/world?bud=${d.from}&doodles=1`;
+  if (d.received) {
+    const star = el('button', 'btn', d.fav ? '⭐ Starred' : '☆ Star it'); star.type = 'button'; star.title = 'Starred doodles stay at the top and are never cleared out';
+    star.addEventListener('click', async () => {
+      if (busy) return; busy = true;
+      try { const res = await api('POST', '/api/game', { action: 'mail-star', id: d.id, fav: !d.fav }); d.fav = res.fav; star.textContent = d.fav ? '⭐ Starred' : '☆ Star it'; S.play(d.fav ? 'sparkle' : 'click'); }
+      catch (e) { msg.textContent = e.message; }
+      busy = false;
+    });
+    const back = el('a', 'btn primary', 'Doodle back'); back.href = `/doodle?to=${d.from}`;
+    r.append(star, back);
+  } else {
+    const more = el('a', 'btn primary', 'Draw another'); more.href = `/doodle?to=${d.to}`;
+    r.append(more);
+  }
+  const toss = el('button', 'btn', 'Throw away'); toss.type = 'button';
+  toss.addEventListener('click', async () => {
+    if (toss.dataset.sure !== '1') { toss.dataset.sure = '1'; toss.textContent = 'Sure? It’s gone for good'; return; }
+    if (busy) return; busy = true;
+    try { await api('POST', '/api/game', { action: 'mail-toss', id: d.id }); S.play('squish'); location.href = toInv.href; }
+    catch (e) { msg.textContent = e.message; busy = false; }
+  });
+  r.append(toss);
+  const r2 = el('div', 'row'); r2.append(toInv);
+  main.append(r, r2, msg);
+}
+
 /* ---------- checking for the other player's move ---------- */
 async function poll() {
   setTimeout(poll, 5000);
@@ -378,6 +475,19 @@ function gate(title, text, actions) {
 }
 (async () => {
   S.bindToggle($('soundBtn')); if (!window.BudSound) $('soundBtn').hidden = true;
+  const signIn = () => gate('Sign in first', 'Doodles are for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', `/api/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`, true]]);
+  if (mailTo != null) {
+    if (!/^\d{5,25}$/.test(mailTo)) return gate('Who’s it for?', 'Send a doodle from a friend’s bud card on the island.', [['Go to the island', '/world', true]]);
+    try { renderMailDraw(await api('GET', `/api/game?mailto=${mailTo}`)); }
+    catch (e) { if (e.status === 401) return signIn(); gate('Can’t draw for them', e.message, [['Go to the island', '/world', true]]); }
+    return;
+  }
+  if (mailId != null) {
+    if (!/^[A-Za-z0-9]{10,40}$/.test(mailId)) return gate('No doodle here', 'Your doodles are in your bud’s inventory on the island.', [['Go to the island', '/world', true]]);
+    try { renderMailView(await api('GET', `/api/game?mail=${mailId}`)); }
+    catch (e) { if (e.status === 401) return signIn(); gate('Couldn’t open this doodle', e.message, [['Go to the island', '/world', true]]); }
+    return;
+  }
   if (!id || !/^[A-Za-z0-9]{10,40}$/.test(id)) return gate('No game here', 'Start a Doodle Duel from a friend’s bud card on the island.', [['Go to the island', '/world', true]]);
   try { view = await api('GET', `/api/game?doodle=${id}`); render(); setTimeout(poll, 5000); }
   catch (e) {
