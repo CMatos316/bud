@@ -101,6 +101,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
   .gesture .ring { animation: none; opacity: 1; }
   .gesture .fling { animation: none; opacity: 1; }
 }
+/* what the buds say: a little speech bubble that follows them */
+.say { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; background: #fff; color: #2B2A3A; font: 600 14px/1.25 var(--font); padding: 7px 11px; border-radius: 14px; max-width: 200px; text-align: center; box-shadow: 0 6px 16px -8px rgba(30,25,60,.45); transition: opacity .2s; }
+.say::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: inherit; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
 .band { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .band line { stroke: #FF7A59; stroke-width: 6; stroke-dasharray: 2 10; }
 .band #bandStart { fill: none; stroke: rgba(255,255,255,.9); stroke-width: 3; }
@@ -255,6 +258,19 @@ function pieceMesh(t) {
 /* buds, drawn the way the island draws them, centered on their middle */
 const FACE_W = 256, FACE_H = 175;
 async function loadImage(src) { return new Promise((ok) => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; }); }
+// Light or dark eyes, whichever stands out on the paint under them (the same check the maker and island use).
+function eyeColorFor(img, b) {
+  if (!img) return '#15161F';
+  const c = document.createElement('canvas'); c.width = c.height = 8;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const W = img.width, H = img.height, er = b.eyeR;
+  const sx = (b.eyeRel.x - er * 1.2 - b.minX) / b.w * W, sy = (b.eyeRel.y - er * 0.7 - b.minY) / b.h * H;
+  g.drawImage(img, clamp(sx, 0, W - 1), clamp(sy, 0, H - 1), Math.max(1, er * 2.4 / b.w * W), Math.max(1, er * 1.4 / b.h * H), 0, 0, 8, 8);
+  const d = g.getImageData(0, 0, 8, 8).data; let r = 0, gg = 0, bb = 0;
+  for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; bb += d[i + 2]; }
+  const n = d.length / 4, lum = (0.2126 * r + 0.7152 * gg + 0.0722 * bb) / n / 255;
+  return lum < 0.42 ? '#F3F4F8' : '#15161F';
+}
 async function makeBud(data, width, tint) {
   const b = setExtents({ r: data.r.map(([x, y]) => ({ x, y })), eyeRel: data.eyeRel, eyeR: data.eyeR });
   const { geom, face } = buildMesh(b);
@@ -272,7 +288,8 @@ async function makeBud(data, width, tint) {
   inner.position.set(-c.x * s, -c.y * s, -c.z * s);
   const spin = new THREE.Group(), stretch = new THREE.Group(), root = new THREE.Group();
   spin.add(inner); stretch.add(spin); root.add(stretch); scene.add(root);
-  const bud = { data, b, root, stretch, spin, inner, faceTex, g: fc.getContext('2d'), happy: false, ouch: false, look: { x: 0.4, y: 0 }, blinkAt: 0 };
+  const bubble = el('div', 'say'); bubble.hidden = true; document.body.append(bubble);
+  const bud = { data, b, root, stretch, spin, inner, faceTex, g: fc.getContext('2d'), happy: false, ouch: false, look: { x: 0.4, y: 0 }, blinkAt: 0, eyeCol: eyeColorFor(img, b), bubble, bubbleUntil: 0, size: width };
   drawFace(bud, 0);
   return bud;
 }
@@ -283,7 +300,7 @@ function drawFace(bud, t) {
   const key = [blink.toFixed(1), bud.happy, bud.look.x.toFixed(2), bud.look.y.toFixed(2)].join();
   if (key === bud.key) return; bud.key = key;
   g.clearRect(0, 0, FACE_W, FACE_H);
-  drawEyeStyle(g, bud.data.eyes, FACE_W / 2, FACE_H / 2, r * sc, blink, bud.happy, '#15161F', bud.look);
+  drawEyeStyle(g, bud.data.eyes, FACE_W / 2, FACE_H / 2, r * sc, blink, bud.happy, bud.eyeCol, bud.look);
   bud.faceTex.needsUpdate = true;
 }
 
@@ -613,7 +630,11 @@ function unlockTurn() { try { if (screen.orientation && screen.orientation.unloc
 function toBuild() { unlockTurn(); st.mode = 'build'; st.add = []; st.msg = ''; gridMesh.visible = true; setLastPath([]); showBuild(); renderPanel(); drawArc(); }
 function toRepair() { unlockTurn(); st.mode = 'repair'; st.add = []; st.remove = new Set(); st.budTo = null; st.msg = ''; st.tool = 'wood'; gridMesh.visible = true; showRepair(); renderPanel(); drawArc(); }
 let aimIdleAt = 0, everPulled = false;
-function toAim() { aimIdleAt = performance.now(); st.mode = 'aim'; st.msg = ''; gridMesh.visible = false; cursor.visible = false; placeShotInCup(); renderPanel(); drawArc(); }
+let readyTalk = 0;
+function toAim() {
+  clearTimeout(readyTalk);
+  readyTalk = setTimeout(() => { if (st.mode === 'aim' && !pull) say(shotBud, pick(LINES.ready), 3200); }, 700);
+  aimIdleAt = performance.now(); st.mode = 'aim'; st.msg = ''; gridMesh.visible = false; cursor.visible = false; placeShotInCup(); renderPanel(); drawArc(); }
 // pulling back winds the arm down: further back for more power, with the bud squashed into the cup
 const windAngle = (power) => ARM_FIRE + (ARM_COCK - ARM_FIRE) * (0.3 + 0.7 * power);
 function placeShotInCup() {
@@ -662,7 +683,28 @@ function endShot() {
   showState(st.fort);
   shotBud.root.visible = false;
   st.mode = 'result'; renderPanel();
-  if (!shot.ko) { towerBud.happy = true; setTimeout(() => { towerBud.happy = false; }, 1600); }
+  if (!shot.ko) { towerBud.happy = true; say(towerBud, pick(LINES.safeTower), 2200); setTimeout(() => { towerBud.happy = false; }, 1600); }
+}
+// Buds are squishy and love this. They make sure you know nothing hurts.
+const LINES = {
+  ready: ['don’t worry, it doesn’t hurt! I’m squishy', 'I’m basically a marshmallow. launch away!', 'buds bounce. it’s science', 'this doesn’t hurt one bit, I promise', 'I asked for this, actually', 'helmet? I’m ALL cushion', 'ready when you are! it tickles', 'I’ve been training for this my whole life (5 minutes)', 'tell my snacks I love them. kidding, I’ll be fine!', 'squish me back, I can take it'],
+  pullHard: ['ooh, a big one!', 'a little more… ok that’s plenty', 'this is my favorite ride', 'whoa, I can see my house from here', 'maximum squish!'],
+  launch: ['wheeee!', 'cannonbuuud!', 'see you over there!', 'weeeeee!', 'to infinity!'],
+  land: ['boing! I’m fine!', 'didn’t even feel it', 'ta-da!', 'again! again!', 'soft landing!', 'nailed it (kind of)'],
+  koTower: ['I’m okay!! just squished', 'oof, that tickled!', 'no harm done! nice shot', 'bonk! I’m fine, I promise'],
+  safeTower: ['phew!', 'missed me!', 'nice try!', 'my fort is undefeated'],
+};
+function say(bud, text, ms = 2600) {
+  if (!bud) return;
+  bud.bubble.textContent = text; bud.bubble.hidden = false; bud.bubbleUntil = performance.now() + ms;
+}
+function placeBubble(bud) {
+  if (!bud || bud.bubble.hidden) return;
+  if (performance.now() > bud.bubbleUntil || !bud.root.visible) { bud.bubble.hidden = true; return; }
+  const v = bud.root.position.clone().add(new THREE.Vector3(0, bud.size * 0.55, 0)).project(camera);
+  const w = bud.bubble.offsetWidth, h = bud.bubble.offsetHeight;
+  const x = clamp((v.x + 1) / 2 * innerWidth - w / 2, 8, innerWidth - w - 8), y = Math.max(56, (1 - v.y) / 2 * innerHeight - h - 12);
+  bud.bubble.style.transform = `translate(${x}px, ${y}px)`;
 }
 function banner(text) { const b = $('banner'); b.textContent = text; b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 1500); }
 function lerpFrame(frames, f) {
@@ -679,7 +721,7 @@ function playTick(dt) {
   if (play.t < 0) {
     const k = Math.min(1, (play.t + 0.42) / 0.42), a = play.from + (ARM_FIRE - play.from) * (k * k);
     armAt(a); shotBud.root.position.copy(cupPos(a)); shotBud.stretch.scale.set(1, 1 - 0.25 * k, 1);
-    if (!play.thwack && k > 0.95) { play.thwack = true; S.play('boing', { gain: 0.7, rate: 0.7 }); }
+    if (!play.thwack && k > 0.95) { play.thwack = true; S.play('boing', { gain: 0.7, rate: 0.7 }); say(shotBud, pick(LINES.launch), 1300); }
     frameFieldFollow(LAUNCH.x);
     return;
   }
@@ -697,6 +739,7 @@ function playTick(dt) {
   shotBud.stretch.rotation.z = dir; shotBud.stretch.scale.set(1 + k, 1 - k * 0.6, 1);
   shotBud.spin.rotation.z = sb[2] - dir;
   shotBud.look = { x: Math.cos(dir) * 0.6, y: -Math.sin(dir) * 0.4 };
+  if (sh.firstHit != null && !play.landSaid && f >= sh.firstHit + 8 && !sh.ko) { play.landSaid = true; say(shotBud, pick(LINES.land), 2200); }
   // big impacts: a puff and a thump
   while (play.hitIdx < sh.hits.length && sh.hits[play.hitIdx][0] <= f) {
     const h = sh.hits[play.hitIdx++]; puff(h[1], h[2], 0.4 + h[3] * 0.06);
@@ -705,6 +748,7 @@ function playTick(dt) {
   if (sh.ko && !play.koShown && f >= sh.ko.frame) {
     play.koShown = true; towerBud.ouch = true; shotBud.happy = true;
     banner(pick(['KNOCKOUT!', 'BONK!', 'GOT IT!'])); S.play('sparkle', { gain: 0.9 });
+    setTimeout(() => say(towerBud, pick(LINES.koTower), 2800), 900);
   }
   // camera: follow the flying bud, then the fortress; zoom in for the knockout
   if (near) frame(tb[0] - 2.2, tb[0] + 2.2, tb[1] - 1.6, tb[1] + 1.6);
@@ -764,6 +808,7 @@ function pullTo(e) {
   const was = st.power;
   st.power = clamp(len / maxPull(), 0, 1);
   if (Math.floor(st.power * 8) !== Math.floor(was * 8)) S.play('tick', { gain: 0.3, rate: 0.8 + st.power * 0.6 });
+  if (st.power > 0.85 && !pull.saidHard) { pull.saidHard = true; say(shotBud, pick(LINES.pullHard), 1800); }
   placeShotInCup(); drawArc(); showAimRead(); drawBand(e);
   shotBud.look = { x: Math.cos(st.angle * Math.PI / 180) * 0.6, y: -Math.sin(st.angle * Math.PI / 180) * 0.4 };
 }
@@ -844,7 +889,7 @@ function loop(now) {
     if (!play) towerBud.look = { x: -0.6, y: 0 };
   }
   placeCamera(dt, false);
-  placeGesture();
+  placeGesture(); placeBubble(shotBud); placeBubble(towerBud);
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
