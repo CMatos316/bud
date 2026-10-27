@@ -98,7 +98,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 <div class="err-toast" id="errToast" hidden role="alert"></div>
 <svg class="band" id="band" hidden aria-hidden="true"><line id="bandLine" stroke-linecap="round"/><circle id="bandStart" r="14"/><circle id="bandEnd" r="10"/></svg>
 <section class="panel" id="panel" hidden></section>
-<div class="turn" id="turn" hidden><div class="panel"><span class="phone" aria-hidden="true">📱</span><h2>Turn your phone sideways</h2><p>Bud-a-pult is a side view: the catapult on one end, the fort on the other. It fits much better with your phone held sideways.</p><p id="turnTip" hidden>On iPhone, turn off Rotation Lock in Control Center if the screen doesn’t turn.</p><div class="row"><button class="btn" id="turnSkip" type="button">Play anyway</button><button class="btn primary" id="turnFull" type="button" hidden>Go full screen</button></div></div></div>
+<div class="turn" id="turn" hidden><div class="panel"><span class="phone" aria-hidden="true">📱</span><h2>Turn your phone sideways to shoot</h2><p>The catapult is on one end and the fort on the other, so flinging fits much better with your phone held sideways. You can turn it back upright to build.</p><p id="turnTip" hidden>On iPhone, turn off Rotation Lock in Control Center if the screen doesn’t turn.</p><div class="row"><button class="btn" id="turnSkip" type="button">Play anyway</button><button class="btn primary" id="turnFull" type="button" hidden>Go full screen</button></div></div></div>
 <div class="gate" id="gate" hidden><div class="panel"><h2 id="gateTitle"></h2><p id="gateText"></p><div class="row" id="gateRow"></div></div></div>
 
 <script src="/js/sound.js"></script>
@@ -257,11 +257,6 @@ function drawFace(bud, t) {
   drawEyeStyle(g, bud.data.eyes, FACE_W / 2, FACE_H / 2, r * sc, blink, bud.happy, '#15161F', bud.look);
   bud.faceTex.needsUpdate = true;
 }
-// the practice dummy that hides in your fort: a round straw-colored bud
-function dummyData() {
-  const r = Array.from({ length: 36 }, (_, i) => { const a = i / 36 * Math.PI * 2; return [Math.cos(a) * 60, Math.sin(a) * 56]; });
-  return { r, eyeRel: { x: 0, y: -8 }, eyeR: 15, eyes: 'bean', paint: null, trueName: 'Dummy' };
-}
 
 /* ---------- camera ---------- */
 const view = { x: 9, y: 2.5, w: 26 }, goal = { x: 9, y: 2.5, w: 26 };
@@ -295,7 +290,11 @@ addEventListener('resize', () => { resize(); reframe(); checkTurn(); });
 // held upright on a phone: suggest turning it sideways (once per visit, if they'd rather not)
 let turnSkipped = false;
 try { turnSkipped = sessionStorage.getItem('bp-turn-skip') === '1'; } catch (e) {}
-function checkTurn() { $('turn').hidden = turnSkipped || !(innerHeight > innerWidth && innerWidth < 600); }
+// building works best held upright; shooting works best sideways, so we only ask once you go to shoot
+function checkTurn() {
+  const shooting = st.mode === 'aim' || st.mode === 'fly' || st.mode === 'result';
+  $('turn').hidden = turnSkipped || !shooting || !(innerHeight > innerWidth && innerWidth < 600);
+}
 // Full screen: on Android (and computers) the page can take over the whole screen, and on a phone it also turns
 // itself sideways. iPhones only allow that for videos, so there it's turning the phone (or Play anyway).
 const fsEl = document.documentElement;
@@ -305,7 +304,7 @@ async function goFull() {
   try {
     if (isFull()) { await (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
     await (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen).call(fsEl, { navigationUI: 'hide' });
-    if (innerWidth < 900 && screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(() => {});
+    if (innerWidth < 900 && screen.orientation && screen.orientation.lock && st.mode !== 'build' && st.mode !== 'repair') await screen.orientation.lock('landscape').catch(() => {});
   } catch (e) {}
 }
 $('fsBtn').hidden = !canFull; $('turnFull').hidden = !canFull;
@@ -324,7 +323,7 @@ $('turnSkip').addEventListener('click', () => { turnSkipped = true; try { sessio
 // mode: 'build' (placing pieces) | 'aim' | 'fly' (replay) | 'result' | 'repair'
 const st = {
   mode: 'build', tool: 'wood', build: JSON.parse(JSON.stringify(STARTER)), fort: null, fortStart: null, launches: 0,
-  angle: 45, power: 0.5, busy: false, msg: '', shot: null, lastPath: [], add: [],
+  angle: 45, power: 0.5, busy: false, msg: '', shot: null, lastPath: [], add: [], remove: new Set(), budTo: null,
 };
 let me = null, shotBud = null, towerBud = null;
 const bodyMeshes = [];   // the fortress pieces on screen, in the same order as the state
@@ -408,7 +407,11 @@ function buildTap(c) {
   if (!c) return;
   const occ = occupied(), here = occ.get(`${c.gx},${c.gy}`);
   st.msg = '';
-  if (st.tool === 'bud') {
+  if (st.tool === 'remove') {
+    if (here == null) { st.msg = 'Tap a piece to remove it.'; return renderPanel(); }
+    if (here === 'bud') { st.msg = 'Your bud stays! Drag it somewhere else instead.'; return renderPanel(); }
+    st.build.pieces.splice(here, 1); S.play('squish', { gain: 0.6 });
+  } else if (st.tool === 'bud') {
     if (here != null && here !== 'bud') { st.msg = 'Pick an empty square for your bud.'; return renderPanel(); }
     st.build.bud = { x: c.gx, y: c.gy }; S.play('boing', { gain: 0.6 });
   } else if (here != null) {
@@ -423,23 +426,41 @@ function buildTap(c) {
   showBuild(); renderPanel();
 }
 // repairs: new pieces only, on squares that are empty now (the server makes the final call)
-function repairTap(c) {
-  if (!c) return;
+// Patching up between launches: tap any piece (rubble too) to clear it away, add up to 2 new pieces, and move
+// your bud (Bud tool, or drag it). Nothing changes until Done; the server checks it all and lets it settle.
+function repairTap(cx, cy) {
+  const c = cellAt(cx, cy), hit = meshAt(cx, cy);
   st.msg = '';
-  const i = st.add.findIndex((p) => { const P = PIECES[p.t]; return c.gx >= p.x && c.gx < p.x + P.w && c.gy >= p.y && c.gy < p.y + P.h; });
-  if (i >= 0) { st.add.splice(i, 1); S.play('squish', { gain: 0.6 }); }
-  else if (st.tool === 'bud') { st.msg = 'Your bud stays where it is. Add pieces around it.'; }
-  else if (st.add.length >= REPAIRS) { st.msg = `You can add ${REPAIRS} pieces. Tap one to take it back.`; }
-  else if (st.tool === 'stone' && st.fort.bodies.filter((b) => b.t === 'stone').length + st.add.filter((p) => p.t === 'stone').length >= MAX_STONE) { st.msg = `Only ${MAX_STONE} stone blocks.`; }
+  if (hit && hit.userData.add != null) { st.add.splice(hit.userData.add, 1); S.play('squish', { gain: 0.6 }); }
+  else if (hit && hit.userData.idx != null && st.tool !== 'bud') {
+    const i = hit.userData.idx;
+    if (st.remove.has(i)) { st.remove.delete(i); S.play('pop', { gain: 0.5 }); } else { st.remove.add(i); S.play('squish', { gain: 0.6 }); }
+  } else if (!c) return;
+  else if (st.tool === 'bud') { st.budTo = { x: c.gx, y: c.gy }; S.play('boing', { gain: 0.6 }); }
+  else if (st.tool === 'remove') { st.msg = 'Tap a piece to clear it away.'; }
+  else if (st.add.length >= REPAIRS) { st.msg = `You can add ${REPAIRS} new pieces. Tap one to take it back.`; }
+  else if (st.tool === 'stone' && st.fort.bodies.filter((b, i) => b.t === 'stone' && !st.remove.has(i)).length + st.add.filter((p) => p.t === 'stone').length >= MAX_STONE) { st.msg = `Only ${MAX_STONE} stone blocks.`; }
   else if (c.gx + PIECES[st.tool].w > COLS || c.gy + PIECES[st.tool].h > ROWS) { st.msg = 'It doesn’t fit there.'; }
   else { st.add.push({ t: st.tool, x: c.gx, y: c.gy }); S.play('thump', { gain: 0.5, rate: 1.2 }); }
-  showState(st.fort);
-  for (const p of st.add) {
-    const P = PIECES[p.t], m = pieceMesh(p.t); m.material = m.material.clone(); m.material.transparent = true; m.material.opacity = 0.75; m.material.emissive = toLinear('#3BB273'); m.material.emissiveIntensity = 0.3;
-    m.position.set(FORT_X + (p.x + P.w / 2) * CELL, (p.y + P.h / 2) * CELL, 0); scene.add(m); bodyMeshes.push(m);
-  }
-  renderPanel();
+  showRepair(); renderPanel();
 }
+// the fort as it stands, with what you've changed: cleared pieces see-through red, new ones green, the bud moved
+function showRepair() {
+  showState(st.fort);
+  bodyMeshes.forEach((m, i) => {
+    m.userData.idx = i;
+    if (st.remove.has(i)) { m.material = m.material.clone(); m.material.transparent = true; m.material.opacity = 0.3; m.material.color = toLinear('#FF8A8A'); m.material.depthWrite = false; }
+  });
+  st.add.forEach((p, k) => {
+    const P = PIECES[p.t], m = pieceMesh(p.t); m.material = m.material.clone(); m.material.transparent = true; m.material.opacity = 0.8; m.material.emissive = toLinear('#3BB273'); m.material.emissiveIntensity = 0.3;
+    m.position.set(FORT_X + (p.x + P.w / 2) * CELL, (p.y + P.h / 2) * CELL, 0); m.userData.add = k; scene.add(m); bodyMeshes.push(m);
+  });
+  if (st.budTo) { towerBud.root.position.set(FORT_X + (st.budTo.x + 0.5) * CELL, (st.budTo.y + 0.5) * CELL, 0); towerBud.spin.rotation.z = 0; }
+}
+// what's under a finger: a piece on screen, or the tower's bud
+function rayAt(cx, cy) { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1), camera); return r; }
+function meshAt(cx, cy) { const h = rayAt(cx, cy).intersectObjects(bodyMeshes, false)[0]; return h ? h.object : null; }
+function onTowerBud(cx, cy) { return !!towerBud && towerBud.root.visible && rayAt(cx, cy).intersectObject(towerBud.root, true).length > 0; }
 
 /* ---------- the panel ---------- */
 function toolButton(t, label, swatch) {
@@ -448,9 +469,32 @@ function toolButton(t, label, swatch) {
   b.addEventListener('click', () => { st.tool = t; S.play('click'); renderPanel(); });
   return b;
 }
+// a little picture of your bud for the Bud tool: its outline, filled with its paint
+let budIcon = null;
+function budSnapshot(data) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const xs = data.r.map((p) => p[0]), ys = data.r.map((p) => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0, h = Math.max(...ys) - y0, k = 56 / Math.max(w, h);
+  const ox = (64 - w * k) / 2, oy = (64 - h * k) / 2, g = c.getContext('2d');
+  const path = () => { g.beginPath(); data.r.forEach(([x, y], i) => { const X = ox + (x - x0) * k, Y = oy + (y - y0) * k; i ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.closePath(); };
+  const finish = (img) => {
+    g.save(); path(); g.clip();
+    if (img) g.drawImage(img, ox, oy, w * k, h * k); else { g.fillStyle = '#EEE8DF'; g.fillRect(0, 0, 64, 64); }
+    g.restore(); path(); g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 2; g.stroke();
+    // its eyes
+    const ex = ox + (data.eyeRel.x - x0) * k, ey = oy + (data.eyeRel.y - y0) * k, er = Math.max(2, data.eyeR * k * 0.45);
+    g.fillStyle = '#15161F'; for (const d of [-1, 1]) { g.beginPath(); g.ellipse(ex + d * er * 1.8, ey, er * 0.7, er, 0, 0, 7); g.fill(); }
+    budIcon = c.toDataURL(); if (st.mode === 'build' || st.mode === 'repair') renderPanel();
+  };
+  if (data.paint) { const img = new Image(); img.onload = () => finish(img); img.onerror = () => finish(null); img.src = data.paint; } else finish(null);
+  return null;
+}
+const budSwatch = () => { if (!budIcon) return swatch(16, 16, '#F6C28B'); const i = el('img'); i.src = budIcon; i.alt = ''; i.style.width = i.style.height = '24px'; return i; };
+const eraser = () => { const i = el('i'); i.textContent = '✕'; i.style.fontStyle = 'normal'; i.style.fontSize = '16px'; i.style.lineHeight = '1'; return i; };
 const swatch = (w, h, bg) => { const i = el('i'); i.style.width = w + 'px'; i.style.height = h + 'px'; i.style.background = bg; return i; };
 function renderPanel() {
   const p = $('panel'); p.textContent = ''; p.hidden = false;
+  checkTurn();
   const aiming = st.mode === 'aim' || st.mode === 'fly';
   $('rebuildBtn').hidden = st.mode !== 'aim';
   $('errToast').hidden = !(aiming && st.msg); $('errToast').textContent = st.msg || '';
@@ -463,26 +507,28 @@ function renderPanel() {
   launches.append(` launch ${shown} of ${LAUNCHES}`);
   if (st.mode === 'build' || st.mode === 'repair') {
     const repairing = st.mode === 'repair';
-    p.append(el('h2', null, repairing ? `Patch it up: add up to ${REPAIRS} pieces` : 'Build a fort around your bud'));
-    p.append(el('p', null, repairing ? 'Tap a square to add the selected piece (tap it again to take it back). Rubble stays where it fell.' : 'Tap a square to place a piece, tap a piece to remove it. Keep your bud safe: if the flying bud reaches it, or knocks it loose, your fort loses.'));
+    p.append(el('h2', null, repairing ? 'Patch it up' : 'Build a fort around your bud'));
+    p.append(el('p', null, repairing ? `Tap any piece to clear it away (rubble too), add up to ${REPAIRS} new pieces, and drag your bud to move it.` : 'Tap a square to place a piece, tap a piece to remove it, and drag your bud to move it. Keep it safe: if the flying bud reaches it, or knocks it loose, your fort loses.'));
     const tools = el('div', 'tools');
     tools.append(toolButton('wood', 'Wood', swatch(18, 18, '#D9A86C')), toolButton('stone', 'Stone', swatch(18, 18, '#A8A6B8')),
       toolButton('beam', 'Beam', swatch(30, 10, '#D9A86C')), toolButton('pillar', 'Pillar', swatch(10, 22, '#D9A86C')));
-    if (!repairing) tools.append(toolButton('bud', 'Bud', swatch(16, 16, '#F6C28B')));
+    tools.append(toolButton('bud', me?.bud?.nickname || me?.bud?.trueName || 'Bud', budSwatch()), toolButton('remove', 'Clear', eraser()));
     p.append(tools);
     const n = repairing ? st.add.length : st.build.pieces.length, stones = (repairing ? st.fort.bodies.filter((b) => b.t === 'stone').length + st.add.filter((x) => x.t === 'stone').length : st.build.pieces.filter((x) => x.t === 'stone').length);
-    p.append(el('span', 'count', repairing ? `${n} of ${REPAIRS} pieces added` : `${n} of ${MAX_PIECES} pieces · ${stones} of ${MAX_STONE} stone`));
+    p.append(el('span', 'count', repairing ? `${n} of ${REPAIRS} new pieces${st.remove.size ? ` · ${st.remove.size} cleared` : ''}${st.budTo ? ' · bud moved' : ''}` : `${n} of ${MAX_PIECES} pieces · ${stones} of ${MAX_STONE} stone`));
     p.append(msg);
     const r = el('div', 'row');
     if (!repairing) {
-      const clr = el('button', 'btn', 'Clear'); clr.type = 'button';
+      const clr = el('button', 'btn', 'Start fresh'); clr.type = 'button';
       clr.addEventListener('click', () => { st.build = { pieces: [], bud: { x: 3, y: 0 } }; showBuild(); renderPanel(); });
       const starter = el('button', 'btn', 'Ready-made fort'); starter.type = 'button';
       starter.addEventListener('click', () => { st.build = JSON.parse(JSON.stringify(STARTER)); showBuild(); renderPanel(); });
       r.append(clr, starter);
     } else {
-      const skip = el('button', 'btn', 'Skip'); skip.type = 'button'; skip.addEventListener('click', () => { st.add = []; showState(st.fort); toAim(); });
-      r.append(skip);
+      const undo = el('button', 'btn', 'Undo all'); undo.type = 'button'; undo.disabled = !st.add.length && !st.remove.size && !st.budTo;
+      undo.addEventListener('click', () => { st.add = []; st.remove = new Set(); st.budTo = null; showRepair(); renderPanel(); });
+      const skip = el('button', 'btn', 'Skip'); skip.type = 'button'; skip.addEventListener('click', () => { st.add = []; st.remove = new Set(); st.budTo = null; showState(st.fort); toAim(); });
+      r.append(undo, skip);
     }
     const go = el('button', 'btn primary', repairing ? 'Done' : 'Ready!'); go.type = 'button'; go.disabled = st.busy;
     go.addEventListener('click', repairing ? finishRepair : finishBuild);
@@ -527,15 +573,16 @@ async function finishBuild() {
   } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
 }
 async function finishRepair() {
-  if (!st.add.length) { showState(st.fort); return toAim(); }
+  if (!st.add.length && !st.remove.size && !st.budTo) { showState(st.fort); return toAim(); }
   st.busy = true; st.msg = ''; renderPanel();
   try {
-    const { state } = await api('POST', '/api/game', { action: 'bp-repair', state: st.fort, add: st.add });
-    st.fort = state; st.add = []; st.busy = false; showState(st.fort); S.play('chime'); toAim();
+    const { state } = await api('POST', '/api/game', { action: 'bp-repair', state: st.fort, add: st.add, remove: [...st.remove], bud: st.budTo });
+    st.fort = state; st.add = []; st.remove = new Set(); st.budTo = null; st.busy = false; showState(st.fort); S.play('chime'); toAim();
   } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
 }
-function toBuild() { st.mode = 'build'; st.add = []; st.msg = ''; gridMesh.visible = true; setLastPath([]); showBuild(); renderPanel(); drawArc(); }
-function toRepair() { st.mode = 'repair'; st.add = []; st.msg = ''; st.tool = 'wood'; gridMesh.visible = true; showState(st.fort); renderPanel(); drawArc(); }
+function unlockTurn() { try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {} }
+function toBuild() { unlockTurn(); st.mode = 'build'; st.add = []; st.msg = ''; gridMesh.visible = true; setLastPath([]); showBuild(); renderPanel(); drawArc(); }
+function toRepair() { unlockTurn(); st.mode = 'repair'; st.add = []; st.remove = new Set(); st.budTo = null; st.msg = ''; st.tool = 'wood'; gridMesh.visible = true; showRepair(); renderPanel(); drawArc(); }
 function toAim() { st.mode = 'aim'; st.msg = ''; gridMesh.visible = false; cursor.visible = false; placeShotInCup(); renderPanel(); drawArc(); }
 // pulling back winds the arm down: further back for more power, with the bud squashed into the cup
 const windAngle = (power) => ARM_FIRE + (ARM_COCK - ARM_FIRE) * (0.3 + 0.7 * power);
@@ -650,8 +697,13 @@ function puff(x, y, k = 1) {
 /* ---------- input ---------- */
 let down = null, pull = null;
 const maxPull = () => clamp(Math.min(innerWidth, innerHeight) * 0.42, 110, 260);
+let budDrag = null;   // dragging your bud to a new square while building or patching up
 canvas.addEventListener('pointerdown', (e) => {
   down = { x: e.clientX, y: e.clientY };
+  if ((st.mode === 'build' || st.mode === 'repair') && !st.busy && onTowerBud(e.clientX, e.clientY)) {
+    budDrag = { id: e.pointerId, cell: null }; canvas.setPointerCapture(e.pointerId); towerBud.happy = true; S.play('pop', { gain: 0.5, rate: 1.3 });
+    return;
+  }
   if (st.mode === 'aim' && !st.busy) { pull = { x: e.clientX, y: e.clientY, id: e.pointerId, moved: false }; canvas.setPointerCapture(e.pointerId); S.play('squish', { gain: 0.4, rate: 1.3 }); }
 });
 function drawBand(e) {
@@ -673,7 +725,23 @@ function pullTo(e) {
   placeShotInCup(); drawArc(); showAimRead(); drawBand(e);
   shotBud.look = { x: Math.cos(st.angle * Math.PI / 180) * 0.6, y: -Math.sin(st.angle * Math.PI / 180) * 0.4 };
 }
+function dropBud(c) {
+  towerBud.happy = false;
+  if (!c) { st.mode === 'repair' ? showRepair() : showBuild(); return; }
+  if (st.mode === 'build') {
+    const here = occupied().get(`${c.gx},${c.gy}`);
+    if (here != null && here !== 'bud') { st.msg = 'Pick an empty square for your bud.'; showBuild(); return renderPanel(); }
+    st.build.bud = { x: c.gx, y: c.gy }; st.msg = ''; showBuild();
+  } else { st.budTo = { x: c.gx, y: c.gy }; st.msg = ''; showRepair(); }
+  S.play('boing', { gain: 0.6 }); renderPanel();
+}
 canvas.addEventListener('pointerup', (e) => {
+  if (budDrag && e.pointerId === budDrag.id) {
+    const moved = !down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10;
+    const c = budDrag.cell; budDrag = null; down = null;
+    if (moved) dropBud(c); else { towerBud.happy = false; st.msg = 'Drag your bud to move it.'; renderPanel(); }
+    return;
+  }
   if (pull && e.pointerId === pull.id) {
     const go = pull.moved && st.power >= 0.04; drawBand(null); pull = null; down = null; showAimRead();
     if (go) launch(); else { S.play('click', { gain: 0.5 }); }
@@ -683,16 +751,24 @@ canvas.addEventListener('pointerup', (e) => {
   down = null;
   if (st.busy) return;
   if (st.mode === 'build') buildTap(cellAt(e.clientX, e.clientY));
-  else if (st.mode === 'repair') repairTap(cellAt(e.clientX, e.clientY));
+  else if (st.mode === 'repair') repairTap(e.clientX, e.clientY);
 });
-canvas.addEventListener('pointercancel', () => { if (pull) drawBand(null); pull = null; down = null; });
+canvas.addEventListener('pointercancel', () => { if (pull) drawBand(null); if (budDrag) { budDrag = null; dropBud(null); } pull = null; down = null; });
 canvas.addEventListener('pointermove', (e) => {
   if (pull && e.pointerId === pull.id) { pullTo(e); return; }
+  if (budDrag && e.pointerId === budDrag.id) {
+    // the bud follows your finger, snapping to squares
+    const c = cellAt(e.clientX, e.clientY); budDrag.cell = c;
+    const p = new THREE.Vector3(); rayAt(e.clientX, e.clientY).ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), p);
+    towerBud.root.position.set(c ? FORT_X + (c.gx + 0.5) * CELL : p.x, c ? (c.gy + 0.5) * CELL : p.y, 0.3); towerBud.spin.rotation.z = 0;
+    cursor.visible = !!c; if (c) { cursor.scale.set(CELL, CELL, 1); cursor.position.set(FORT_X + (c.gx + 0.5) * CELL, (c.gy + 0.5) * CELL, 0.48); }
+    return;
+  }
   const on = st.mode === 'build' || st.mode === 'repair';
   const c = on ? cellAt(e.clientX, e.clientY) : null;
   cursor.visible = !!c && e.pointerType === 'mouse';
   if (c) {
-    const P = PIECES[st.tool] || { w: 1, h: 1 };
+    const P = (st.tool !== 'remove' && st.tool !== 'bud' && PIECES[st.tool]) || { w: 1, h: 1 };
     cursor.scale.set(P.w * CELL, P.h * CELL, 1); cursor.position.set(FORT_X + (c.gx + P.w / 2) * CELL, (c.gy + P.h / 2) * CELL, 0.48);
   }
 });
@@ -746,7 +822,9 @@ function gate(title, text, actions) {
     return gate('Couldn’t load your bud', e.message, [['Go to the island', '/world', true]]);
   }
   if (!me.bud) return gate('Make your bud first', 'You need a bud to put in the catapult!', [['Make your bud', '/', true]]);
-  [shotBud, towerBud] = await Promise.all([makeBud(me.bud, SHOT_W), makeBud(dummyData(), BUD_W, '#F6C28B')]);
+  // on the test range you fling your bud at a fort guarding... your bud (in a real game, it's your friend's)
+  [shotBud, towerBud] = await Promise.all([makeBud(me.bud, SHOT_W), makeBud(me.bud, BUD_W)]);
+  budIcon = budSnapshot(me.bud);
   placeShotInCup();
   toBuild();
 })();

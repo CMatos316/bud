@@ -7,7 +7,7 @@
 // Doodle Duel (lib/doodle.js): GET ?doodle= one game; POST { action: 'dd-new' | 'dd-pick' | 'dd-send' | 'dd-guess'
 // | 'dd-giveup', id, opponent, choice, strokes, guess }
 // Bud-a-pult test range (lib/catapult.js, the physics runs here): POST { action: 'bp-build' | 'bp-shoot' |
-// 'bp-repair', pieces, bud, state, angle, power, add }
+// 'bp-repair', pieces, bud, state, angle, power, add, remove }
 // Doodle mail (lib/doodlemail.js): GET ?mail=list (your bud's doodles) | ?mail=<id> (one, to replay) | ?mailto=<user>;
 // POST { action: 'mail-send' | 'mail-star' | 'mail-toss', to, strokes, caption, id, fav }
 import { readSession, sameOrigin } from '../lib/session.js';
@@ -86,7 +86,7 @@ export async function POST(request) {
     try {
       if (action === 'bp-build') return json({ state: pult.settle(pult.placeBuild(pult.checkBuild(body.pieces, body.bud))) });
       if (action === 'bp-shoot') return json(pult.shoot(pult.cleanState(body.state), body.angle, body.power));
-      if (action === 'bp-repair') return json({ state: pult.repair(pult.cleanState(body.state), body.add) });
+      if (action === 'bp-repair') return json({ state: pult.repair(pult.cleanState(body.state), { add: body.add, remove: body.remove, bud: body.bud }) });
       return json({ error: 'unknown move' }, 400);
     } catch (err) { return fail(err); }
   }
