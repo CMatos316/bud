@@ -145,18 +145,21 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const toLinear = (hex) => new THREE.Color(hex).convertSRGBToLinear();
 
 // the same numbers as lib/catapult.js
-const CELL = 0.5, COLS = 8, ROWS = 10, FORT_X = 16, MAX_PIECES = 16, MAX_STONE = 4, REPAIRS = 2, LAUNCHES = 3;
+const CELL = 0.5, COLS = 14, ROWS = 10, FORT_X = 14, MAX_PIECES = 28, MAX_STONE = 8, REPAIRS = 2, LAUNCHES = 3;
 const PIECES = { wood: { w: 1, h: 1 }, stone: { w: 1, h: 1 }, beam: { w: 3, h: 1 }, pillar: { w: 1, h: 2 } };
 const LAUNCH = { x: 0.6, y: 1.5 }, MIN_SPEED = 9, MAX_SPEED = 19, GROUND_END = FORT_X + COLS * CELL + 5;
 const SHOT_W = 0.78, BUD_W = 0.52;   // how wide the buds are drawn (meters)
 // a ready-made fort, so you can start flinging right away
+// (a castle at the back with a wall out front to take the first hit)
 const STARTER = {
   pieces: [
-    { t: 'stone', x: 2, y: 0 }, { t: 'stone', x: 5, y: 0 }, { t: 'wood', x: 3, y: 0 }, { t: 'wood', x: 4, y: 0 },
-    { t: 'beam', x: 2, y: 1 }, { t: 'wood', x: 5, y: 1 }, { t: 'pillar', x: 2, y: 2 }, { t: 'pillar', x: 5, y: 2 },
-    { t: 'beam', x: 2, y: 4 }, { t: 'wood', x: 5, y: 4 }, { t: 'wood', x: 3, y: 5 }, { t: 'stone', x: 4, y: 5 },
+    { t: 'stone', x: 8, y: 0 }, { t: 'stone', x: 11, y: 0 }, { t: 'wood', x: 9, y: 0 }, { t: 'wood', x: 10, y: 0 },
+    { t: 'beam', x: 8, y: 1 }, { t: 'wood', x: 11, y: 1 }, { t: 'pillar', x: 8, y: 2 }, { t: 'pillar', x: 11, y: 2 },
+    { t: 'beam', x: 8, y: 4 }, { t: 'wood', x: 11, y: 4 }, { t: 'wood', x: 9, y: 5 }, { t: 'stone', x: 10, y: 5 },
+    { t: 'stone', x: 2, y: 0 }, { t: 'stone', x: 3, y: 0 }, { t: 'wood', x: 2, y: 1 }, { t: 'wood', x: 3, y: 1 },
+    { t: 'pillar', x: 2, y: 2 }, { t: 'pillar', x: 3, y: 2 }, { t: 'beam', x: 1, y: 4 },
   ],
-  bud: { x: 3, y: 2 },
+  bud: { x: 9, y: 2 },
 };
 
 async function api(method, path, body) {
@@ -326,7 +329,8 @@ function placeCamera(dt, snap) {
   camera.lookAt(view.x, view.y, 0);
 }
 const frameField = () => frame(-1.4, FORT_X + COLS * CELL + 1.2, -0.5, 6);
-const frameFort = () => frame(FORT_X - 1.4, FORT_X + COLS * CELL + 1.4, -0.4, ROWS * CELL + 0.4);
+// (tight around the plot, so the squares are big enough to tap on a phone held upright)
+const frameFort = () => frame(FORT_X - 0.35, FORT_X + COLS * CELL + 0.35, -0.3, ROWS * CELL + 0.3);
 function resize() {
   renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
   renderer.setSize(innerWidth, innerHeight, false);
@@ -566,7 +570,7 @@ function renderPanel() {
     const r = el('div', 'row');
     if (!repairing) {
       const clr = el('button', 'btn', 'Start fresh'); clr.type = 'button';
-      clr.addEventListener('click', () => { st.build = { pieces: [], bud: { x: 3, y: 0 } }; showBuild(); renderPanel(); });
+      clr.addEventListener('click', () => { st.build = { pieces: [], bud: { x: 10, y: 0 } }; showBuild(); renderPanel(); });
       const starter = el('button', 'btn', 'Ready-made fort'); starter.type = 'button';
       starter.addEventListener('click', () => { st.build = JSON.parse(JSON.stringify(STARTER)); showBuild(); renderPanel(); });
       r.append(clr, starter);
