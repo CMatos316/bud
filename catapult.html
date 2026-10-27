@@ -104,15 +104,6 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 /* what the buds say: a little speech bubble that follows them */
 .say { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; background: #fff; color: #2B2A3A; font: 600 14px/1.25 var(--font); padding: 7px 11px; border-radius: 14px; max-width: 200px; text-align: center; box-shadow: 0 6px 16px -8px rgba(30,25,60,.45); transition: opacity .2s; }
 .say::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: inherit; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
-/* the defending bud's dizziness: fills up with every knock that isn't a knockout */
-.dizzy { position: fixed; left: 0; top: 0; z-index: 2; pointer-events: none; display: flex; align-items: center; gap: 5px; background: rgba(255,255,255,.92); border-radius: 999px; padding: 3px 8px 3px 5px; box-shadow: 0 4px 12px -6px rgba(30,25,60,.45); }
-.dizzy .sw { font-size: 14px; line-height: 1; display: inline-block; }
-.dizzy.spin .sw { animation: dz-spin 1.2s linear infinite; }
-@keyframes dz-spin { to { transform: rotate(360deg); } }
-.dizzy .bar { width: 52px; height: 7px; border-radius: 99px; background: rgba(29,28,43,.12); overflow: hidden; }
-.dizzy .bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #C9B8FF, #9B7CFF, #FF7EB6); }
-.dizzy.bump { animation: dz-bump .5s cubic-bezier(.3,1.8,.5,1); }
-@keyframes dz-bump { 40% { transform: var(--at) scale(1.25); } }
 .band { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .band line { stroke: #FF7A59; stroke-width: 6; stroke-dasharray: 2 10; }
 .band #bandStart { fill: none; stroke: rgba(255,255,255,.9); stroke-width: 3; }
@@ -131,7 +122,6 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
   <button class="icon-btn" id="soundBtn" type="button"></button>
 </header>
 <div class="banner" id="banner" aria-live="assertive"></div>
-<div class="dizzy" id="dizzy" hidden role="meter" aria-label="Dizziness" aria-valuemin="0" aria-valuemax="100"><span class="sw" aria-hidden="true">🌀</span><span class="bar"><i id="dizzyFill"></i></span></div>
 <div class="gesture" id="gesture" hidden aria-hidden="true">
   <span class="trail"></span><span class="ring"></span>
   <svg class="fling" viewBox="0 0 70 70" fill="none" stroke="#FF7A59" stroke-width="5" stroke-linecap="round"><path d="M12 58 Q 30 18 60 10" stroke-dasharray="3 9"/><path d="M48 6 L61 9 L56 21" stroke-dasharray="none"/></svg>
@@ -715,7 +705,7 @@ function say(bud, text, ms = 2600) {
   if (!bud) return;
   bud.bubble.textContent = text; bud.bubble.hidden = false; bud.bubbleUntil = performance.now() + ms;
 }
-// the dizziness meter above the defending bud, and stars circling its head when it's woozy
+// how dizzy the defending bud is shows as stars circling its head (no meter: it got in the way)
 let dizzyShown = 0, dizzyTarget = 0;
 const stars = [];
 {
@@ -725,11 +715,9 @@ const stars = [];
 function setDizzy(v, animate = false) {
   dizzyTarget = clamp(v || 0, 0, 100);
   if (!animate) dizzyShown = dizzyTarget;
-  else { const d = $('dizzy'); d.classList.remove('bump'); void d.offsetWidth; d.classList.add('bump'); }
 }
 function placeDizzy(dt) {
-  const d = $('dizzy'), show = !!towerBud && towerBud.root.visible && !!st.fort && st.mode !== 'build';
-  if (d.hidden === show) d.hidden = !show;
+  const show = !!towerBud && towerBud.root.visible && !!st.fort && st.mode !== 'build';
   dizzyShown += (dizzyTarget - dizzyShown) * Math.min(1, dt * 2.5);
   const n = !show ? 0 : dizzyShown >= 70 ? 3 : dizzyShown >= 40 ? 2 : dizzyShown >= 15 ? 1 : 0;
   stars.forEach((m, i) => {
@@ -739,20 +727,13 @@ function placeDizzy(dt) {
     m.position.set(p.x + Math.cos(a) * BUD_W * 0.55, p.y + BUD_W * 0.62 + Math.sin(T * 6 + i) * 0.03, Math.sin(a) * BUD_W * 0.55);
     m.rotation.y += dt * 4;
   });
-  if (!show) return;
-  $('dizzyFill').style.width = dizzyShown.toFixed(1) + '%';
-  d.setAttribute('aria-valuenow', Math.round(dizzyTarget));
-  d.classList.toggle('spin', dizzyShown >= 40);
-  const v = towerBud.root.position.clone().add(new THREE.Vector3(0, BUD_W * 0.95, 0)).project(camera);
-  const at = `translate(${(v.x + 1) / 2 * innerWidth - d.offsetWidth / 2}px, ${(1 - v.y) / 2 * innerHeight - d.offsetHeight}px)`;
-  d.style.setProperty('--at', at); d.style.transform = at;
 }
 function placeBubble(bud) {
   if (!bud || bud.bubble.hidden) return;
   if (performance.now() > bud.bubbleUntil || !bud.root.visible) { bud.bubble.hidden = true; return; }
   const v = bud.root.position.clone().add(new THREE.Vector3(0, bud.size * 0.55, 0)).project(camera);
   const w = bud.bubble.offsetWidth, h = bud.bubble.offsetHeight;
-  const lift = bud === towerBud && !$('dizzy').hidden ? 30 : 0;
+  const lift = 0;
   const x = clamp((v.x + 1) / 2 * innerWidth - w / 2, 8, innerWidth - w - 8), y = Math.max(56, (1 - v.y) / 2 * innerHeight - h - 12 - lift);
   bud.bubble.style.transform = `translate(${x}px, ${y}px)`;
 }
