@@ -1008,6 +1008,13 @@ const HAND = {
     const glass = mesh(new THREE.CircleGeometry(u * 0.035, 16), '#7FD3FF', { roughness: 0.1 }); glass.position.z = u * 0.096; g.add(glass);
     const flash = mesh(new THREE.BoxGeometry(u * 0.04, u * 0.02, u * 0.02), '#FFE07A'); flash.position.set(u * 0.06, u * 0.075, 0); g.add(flash);
     g.rotation.y = -0.4; return g; } },
+  medal: { at: 'held', make(u) {
+    // won at Island Race: a gold medal on a ribbon
+    const g = new THREE.Group();
+    const disc = mesh(new THREE.CylinderGeometry(u * 0.07, u * 0.07, u * 0.02, 24), '#F2B300', { metalness: 0.6, roughness: 0.3 }); disc.rotation.x = Math.PI / 2; g.add(disc);
+    const star = mesh(new THREE.CylinderGeometry(u * 0.035, u * 0.035, u * 0.024, 5), '#FFE07A', { metalness: 0.5, roughness: 0.3 }); star.rotation.x = Math.PI / 2; g.add(star);
+    for (const s of [-1, 1]) { const rib = mesh(new THREE.BoxGeometry(u * 0.045, u * 0.14, u * 0.01), s < 0 ? '#E8394B' : '#4FB3FF'); rib.position.set(s * u * 0.025, u * 0.12, 0); rib.rotation.z = s * 0.25; g.add(rib); }
+    g.rotation.z = -0.2; return g; } },
   pan: { at: 'held', make(u) {
     const g = new THREE.Group(), p = mesh(new THREE.CylinderGeometry(u * 0.11, u * 0.09, u * 0.03, 24), '#3B3F52'); g.add(p);
     const handle = mesh(new THREE.BoxGeometry(u * 0.16, u * 0.02, u * 0.03), '#3B3F52'); handle.position.x = u * 0.17; g.add(handle);
@@ -2273,7 +2280,7 @@ function renderAboutMe(bud) {
 let openAbout = false;
 
 // The wardrobe: one thing on the head, one in hand. Interests unlock props; the crown and seasonal gear are kept.
-const FROM_LABEL = (f) => (f === 'interest' ? '' : f === 'peekaboo' ? 'won at Peekaboo' : f === 'bud-a-pult' ? 'won at Bud-a-pult' : f ? `from ${f.replace(/^\w/, (c) => c.toUpperCase())}` : '');
+const FROM_LABEL = (f) => (f === 'interest' ? '' : f === 'peekaboo' ? 'won at Peekaboo' : f === 'bud-a-pult' ? 'won at Bud-a-pult' : f === 'island race' ? 'won at Island Race' : f ? `from ${f.replace(/^\w/, (c) => c.toUpperCase())}` : '');
 let openWardrobe = false;
 function renderWardrobe(bud) {
   const w = myWardrobe;

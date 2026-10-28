@@ -8,6 +8,8 @@
 // | 'dd-giveup', id, opponent, choice, strokes, guess }
 // Bud-a-pult test range (lib/catapult.js, the physics runs here): POST { action: 'bp-build' | 'bp-shoot' |
 // 'bp-repair', pieces, bud, state, angle, power, add, remove }
+// Island Race (lib/race.js, played on a call): GET ?rc=<room>[&full=1] checks in; POST { action: 'rc-new' |
+// 'rc-join' | 'rc-start' | 'rc-roll', room, item, golden, fork }
 // Bud-a-pult the game (lib/bpgame.js): GET ?bpg= one game; POST { action: 'bpg-new' | 'bpg-build' | 'bpg-shoot' |
 // 'bpg-patch' | 'bpg-resign', id, opponent, pieces, bud, angle, power, add, remove, skip }
 // Doodle mail (lib/doodlemail.js): GET ?mail=list (your bud's doodles) | ?mail=<id> (one, to replay) | ?mailto=<user>;
@@ -21,6 +23,7 @@ import * as doodle from '../lib/doodle.js';
 import * as mail from '../lib/doodlemail.js';
 import * as pult from '../lib/catapult.js';
 import * as bpg from '../lib/bpgame.js';
+import * as race from '../lib/race.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
 
@@ -39,6 +42,11 @@ export async function GET(request) {
   if (dd != null) {
     if (!/^[A-Za-z0-9]{10,40}$/.test(dd)) return json({ error: 'which game?' }, 400);
     try { return json(await doodle.getGame(session.id, dd)); } catch (err) { return fail(err); }
+  }
+  const rc = url.searchParams.get('rc');
+  if (rc != null) {
+    if (!okRoom(rc)) return json({ error: 'which race?' }, 400);
+    try { return json(await race.checkIn(rc, session.id, session.name, url.searchParams.get('full') === '1')); } catch (err) { return fail(err); }
   }
   const bg = url.searchParams.get('bpg');
   if (bg != null) {
@@ -87,6 +95,19 @@ export async function POST(request) {
       if (action === 'dd-send') return json(await doodle.sendDrawing(session.id, id, body.strokes));
       if (action === 'dd-guess') return json(await doodle.guess(session.id, id, String(body.guess || '').slice(0, 60)));
       if (action === 'dd-giveup') return json(await doodle.giveUp(session.id, id));
+      return json({ error: 'unknown move' }, 400);
+    } catch (err) { return fail(err); }
+  }
+  if (typeof action === 'string' && action.startsWith('rc-')) {
+    try {
+      if (action === 'rc-new') return json(await race.joinRoom(race.newRoomId(), session.id, session.name));
+      if (!okRoom(body.room)) return json({ error: 'which race?' }, 400);
+      if (action === 'rc-join') return json(await race.joinRoom(body.room, session.id, session.name));
+      if (action === 'rc-start') return json(await race.startRace(body.room, session.id));
+      if (action === 'rc-roll') {
+        const item = typeof body.item === 'string' && race.ITEMS[body.item] ? body.item : null;
+        return json(await race.roll(body.room, session.id, { item, golden: Number(body.golden), fork: body.fork === 1 ? 1 : 0 }));
+      }
       return json({ error: 'unknown move' }, 400);
     } catch (err) { return fail(err); }
   }

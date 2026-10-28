@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+/* no zooming on phones (see /js/nozoom.js) */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@supports (-webkit-touch-callout: none) { input, textarea, select { font-size: max(16px, 1em) !important; } }
+</style>
+<script src="/js/nozoom.js"></script>
+<title>Island Race · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="A board game round the island for everyone on the call. Roll, hop, grab items, first bud back to the campfire wins.">
+<meta name="theme-color" content="#BFD9FF">
+<style>
+/* Island Race: a board game on a little 3D island for everyone on a call (bud's Discord Activity). The server
+   rolls every die (lib/race.js); this page plays each turn's hops for everyone at once. */
+:root {
+  --ink: #1D1C2B; --muted: #5E5D75; --card: rgba(255,255,255,.9); --line: rgba(29,28,43,.1); --shadow: rgba(46,40,90,.22);
+  --btn: #1D1C2B; --btn-ink: #fff; --chip: rgba(127,127,160,.12); --bad: #E8505B; --good: #2E9E62; --gold: #F2B300;
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink: #EDECF6; --muted: #A9A7C4; --card: rgba(30,32,52,.9); --line: rgba(255,255,255,.12); --shadow: rgba(0,0,0,.5); --btn: #EDECF6; --btn-ink: #15161F; --chip: rgba(255,255,255,.08); color-scheme: dark; } }
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; color: var(--ink); font-family: var(--font); -webkit-tap-highlight-color: transparent; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.top { position: fixed; top: max(10px, env(safe-area-inset-top)); left: 16px; right: 16px; display: flex; align-items: center; gap: 8px; z-index: 3; pointer-events: none; }
+.top > * { pointer-events: auto; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; color: #1D1C2B; text-decoration: none; background: rgba(255,255,255,.85); border-radius: 999px; padding: 5px 12px 5px 6px; }
+.brand img { width: 24px; height: 24px; }
+.pill { background: rgba(255,255,255,.85); color: #1D1C2B; border: 0; border-radius: 999px; padding: 6px 12px; font: 600 13.5px var(--font); cursor: pointer; white-space: nowrap; }
+.spacer { flex: 1; }
+.icon-btn { border: 0; background: rgba(255,255,255,.85); color: #1D1C2B; width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; cursor: pointer; padding: 0; flex: none; }
+.icon-btn svg { width: 17px; height: 17px; }
+/* the racers: whose turn, place, acorns, items */
+.racers { position: fixed; top: calc(max(10px, env(safe-area-inset-top)) + 46px); left: 16px; right: 16px; display: flex; gap: 6px; flex-wrap: wrap; z-index: 2; pointer-events: none; }
+.racer { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,.88); color: #1D1C2B; border-radius: 14px; padding: 4px 10px 4px 4px; font-size: 13px; font-weight: 600; box-shadow: 0 6px 14px -10px rgba(30,25,60,.5); border: 2px solid transparent; transition: transform .2s; }
+.racer.turn { border-color: #FF7A59; transform: translateY(2px); }
+.racer.away { opacity: .55; }
+.racer .dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 700; }
+.racer small { color: #5E5D75; font-weight: 600; }
+/* the panel at the bottom */
+.panel { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); width: min(520px, calc(100% - 32px)); background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 12px 14px; box-shadow: 0 18px 40px -22px var(--shadow); display: grid; gap: 10px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 3; }
+.panel h2 { margin: 0; font-size: 17px; }
+.panel p { margin: 0; font-size: 14px; line-height: 1.35; color: var(--muted); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.row.left { justify-content: flex-start; }
+.btn { font: 600 15px var(--font); border-radius: 999px; padding: 10px 18px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn.primary { background: var(--btn); color: var(--btn-ink); border-color: transparent; }
+.btn.big { font-size: 18px; padding: 12px 26px; }
+.btn:disabled { opacity: .45; cursor: default; }
+.chip { appearance: none; border: 1.5px solid var(--line); background: var(--chip); color: inherit; border-radius: 14px; padding: 7px 11px; font: 600 13.5px var(--font); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.chip[aria-pressed="true"] { border-color: currentColor; background: rgba(255,122,89,.18); }
+.chip .em { font-size: 17px; line-height: 1; }
+.label { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.lobby { display: flex; flex-wrap: wrap; gap: 6px; }
+.lobby span { background: var(--chip); border-radius: 999px; padding: 4px 10px; font-size: 13.5px; font-weight: 600; }
+.lobby span.away { opacity: .5; }
+.msg { color: var(--bad) !important; font-size: 13.5px; }
+/* the race log, at the side */
+.log { position: fixed; right: 16px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 8px); width: 240px; display: grid; gap: 4px; z-index: 2; pointer-events: none; }
+.log div { background: rgba(255,255,255,.8); color: #2B2A3A; border-radius: 10px; padding: 4px 9px; font-size: 12.5px; animation: in .3s ease-out; }
+@keyframes in { from { opacity: 0; transform: translateY(6px); } }
+@media (max-width: 1080px) { .log { display: none; } }
+/* floating things over the board: speech, +1 acorn, item names */
+.float { position: fixed; left: 0; top: 0; z-index: 2; pointer-events: none; font: 700 15px var(--font); color: #fff; -webkit-text-stroke: 1px #1D1C2B; paint-order: stroke fill; text-shadow: 0 2px 0 #1D1C2B; white-space: nowrap; transition: opacity .3s; }
+.say { position: fixed; left: 0; top: 0; z-index: 2; pointer-events: none; background: #fff; color: #2B2A3A; font: 600 13.5px/1.25 var(--font); padding: 6px 10px; border-radius: 12px; max-width: 190px; text-align: center; box-shadow: 0 6px 16px -8px rgba(30,25,60,.45); }
+.say::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; background: inherit; transform: translateX(-50%) rotate(45deg); }
+.banner { position: fixed; left: 50%; top: 34%; transform: translate(-50%, -50%) scale(.6); font: 700 clamp(28px, 8vw, 52px) var(--font); color: #fff; -webkit-text-stroke: 2px #1D1C2B; paint-order: stroke fill; text-shadow: 0 6px 0 #1D1C2B; opacity: 0; pointer-events: none; transition: opacity .25s, transform .45s cubic-bezier(.3,1.6,.5,1); white-space: nowrap; z-index: 4; }
+.banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.gate { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; z-index: 5; }
+.gate .panel { position: static; transform: none; max-width: 420px; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .panel { left: auto; right: max(10px, env(safe-area-inset-right)); transform: none; width: min(320px, 42vw); top: 96px; bottom: auto; max-height: calc(100% - 106px); overflow-y: auto; }
+}
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="The island, with the race path round it"></canvas>
+<header class="top">
+  <a class="brand" href="/world" id="brand"><img src="/img/favicon.svg" alt=""><span>Island Race</span></a>
+  <span class="spacer"></span>
+  <button class="pill" id="gamesBtn" type="button" hidden>Games</button>
+  <button class="icon-btn" id="soundBtn" type="button"></button>
+</header>
+<div class="racers" id="racers"></div>
+<div class="log" id="log" aria-live="polite"></div>
+<div class="banner" id="banner" aria-live="assertive"></div>
+<section class="panel" id="panel" hidden></section>
+<div class="gate" id="gate" hidden><div class="panel"><h2 id="gateTitle"></h2><p id="gateText"></p><div class="row" id="gateRow"></div></div></div>
+
+<script src="/js/sound.js"></script>
+<script src="/js/vendor/three.r128.min.js"></script>
+<script src="/js/vendor/delaunator-5.0.1.min.js"></script>
+<script type="module">
+import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
+const APP_ID = '1563361979316445264';
+const params = new URLSearchParams(location.search);
+const IN_DISCORD = params.has('frame_id') && params.has('instance_id');
+const S = window.BudSound || { play() {}, bindToggle() {}, muted: true };
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const rand = (a, b) => a + Math.random() * (b - a);
+const toLinear = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+const ITEMS = { double: ['🎲', 'Double Dice', 'roll two dice'], golden: ['✨', 'Golden Die', 'pick your roll'], banana: ['🍌', 'Banana Peel', 'leave a trap here'], coffee: ['☕', 'Coffee', '+1 to your roll'] };
+const COLORS = ['#FF7A59', '#4FB3FF', '#7C6CFF', '#3BB273', '#FF7EB6', '#F2B300'];
+let sdk = null, sessionToken = null, room = null, view = null, me = null, busy = false, msg = '';
+let board = null;
+
+async function api(method, path, body) {
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (sessionToken) headers['x-bud-session'] = sessionToken;
+  const res = await fetch(path, { method, headers, credentials: 'same-origin', cache: 'no-store', body: body ? JSON.stringify(body) : undefined });
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw Object.assign(new Error(data.error || 'something went wrong'), { status: res.status });
+  return data;
+}
+function openLink(url) { if (sdk) sdk.commands.openExternalLink({ url: new URL(url, 'https://bud.oqw.one').href }).catch(() => {}); else location.href = url; }
+const nameOf = (id) => (view && view.players.find((p) => p.id === id)?.name) || 'someone';
+const colorOf = (id) => COLORS[Math.max(0, (view?.racers || []).indexOf(id)) % COLORS.length];
+
+/* ---------- the scene: a little island with the path round it ---------- */
+const canvas = $('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = false;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 500);
+{
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#8EC5FF'); gr.addColorStop(0.6, '#D9ECFF'); gr.addColorStop(1, '#FBE3EF');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; scene.background = t;
+}
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8FBF8F, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(-8, 16, 10); scene.add(sun);
+const M = (hex, o = {}) => new THREE.MeshStandardMaterial({ color: toLinear(hex), roughness: 0.85, ...o });
+const IR = 12;
+{
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(IR, IR * 0.97, 0.6, 64), [M('#6DB774'), M('#86CF86'), M('#6DB774')]); top.position.y = -0.3; scene.add(top);
+  const under = new THREE.Mesh(new THREE.ConeGeometry(IR * 0.97, IR * 0.8, 32, 1, true), M('#C9A27A', { flatShading: true })); under.rotation.x = Math.PI; under.position.y = -0.6 - IR * 0.4; scene.add(under);
+  const sea = new THREE.Mesh(new THREE.CircleGeometry(160, 48), M('#9FD3F0', { roughness: 0.4 })); sea.rotation.x = -Math.PI / 2; sea.position.y = -9; scene.add(sea);
+  // trees round the edge and in the woods (inside the loop)
+  const leaf = [M('#5FB36A', { flatShading: true }), M('#7BC67E', { flatShading: true })], trunk = M('#A47551');
+  const tree = (x, z, s) => {
+    const t = new THREE.Group();
+    const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * s, 0.2 * s, 1.1 * s, 7), trunk); tr.position.y = 0.55 * s; t.add(tr);
+    for (let k = 0; k < 3; k++) { const l = new THREE.Mesh(new THREE.IcosahedronGeometry((0.85 - k * 0.2) * s, 0), leaf[k % 2]); l.position.y = (1.25 + k * 0.5) * s; t.add(l); }
+    t.position.set(x, 0, z); scene.add(t);
+  };
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2 + 0.2; if (Math.abs(Math.sin(a) - 1) < 0.15) continue; tree(Math.cos(a) * 10.9, Math.sin(a) * 10.9, 0.8 + (i % 3) * 0.15); }
+  scene.userData.tree = tree;
+  // the sea's waves at the beach side, and a few flowers
+  for (let i = 0; i < 24; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), M(['#FFB3C7', '#FFE08A', '#FFFFFF', '#C9B8FF'][i % 4])); const a = i * 2.39, r = 2 + (i * 7.3) % 9; f.position.set(Math.cos(a) * r, 0.07, Math.sin(a) * r); scene.add(f); }
+}
+
+/* ---------- the board ---------- */
+const TILE_LOOK = {
+  start: ['#FFFFFF', '🏁'], plain: ['#9CC8FF', ''], item: ['#FFD23F', '?'], launch: ['#FF7A59', '↑'], slide: ['#B98B5E', '≈'],
+  swap: ['#C9B8FF', '⇄'], nap: ['#E8E6F2', 'z'], fork: ['#9CC8FF', 'Y'],
+};
+function glyphTexture(text, color) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.font = '700 86px Fredoka, Nunito, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 10; g.strokeStyle = 'rgba(29,28,43,.85)'; g.strokeText(text, 64, 70); g.fillStyle = color; g.fillText(text, 64, 70);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+}
+const tileMeshes = new Map(), trapMeshes = new Map();
+function buildBoard() {
+  for (const t of board) {
+    const [col, glyph] = TILE_LOOK[t.type] || TILE_LOOK.plain;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.66, 0.12, 28), M(col, { roughness: 0.6 }));
+    m.position.set(t.x, 0.06, t.z); scene.add(m); tileMeshes.set(t.id, m);
+    if (glyph) {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({ map: glyphTexture(glyph, '#FFFFFF'), transparent: true, depthWrite: false }));
+      p.rotation.x = -Math.PI / 2; p.position.set(t.x, 0.13, t.z); p.renderOrder = 2; scene.add(p);
+    }
+    // stepping stones to the next tiles
+    for (const n of t.next) {
+      const o = board[n];
+      for (let k = 1; k <= 2; k++) { const s = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.05, 10), M('#E8DCC0')); s.position.set(t.x + (o.x - t.x) * k / 3, 0.025, t.z + (o.z - t.z) * k / 3); scene.add(s); }
+    }
+  }
+  // trees in the woods, either side of the shortcut
+  const woods = board.filter((t) => t.zone === 'woods');
+  woods.forEach((t, i) => {
+    if (i % 2) return;
+    const o = board[t.next[0]], dx = o.x - t.x, dz = o.z - t.z, l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l;
+    scene.userData.tree(t.x + nx * 1.5, t.z + nz * 1.5, 0.7); scene.userData.tree(t.x - nx * 1.6, t.z - nz * 1.6, 0.65);
+  });
+  // the campfire and a balloon arch at the start
+  const st = board[0], fire = new THREE.Group();
+  for (let i = 0; i < 3; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.8, 7), M('#8A5A3C')); l.rotation.z = Math.PI / 2; l.rotation.y = i * Math.PI / 3; l.position.y = 0.09; fire.add(l); }
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.7, 8), new THREE.MeshBasicMaterial({ color: 0xFF9A3E, transparent: true, opacity: 0.9 })); flame.position.y = 0.45; fire.add(flame);
+  fire.position.set(st.x, 0, st.z - 1.7); scene.add(fire); scene.userData.flame = flame;
+  // a checkered flag beside the start, on the sea side of the path
+  const flag = new THREE.Group(), pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 8), M('#FFFFFF')); pole.position.y = 1.2; flag.add(pole);
+  const fc = document.createElement('canvas'); fc.width = 64; fc.height = 40; const fg = fc.getContext('2d');
+  for (let y = 0; y < 5; y++) for (let x = 0; x < 8; x++) { fg.fillStyle = (x + y) % 2 ? '#1D1C2B' : '#FFFFFF'; fg.fillRect(x * 8, y * 8, 8, 8); }
+  const ft = new THREE.CanvasTexture(fc); ft.encoding = THREE.sRGBEncoding;
+  const cloth = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.62, 8, 1), new THREE.MeshStandardMaterial({ map: ft, side: THREE.DoubleSide, roughness: 0.8 })); cloth.position.set(0.5, 2.05, 0); flag.add(cloth);
+  const out = Math.hypot(st.x, st.z) || 1; flag.position.set(st.x + st.x / out * 1.3 - 0.9, 0, st.z + st.z / out * 1.3); scene.add(flag);
+  scene.userData.cloth = cloth;
+}
+function bananaMesh() {
+  const g = new THREE.Group(), m = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.06, 8, 16, Math.PI * 0.9), M('#FFD23F', { roughness: 0.5 }));
+  m.rotation.x = -Math.PI / 2; g.add(m); g.position.y = 0.17; return g;
+}
+function syncTraps(traps) {
+  for (const [id, m] of trapMeshes) if (traps[id] == null) { scene.remove(m); trapMeshes.delete(id); }
+  for (const id of Object.keys(traps)) if (!trapMeshes.has(id)) { const t = board[id], m = bananaMesh(); m.position.x = t.x + 0.2; m.position.z = t.z + 0.15; scene.add(m); trapMeshes.set(id, m); }
+}
+
+/* ---------- buds as pieces ---------- */
+const FACE_W = 256, FACE_H = 175, BUD_W = 1.35;
+const pieces = new Map();   // racer id -> { bud, root, at (tile), x, z, y, ... }
+async function loadImage(src) { return new Promise((ok) => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; }); }
+function eyeColorFor(img, b) {
+  if (!img) return '#15161F';
+  const c = document.createElement('canvas'); c.width = c.height = 8; const g = c.getContext('2d', { willReadFrequently: true });
+  const W = img.width, H = img.height, er = b.eyeR;
+  const sx = (b.eyeRel.x - er * 1.2 - b.minX) / b.w * W, sy = (b.eyeRel.y - er * 0.7 - b.minY) / b.h * H;
+  g.drawImage(img, clamp(sx, 0, W - 1), clamp(sy, 0, H - 1), Math.max(1, er * 2.4 / b.w * W), Math.max(1, er * 1.4 / b.h * H), 0, 0, 8, 8);
+  const d = g.getImageData(0, 0, 8, 8).data; let r = 0, gg = 0, bb = 0;
+  for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; bb += d[i + 2]; }
+  return (0.2126 * r + 0.7152 * gg + 0.0722 * bb) / (d.length / 4) / 255 < 0.42 ? '#F3F4F8' : '#15161F';
+}
+const fallbackShape = () => ({ r: Array.from({ length: 36 }, (_, i) => { const a = i / 36 * Math.PI * 2; return [Math.cos(a) * 60, Math.sin(a) * 54]; }), eyeRel: { x: 0, y: -6 }, eyeR: 15, eyes: 'classic', paint: null });
+async function makePiece(id, data) {
+  data = data && data.r && data.r.length > 8 ? data : fallbackShape();
+  const b = setExtents({ r: data.r.map(([x, y]) => ({ x, y })), eyeRel: data.eyeRel, eyeR: data.eyeR });
+  const { geom, face } = buildMesh(b);
+  const img = await loadImage(data.paint);
+  const s = BUD_W / Math.max(b.w, b.h);
+  const map = img ? new THREE.Texture(img) : null;
+  if (map) { map.encoding = THREE.sRGBEncoding; map.needsUpdate = true; }
+  const body = new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: map ? 0xffffff : toLinear(colorOf(id)), map, roughness: 0.58, clearcoat: 0.3 }));
+  const fc = document.createElement('canvas'); fc.width = FACE_W; fc.height = FACE_H;
+  const faceTex = new THREE.CanvasTexture(fc); faceTex.encoding = THREE.sRGBEncoding;
+  const faceMesh = new THREE.Mesh(face, new THREE.MeshStandardMaterial({ map: faceTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  faceMesh.renderOrder = 2;
+  const inner = new THREE.Group(); inner.add(body, faceMesh); inner.scale.setScalar(s);
+  geom.computeBoundingBox(); const bb = geom.boundingBox, c = bb.getCenter(new THREE.Vector3()), h = (bb.max.y - bb.min.y) * s;
+  inner.position.set(-c.x * s, -c.y * s + h / 2 + 0.1, -c.z * s);
+  const squash = new THREE.Group(), root = new THREE.Group(); squash.add(inner); root.add(squash);
+  // a colored ring under each racer, so you can tell them apart from above
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.06, 8, 28), new THREE.MeshBasicMaterial({ color: toLinear(colorOf(id)) })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.14; root.add(ring);
+  scene.add(root);
+  const p = { id, data, b, root, squash, inner, faceTex, g: fc.getContext('2d'), eyeCol: eyeColorFor(img, b), at: 0, x: 0, z: 0, y: 0, heading: 0, happy: false, sleepy: false, blinkAt: 0, key: '', height: h + 0.1 };
+  pieces.set(id, p);
+  return p;
+}
+function drawFace(p, t) {
+  const r = p.b.eyeR, sc = FACE_W / (r * 4.4), g = p.g;
+  const blink = p.sleepy ? 1 : (t > p.blinkAt && t < p.blinkAt + 0.15) ? Math.sin((t - p.blinkAt) / 0.15 * Math.PI) : 0;
+  if (t > p.blinkAt + 0.15) p.blinkAt = t + 2 + Math.random() * 4;
+  const key = [blink.toFixed(1), p.happy].join();
+  if (key === p.key) return; p.key = key;
+  g.clearRect(0, 0, FACE_W, FACE_H);
+  drawEyeStyle(g, p.data.eyes || 'classic', FACE_W / 2, FACE_H / 2, r * sc, blink, p.happy, p.eyeCol, { x: 0, y: 0.15 });
+  p.faceTex.needsUpdate = true;
+}
+// where a racer stands on a tile: a little circle of spots when several share it
+function spotOn(tile, id) {
+  const t = board[tile], here = (view?.racers || []).filter((r) => (pieces.get(r)?.at ?? -1) === tile);
+  const k = here.indexOf(id), n = here.length;
+  if (n <= 1 || k < 0) return { x: t.x, z: t.z };
+  const a = k / n * Math.PI * 2;
+  return { x: t.x + Math.cos(a) * 0.45, z: t.z + Math.sin(a) * 0.45 };
+}
+function placeAll() {
+  for (const p of pieces.values()) {
+    if (p.moving) continue;
+    const s = spotOn(p.at, p.id); p.x = s.x; p.z = s.z; p.y = 0;
+  }
+}
+let ensuring = null;
+function ensurePieces() {
+  if (!ensuring) ensuring = ensureNow().finally(() => { ensuring = null; });
+  return ensuring;
+}
+async function ensureNow() {
+  const want = view.racers.filter((r) => !pieces.has(r));
+  if (!want.length) return;
+  let data = {};
+  try { data = (await api('GET', `/api/game?room=${encodeURIComponent(room)}&buds=${want.join(',')}`)).buds || {}; } catch (e) {}
+  for (const id of want) if (!pieces.has(id)) { const p = await makePiece(id, data[id]); p.at = view.pos[id] ?? 0; }
+  for (const [id, p] of pieces) if (!view.racers.includes(id)) { scene.remove(p.root); pieces.delete(id); }
+  placeAll();
+}
+
+/* ---------- the die ---------- */
+function dieFace(n) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = n === 1 ? '#E8394B' : '#1D1C2B';
+  const P = { 1: [[64, 64]], 2: [[34, 34], [94, 94]], 3: [[30, 30], [64, 64], [98, 98]], 4: [[34, 34], [94, 34], [34, 94], [94, 94]], 5: [[32, 32], [96, 32], [64, 64], [32, 96], [96, 96]], 6: [[34, 28], [94, 28], [34, 64], [94, 64], [34, 100], [94, 100]] }[n];
+  for (const [x, y] of P) { g.beginPath(); g.arc(x, y, n === 1 ? 16 : 11, 0, 7); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+}
+// box faces: +x, -x, +y, -y, +z, -z
+const FACE_NUM = [1, 6, 2, 5, 3, 4];
+const DIE_MATS = FACE_NUM.map((n) => new THREE.MeshStandardMaterial({ map: dieFace(n), roughness: 0.4 }));
+// the rotation that turns a number to face the camera (+z, in the die's billboard frame)
+const SHOW = { 3: [0, 0, 0], 4: [0, Math.PI, 0], 1: [0, -Math.PI / 2, 0], 6: [0, Math.PI / 2, 0], 2: [Math.PI / 2, 0, 0], 5: [-Math.PI / 2, 0, 0] };
+const dice = [];
+function throwDice(p, values) {
+  for (const d of dice) scene.remove(d.holder); dice.length = 0;
+  values.forEach((v, i) => {
+    const holder = new THREE.Group(), cube = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), DIE_MATS); holder.add(cube);
+    scene.add(holder);
+    dice.push({ holder, cube, v, t: 0, off: (i - (values.length - 1) / 2) * 0.7, spin: [rand(8, 14), rand(8, 14), rand(6, 10)], from: { x: p.x, z: p.z } });
+  });
+  S.play('tick', { gain: 0.6, rate: 0.7 });
+}
+function diceTick(dt) {
+  for (const d of dice) {
+    d.t += dt;
+    const k = Math.min(1, d.t / 0.9);
+    // billboard toward the camera, above the bud
+    d.holder.quaternion.copy(camera.quaternion);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    d.holder.position.set(d.from.x + right.x * d.off, 1.6 + Math.sin(k * Math.PI) * 0.9, d.from.z + right.z * d.off);
+    const [rx, ry, rz] = SHOW[d.v];
+    if (k < 1) { d.cube.rotation.set(rx + (1 - k) * d.spin[0] * 3, ry + (1 - k) * d.spin[1] * 3, rz + (1 - k) * d.spin[2] * 3); }
+    else d.cube.rotation.set(rx, ry, rz);
+    if (d.t > 2.6) { scene.remove(d.holder); d.dead = true; }
+  }
+  for (let i = dice.length - 1; i >= 0; i--) if (dice[i].dead) dice.splice(i, 1);
+}
+
+/* ---------- floating labels and speech ---------- */
+const floats = [];
+function project(x, y, z) { const v = new THREE.Vector3(x, y, z).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; }
+function floatAt(p, text, ms = 1300) { const e = el('div', 'float', text); document.body.append(e); floats.push({ e, p, t0: performance.now(), ms, y: 1.3 }); }
+function say(p, text, ms = 2000) { if (!p) return; if (p.sayEl) p.sayEl.remove(); const e = el('div', 'say', text); document.body.append(e); p.sayEl = e; p.sayUntil = performance.now() + ms; }
+function placeOverlays() {
+  const now = performance.now();
+  for (let i = floats.length - 1; i >= 0; i--) {
+    const f = floats[i], k = (now - f.t0) / f.ms;
+    if (k >= 1) { f.e.remove(); floats.splice(i, 1); continue; }
+    const [x, y] = project(f.p.x, f.y + k * 0.8, f.p.z); f.e.style.transform = `translate(${x - f.e.offsetWidth / 2}px, ${y}px)`; f.e.style.opacity = String(1 - Math.max(0, k - 0.7) / 0.3);
+  }
+  for (const p of pieces.values()) {
+    if (!p.sayEl) continue;
+    if (now > p.sayUntil) { p.sayEl.remove(); p.sayEl = null; continue; }
+    const [x, y] = project(p.x, p.y + p.height + 0.35, p.z);
+    p.sayEl.style.transform = `translate(${clamp(x - p.sayEl.offsetWidth / 2, 6, innerWidth - p.sayEl.offsetWidth - 6)}px, ${y - p.sayEl.offsetHeight - 6}px)`;
+  }
+}
+function banner(text, ms = 1500) { const b = $('banner'); b.textContent = text; b.classList.add('on'); clearTimeout(banner.t); banner.t = setTimeout(() => b.classList.remove('on'), ms); }
+
+/* ---------- playing a turn: the steps from the server, one after another ---------- */
+let animatedN = -1, queue = [], playing = false;
+const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+function moveTo(p, tile, { arc = 0.45, dur = 0.32, sound = 'boing' } = {}) {
+  return new Promise((done) => {
+    const from = { x: p.x, z: p.z }; p.at = tile; const to = spotOn(tile, p.id);
+    p.moving = { from, to, t: 0, dur, arc, done }; p.lean = clamp((to.x - from.x) * 0.6, -0.6, 0.6);
+    if (sound) S.play(sound, { gain: 0.35, rate: 1.3 + Math.random() * 0.2 });
+  });
+}
+function piecesTick(dt) {
+  for (const p of pieces.values()) {
+    if (p.moving) {
+      const m = p.moving; m.t += dt;
+      const k = Math.min(1, m.t / m.dur), e = k * k * (3 - 2 * k);
+      p.x = m.from.x + (m.to.x - m.from.x) * e; p.z = m.from.z + (m.to.z - m.from.z) * e; p.y = Math.sin(k * Math.PI) * m.arc;
+      p.squash.scale.set(1, k < 0.15 ? 0.8 : k > 0.9 ? 0.85 : 1.08, 1);
+      if (k >= 1) { p.moving = null; p.y = 0; p.squash.scale.set(1, 1, 1); m.done(); }
+    } else {
+      p.squash.scale.y += (1 + Math.sin(performance.now() / 400 + p.id.length) * 0.02 - p.squash.scale.y) * 0.2;
+    }
+    p.root.position.set(p.x, p.y, p.z);
+    // always face the camera (they're flat-ish), turned a little towards where they're hopping
+    const face = Math.atan2(camera.position.x - p.x, camera.position.z - p.z) + (p.moving ? p.lean || 0 : 0);
+    p.root.rotation.y += Math.atan2(Math.sin(face - p.root.rotation.y), Math.cos(face - p.root.rotation.y)) * Math.min(1, dt * 8);
+    p.sleepy = !!view?.asleep?.[p.id];
+  }
+}
+async function playSteps(steps, by) {
+  const mover = pieces.get(by);
+  focus = mover || null;
+  for (const s of steps) {
+    const p = pieces.get(s.who);
+    if (s.k === 'order') { banner('Ready, set, roll!', 1600); await wait(700); }
+    else if (s.k === 'auto') { say(p, pick(['they’re away, so I’ll roll!', 'my turn! I’ll do it myself', 'rolling on my own!']), 1800); await wait(500); }
+    else if (s.k === 'use') { const it = ITEMS[s.item]; floatAt(p, `${it[0]} ${it[1]}!`, 1600); S.play('sparkle', { gain: 0.6 }); await wait(700); }
+    else if (s.k === 'roll') { throwDice(p, s.dice); await wait(1000); floatAt(p, String(s.total), 1400); S.play('pop', { gain: 0.6 }); await wait(500); }
+    else if (s.k === 'trap') { syncTraps({ ...view.traps, [s.at]: s.who }); S.play('squish', { gain: 0.5 }); await wait(400); }
+    else if (s.k === 'hop') { await moveTo(p, s.to); if (s.fork) say(p, s.fork === 'woods' ? pick(['shortcut! 🌲', 'through the woods!']) : pick(['the long way round 🏖️', 'beach route!']), 1300); }
+    else if (s.k === 'bump') { const v = pieces.get(s.from); floatAt(v, '🌰 −1', 1200); floatAt(p, 'bump! 🌰', 1200); if (v) { v.squash.scale.set(1.2, 0.7, 1.2); say(v, pick(['hey!', 'oof!', 'my acorn!']), 1300); } S.play('pop', { rate: 1.6, gain: 0.6 }); await wait(350); }
+    else if (s.k === 'acorn') { floatAt(p, s.full ? '+1 🌰 (hands full!)' : '+1 🌰', 1200); S.play('tick', { gain: 0.4, rate: 1.4 }); await wait(450); }
+    else if (s.k === 'item') { floatAt(p, s.who === me && s.item ? `${ITEMS[s.item][0]} ${ITEMS[s.item][1]}!` : '? item!', 1700); S.play('chime', { gain: 0.5 }); await wait(700); }
+    else if (s.k === 'launch') { S.play('whoosh', { gain: 0.7 }); say(p, pick(['wheeeee!', 'to the moon!', 'yahoo!']), 1500); await moveTo(p, s.to, { arc: 3.2, dur: 1.1, sound: null }); S.play('thump', { gain: 0.6 }); }
+    else if (s.k === 'slide' || s.k === 'slip') {
+      if (s.k === 'slip') { say(p, pick(['whoa whoa whoa!', 'a banana?!', 'nooo!']), 1500); syncTraps(Object.fromEntries(Object.entries(view.traps).filter(([k]) => +k !== p.at))); }
+      else say(p, pick(['slippery!', 'eww, mud', 'wheee… wait, backwards?']), 1500);
+      S.play('squish', { gain: 0.6 }); await moveTo(p, s.to, { arc: 0.05, dur: 0.7, sound: null });
+    }
+    else if (s.k === 'swap') { const o = pieces.get(s.with); S.play('sparkle', { gain: 0.7 }); floatAt(p, '✨ swap! ✨', 1200); if (o) { const a = o.at; await Promise.all([moveTo(p, s.a, { arc: 1.4, dur: 0.6, sound: null }), moveTo(o, s.b, { arc: 1.4, dur: 0.6, sound: null })]); void a; say(o, pick(['hey, that was my spot!', 'huh? how did I get here', 'swapped!']), 1600); } }
+    else if (s.k === 'nap') { say(p, 'so… sleepy… 💤', 1800); S.play('tick', { gain: 0.3, rate: 0.5 }); await wait(600); }
+    else if (s.k === 'skip') { say(p, 'zzz… (skips a turn)', 1800); await wait(900); }
+    else if (s.k === 'wake') { say(p, '☕ awake!', 1500); await wait(600); }
+    else if (s.k === 'finish') { p.happy = true; banner(`${nameOf(s.who)} wins! 🏁`, 2600); S.play('sparkle', { gain: 1 }); confetti(p); say(p, pick(['I did it!!', 'home sweet campfire!', 'first place!!']), 3000); await wait(1400); }
+  }
+  focus = null;
+}
+let running = false;
+async function runQueue() {
+  if (running) return;
+  running = true; playing = true;
+  while (queue.length) {
+    const t = queue.shift();
+    try { await playSteps(t.steps, t.by); } catch (e) { console.error(e); }
+  }
+  running = false; playing = false;
+  if (view) { for (const p of pieces.values()) p.at = view.pos[p.id] ?? p.at; placeAll(); syncTraps(view.traps || {}); }
+  render();
+}
+let animGame = -1;
+function takeView(v) {
+  const before = view; view = v;
+  if (v.game !== animGame) { animGame = v.game; animatedN = -1; for (const p of pieces.values()) p.happy = false; }
+  if (v.board && !board) { board = v.board; buildBoard(); }
+  if (v.last && v.last.n > animatedN && before && before.phase === 'play' && v.phase !== 'lobby') {
+    animatedN = v.last.n; queue.push({ steps: v.last.steps, by: v.last.by }); playing = true; ensurePieces().then(runQueue);
+  } else if (v.last && v.last.n > animatedN) {
+    // just arrived (or a new race): no replay, just stand where everyone is
+    animatedN = v.last.n;
+    ensurePieces().then(() => { for (const p of pieces.values()) p.at = v.pos[p.id] ?? 0; placeAll(); syncTraps(v.traps || {}); if (v.last.steps?.[0]?.k === 'order') banner('Ready, set, roll!', 1600); });
+  }
+  if (!playing && (v.phase !== 'play' || !before || before.game !== v.game)) ensurePieces().then(() => { if (!playing) { for (const p of pieces.values()) p.at = v.pos[p.id] ?? p.at; placeAll(); } });
+  render();
+}
+
+/* confetti at the finish */
+const bits = [];
+function confetti(p) {
+  for (let i = 0; i < 60; i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.07), new THREE.MeshBasicMaterial({ color: toLinear(pick(COLORS)), side: THREE.DoubleSide }));
+    m.position.set(p.x, 1.2, p.z); scene.add(m);
+    bits.push({ m, vx: rand(-2.5, 2.5), vy: rand(3, 6), vz: rand(-2.5, 2.5), r: rand(-8, 8), t: 0 });
+  }
+}
+function bitsTick(dt) {
+  for (let i = bits.length - 1; i >= 0; i--) {
+    const b = bits[i]; b.t += dt; b.vy -= 6 * dt;
+    b.m.position.x += b.vx * dt; b.m.position.y += b.vy * dt; b.m.position.z += b.vz * dt; b.m.rotation.x += b.r * dt; b.m.rotation.y += b.r * dt * 0.7;
+    if (b.m.position.y < 0 || b.t > 4) { scene.remove(b.m); b.m.geometry.dispose(); b.m.material.dispose(); bits.splice(i, 1); }
+  }
+}
+
+/* ---------- the camera: the whole island, leaning towards whoever's moving ---------- */
+let focus = null;
+const cam = { x: 0, z: 1.5, d: 26 };
+function placeCamera(dt) {
+  const panelH = $('panel').hidden ? 0 : $('panel').getBoundingClientRect().height;
+  const side = $('panel').getBoundingClientRect().left > innerWidth * 0.4;
+  const fit = (IR + 1) / Math.tan(Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect))) * 0.95;
+  const goal = focus ? { x: focus.x * 0.55, z: focus.z * 0.55 + 1, d: fit * 0.82 } : { x: 0, z: 1.2, d: fit };
+  const k = 1 - Math.pow(0.03, dt);
+  cam.x += (goal.x - cam.x) * k; cam.z += (goal.z - cam.z) * k; cam.d += (goal.d - cam.d) * k;
+  const pitch = 0.82;
+  camera.position.set(cam.x, Math.sin(pitch) * cam.d, cam.z + Math.cos(pitch) * cam.d);
+  camera.lookAt(cam.x, 0, cam.z);
+  // nudge the picture so the island sits above the panel (or left of it, held sideways)
+  const shiftY = side ? 0 : panelH * 0.45, shiftX = side ? -$('panel').getBoundingClientRect().width * 0.5 : 0;
+  camera.setViewOffset(innerWidth, innerHeight, -shiftX, shiftY, innerWidth, innerHeight);
+}
+function resize() {
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight; camera.fov = innerWidth < innerHeight ? 52 : 40; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+/* ---------- the screen: racers bar, log, and the panel ---------- */
+let chosenItem = null, golden = 6, fork = 0;
+function render() {
+  if (!view) return;
+  renderRacers(); renderLog(); renderPanel();
+}
+function placeOf(id) {
+  const order = [...view.racers].sort((a, b) => (distOf(a) - distOf(b)) || ((view.acorns[b] || 0) - (view.acorns[a] || 0)));
+  return order.indexOf(id) + 1;
+}
+const DISTS = new Map();
+function distOf(id) {
+  if (!board) return 0;
+  if (!DISTS.size) { const go = (t) => { if (DISTS.has(t)) return DISTS.get(t); const n = board[t].next; const d = n.length ? 1 + Math.min(...n.map(go)) : 1; DISTS.set(t, d); return d; }; board.forEach((t) => go(t.id)); }
+  return DISTS.get(view.pos[id] ?? 0) ?? 99;
+}
+function renderRacers() {
+  const box = $('racers'); box.textContent = '';
+  if (view.phase === 'lobby') return;
+  const ord = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
+  for (const r of view.racers) {
+    const here = view.players.find((p) => p.id === r)?.here;
+    const c = el('div', 'racer' + (view.turn === r ? ' turn' : '') + (here ? '' : ' away'));
+    const dot = el('span', 'dot', ord[placeOf(r) - 1].replace(/\D/g, '')); dot.style.background = colorOf(r);
+    c.append(dot, el('span', null, r === me ? 'You' : nameOf(r)), el('small', null, `🌰${view.acorns[r] || 0}${view.itemCount[r] ? ` · ${'🎁'.repeat(view.itemCount[r])}` : ''}${view.asleep[r] ? ' · 💤' : ''}`));
+    box.append(c);
+  }
+}
+let logKey = '';
+function renderLog() {
+  const key = (view.log || []).join('|');
+  if (key === logKey) return; logKey = key;
+  const box = $('log'); box.textContent = '';
+  for (const l of (view.log || []).slice(-5)) box.append(el('div', null, l));
+}
+function forkAhead() {
+  if (!board) return false;
+  const at = view.pos[me] ?? 0;
+  // the fork is tile 5, and you can reach it with one roll (up to 12) from up to 12 tiles behind it
+  return at <= 5 && 5 - at <= 12 && board[at].zone !== 'woods';
+}
+let panelKey = '';
+function renderPanel() {
+  const key = JSON.stringify([view.phase, view.game, view.turn, view.host, view.winner, view.last?.by, view.myItems, view.pos[me], view.players.map((x) => [x.id, x.here, x.name]), playing, busy, msg, chosenItem, golden, fork]);
+  if (key === panelKey) return; panelKey = key;
+  const p = $('panel'); p.textContent = ''; p.hidden = false;
+  const row = el('div', 'row');
+  const btn = (label, fn, cls = '') => { const b = el('button', 'btn ' + cls, label); b.type = 'button'; b.disabled = busy; b.addEventListener('click', fn); row.append(b); return b; };
+  if (view.phase === 'lobby' || (view.phase === 'done' && !playing)) {
+    const done = view.phase === 'done';
+    if (done) {
+      p.append(el('h2', null, view.winner === me ? 'You won the race! 🥇' : `${nameOf(view.winner)} won the race! 🏁`));
+      const ul = el('p'); (view.ranks || []).forEach((r, i) => { if (i) ul.append(el('br')); ul.append(`${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${r === me ? 'You' : nameOf(r)} · 🌰${view.acorns[r] || 0}`); }); p.append(ul);
+      if (view.winner === me) p.append(el('p', null, 'Your bud got an Island Race medal for its wardrobe.'));
+    } else {
+      p.append(el('h2', null, 'Island Race'), el('p', null, 'Roll, hop round the island and grab items. First bud back to the campfire wins! Everyone on the call can race (2 to 6).'));
+    }
+    const lob = el('div', 'lobby');
+    for (const pl of view.players) lob.append(el('span', pl.here ? null : 'away', (pl.id === me ? 'You' : pl.name) + (pl.id === view.host ? ' ⭐' : '')));
+    p.append(el('div', 'label', 'On the call'), lob);
+    const here = view.players.filter((x) => x.here).length;
+    if (view.host === me) btn(done ? 'Race again' : here < 2 ? 'Waiting for one more…' : `Start the race (${Math.min(here, 6)})`, start, 'primary big').disabled = busy || here < 2;
+    else p.append(el('p', null, `Waiting for ${nameOf(view.host)} to start${done ? ' another race' : ''}…`));
+  } else if (view.phase === 'play' || playing) {
+    const mine = view.turn === me && !playing && view.phase === 'play';
+    if (!mine) {
+      p.append(el('h2', null, playing ? (view.last?.by === me ? 'Hop hop hop…' : `${nameOf(view.last?.by)} is moving…`) : `${nameOf(view.turn)}’s turn`));
+      p.append(el('p', null, view.turn && !playing ? `${nameOf(view.turn)} is rolling…` : 'Watch out for banana peels!'));
+    } else {
+      p.append(el('h2', null, 'Your turn! 🎲'));
+      if (view.myItems.length) {
+        p.append(el('div', 'label', 'Use an item first? (optional)'));
+        const items = el('div', 'row left');
+        view.myItems.forEach((it, i) => {
+          const c = el('button', 'chip'); c.type = 'button'; c.setAttribute('aria-pressed', String(chosenItem === it));
+          c.append(el('span', 'em', ITEMS[it][0]), `${ITEMS[it][1]} · ${ITEMS[it][2]}`);
+          c.addEventListener('click', () => { chosenItem = chosenItem === it ? null : it; S.play('click'); render(); });
+          items.append(c); void i;
+        });
+        p.append(items);
+        if (chosenItem === 'golden') {
+          const nums = el('div', 'row left');
+          for (let n = 1; n <= 6; n++) { const c = el('button', 'chip', String(n)); c.type = 'button'; c.setAttribute('aria-pressed', String(golden === n)); c.addEventListener('click', () => { golden = n; render(); }); nums.append(c); }
+          p.append(nums);
+        }
+      }
+      if (forkAhead()) {
+        p.append(el('div', 'label', 'If you reach the fork, go…'));
+        const f = el('div', 'row left');
+        for (const [v, label] of [[0, '🏖️ The beach (safe)'], [1, '🌲 The woods (3 shorter, but sleepy and muddy)']]) {
+          const c = el('button', 'chip', label); c.type = 'button'; c.setAttribute('aria-pressed', String(fork === v)); c.addEventListener('click', () => { fork = v; S.play('click'); render(); }); f.append(c);
+        }
+        p.append(f);
+      }
+      btn(chosenItem === 'double' ? 'Roll both dice!' : 'Roll!', rollNow, 'primary big');
+    }
+  }
+  if (msg) p.append(el('p', 'msg', msg));
+  if (row.childNodes.length) p.append(row);
+}
+async function start() {
+  busy = true; msg = ''; render();
+  try { takeView(await api('POST', '/api/game', { action: 'rc-start', room })); } catch (e) { msg = e.message; }
+  busy = false; render();
+}
+async function rollNow() {
+  if (busy) return;
+  busy = true; msg = ''; render();
+  try {
+    const v = await api('POST', '/api/game', { action: 'rc-roll', room, item: chosenItem, golden, fork });
+    chosenItem = null; S.play('click');
+    takeView(v);
+  } catch (e) { msg = e.message; }
+  busy = false; render();
+}
+
+/* ---------- checking in ---------- */
+async function poll() {
+  setTimeout(poll, 900);
+  if (document.hidden || busy) return;
+  try { takeView(await api('GET', `/api/game?rc=${encodeURIComponent(room)}${board ? '' : '&full=1'}`)); } catch (e) {}
+}
+
+/* ---------- loop ---------- */
+let T = 0, lastNow = performance.now();
+function loop(now) {
+  const dt = Math.min(0.2, (now - lastNow) / 1000); lastNow = now; T += dt;
+  piecesTick(dt); diceTick(dt); bitsTick(dt);
+  for (const p of pieces.values()) drawFace(p, T);
+  if (scene.userData.flame) scene.userData.flame.scale.set(1, 1 + Math.sin(T * 9) * 0.08, 1);
+  if (scene.userData.cloth) { const g = scene.userData.cloth.geometry.attributes.position; for (let i = 0; i < g.count; i++) { const x = g.getX(i) + 0.5; g.setZ(i, Math.sin(T * 5 - x * 5) * 0.08 * x); } g.needsUpdate = true; }
+  placeCamera(dt);
+  renderer.render(scene, camera);
+  placeOverlays();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- start: inside Discord, or from a link ---------- */
+function gate(title, text, buttons) {
+  $('gate').hidden = false; $('panel').hidden = true;
+  $('gateTitle').textContent = title; $('gateText').textContent = text;
+  const r = $('gateRow'); r.textContent = '';
+  for (const [label, fn, primary] of buttons) { const b = el('button', 'btn' + (primary ? ' primary' : ''), label); b.type = 'button'; b.addEventListener('click', fn); r.append(b); }
+}
+async function startInDiscord() {
+  const { DiscordSDK } = await import('/js/vendor/discord-sdk.js');
+  sdk = new DiscordSDK(APP_ID);
+  await sdk.ready();
+  const { code } = await sdk.commands.authorize({ client_id: APP_ID, response_type: 'code', state: '', prompt: 'none', scope: ['identify'] });
+  const auth = await api('POST', '/api/auth/activity', { code });
+  sessionToken = auth.session; me = auth.user.id;
+  try { await sdk.commands.authenticate({ access_token: auth.access_token }); } catch (e) {}
+  room = ('dc-' + sdk.instanceId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+  $('brand').addEventListener('click', (e) => { e.preventDefault(); openLink('/world'); });
+  const games = $('gamesBtn'); games.hidden = false;
+  games.addEventListener('click', () => { location.href = '/play' + location.search; });
+}
+async function startFromLink() {
+  room = params.get('room');
+  if (room && !/^[A-Za-z0-9_-]{6,80}$/.test(room)) room = null;
+  const v = await api('POST', '/api/game', room ? { action: 'rc-join', room } : { action: 'rc-new' });
+  room = v.id;
+  if (params.get('room') !== room) history.replaceState(null, '', `/race?room=${room}`);
+  return v;
+}
+(async () => {
+  S.bindToggle($('soundBtn')); if (!window.BudSound) $('soundBtn').hidden = true;
+  resize(); requestAnimationFrame(loop);
+  try {
+    let v;
+    if (IN_DISCORD) { await startInDiscord(); v = await api('POST', '/api/game', { action: 'rc-join', room }); }
+    else v = await startFromLink();
+    me = v.me;
+    takeView(v);
+    setTimeout(poll, 900);
+  } catch (e) {
+    if (e.status === 401 && !IN_DISCORD) {
+      const next = encodeURIComponent(location.pathname + location.search);
+      return gate('Sign in to race', 'Island Race is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', () => { location.href = `/api/auth/login?next=${next}`; }, true]]);
+    }
+    if (e.status === 403) return gate('Members only', 'This game is for members of The Buddie System server.', []);
+    gate('Couldn’t start the race', IN_DISCORD ? 'Something went wrong connecting to Discord. Try closing and reopening the Activity.' : e.message, IN_DISCORD ? [] : [['Try again', () => location.reload(), true]]);
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
