@@ -536,6 +536,7 @@ scene.environment = ENV_DAY;
 let R = 12;              // island radius, set once we know how many buds live here
 let WALK_R = R * 0.78;   // how far from the middle buds wander
 const obstacles = [];    // trees and rocks buds walk around: { x, z, r }
+let islandDecor = null;  // the island's trees, rocks and flowers (the koi pond clears its spot of flowers)
 const flowers = [];      // where the little flowers are, for buds who like to smell them
 const clouds = [];
 
@@ -565,7 +566,7 @@ function buildIsland(nBuds) {
   topGeo.translate(0, -(depth + bevel), 0);
   const grass = new THREE.MeshStandardMaterial({ color: toLinear('#86CF86'), roughness: 0.95, envMapIntensity: 0.35 });
   const grassSide = new THREE.MeshStandardMaterial({ color: toLinear('#6DB774'), roughness: 0.95, envMapIntensity: 0.35 });
-  group.add(new THREE.Mesh(topGeo, [grass, grassSide]));
+  const top = new THREE.Mesh(topGeo, [grass, grassSide]); top.userData.ground = true; group.add(top);
 
   // rocky underside, a lumpy upside-down cone
   const h = R * 0.85;
@@ -587,7 +588,7 @@ function buildIsland(nBuds) {
   cone.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   const rock = cone.toNonIndexed(); rock.computeVertexNormals();
   const under = new THREE.Mesh(rock, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
-  under.position.y = -(depth + bevel) - h / 2 + 0.05;
+  under.position.y = -(depth + bevel) - h / 2 + 0.05; under.userData.ground = true;
   group.add(under);
 
   // trees and rocks near the rim
@@ -649,7 +650,7 @@ function buildIsland(nBuds) {
     scene.add(c); clouds.push(d);
   }
 
-  scene.add(group);
+  scene.add(group); islandDecor = group;
 }
 
 /* ---------------- the sky follows your clock; Halloween comes and goes on its own ---------------- */
@@ -738,6 +739,7 @@ function buildSkyAndSeason() {
   fire.position.set(spot.x, 0, spot.z); scene.add(fire);
   obstacles.push({ x: spot.x, z: spot.z, r: 0.9 });
   skyBits.fire = { group: fire, flames, light, x: spot.x, z: spot.z, seats: new Map() };
+  buildPond();
 
   // fireflies
   const ff = 28, fpos = new Float32Array(ff * 3), seeds = [];
@@ -1531,13 +1533,13 @@ function updateBud(bud, dt) {
 
 /* ---------------- what buds do with their time ---------------- */
 // Each bud has a favorite thing (its hobby) and does it more often than the rest.
-const ACTS = ['clouds', 'nap', 'explore', 'flowers', 'hop', 'tag', 'fire'];
+const ACTS = ['clouds', 'nap', 'explore', 'flowers', 'hop', 'tag', 'fire', 'koi'];
 const HOBBY_ACT = { clouds: 'clouds', stargazing: 'clouds', explore: 'explore', pebbles: 'explore', flowers: 'flowers', hopping: 'hop', naps: 'nap', races: 'tag' };
 const busy = (b) => !b.placed || b.held || b.pose || b.rush || b.state === 'drop' || b.state === 'act' || b.state === 'greet';
 
 function startActivity(bud) {
   const fav = HOBBY_ACT[bud.data.hobby];
-  const weights = ACTS.map((k) => k === 'fire' ? (NIGHT > 0.5 ? 6 : 0) : (k === fav ? 4 : 1) * (k === 'tag' ? 1.2 : 1) * (k === 'flowers' && NIGHT > 0.5 ? 0.3 : 1));
+  const weights = ACTS.map((k) => k === 'fire' ? (NIGHT > 0.5 ? 6 : 0) : k === 'koi' ? (pond.group ? (NIGHT > 0.5 ? 0.4 : 1.2) : 0) : (k === fav ? 4 : 1) * (k === 'tag' ? 1.2 : 1) * (k === 'flowers' && NIGHT > 0.5 ? 0.3 : 1));
   let roll = Math.random() * weights.reduce((a, b) => a + b, 0), kind = ACTS[0];
   for (let i = 0; i < ACTS.length; i++) { roll -= weights[i]; if (roll <= 0) { kind = ACTS[i]; break; } }
   const h = bud.heading;
@@ -1566,6 +1568,20 @@ function startActivity(bud) {
       bud.heading = Math.atan2(f.x - bud.x, f.z - bud.z);
       setAct(bud, { kind: 'fire', until: T + rand(12, 24), next: T + rand(2, 6), tilt: 0.04 });
       bud.look = { x: f.x, z: f.z, y: 0.6 }; bud.lookUntil = bud.act.until;
+    });
+  } else if (kind === 'koi') {
+    // sit at the edge of the pond and watch the fish
+    let seat = null;
+    for (let i = 0; i < 10 && !seat; i++) {
+      const a = Math.atan2(bud.z - pond.z, bud.x - pond.x) + rand(-1, 1), r = pond.edge(a) + 0.75;
+      const p = { x: pond.x + Math.cos(a) * r, z: pond.z + Math.sin(a) * r };
+      if (Math.hypot(p.x, p.z) < WALK_R && buds.every((o) => o === bud || Math.hypot(o.x - p.x, o.z - p.z) > 1.4) && obstacles.every((o) => (o.x === pond.x && o.z === pond.z) || Math.hypot(o.x - p.x, o.z - p.z) > o.r + 0.6)) seat = p;
+    }
+    if (!seat) return false;
+    goThenDo(bud, seat, () => {
+      bud.heading = Math.atan2(pond.x - bud.x, pond.z - bud.z);
+      setAct(bud, { kind: 'koi', until: T + rand(8, 15), next: T + rand(1, 3), tilt: 0.3 });
+      bud.look = { x: pond.x, z: pond.z, y: -1 }; bud.lookUntil = bud.act.until;
     });
   } else if (kind === 'explore') {
     // wander to the edge of the island and peek over
@@ -1623,6 +1639,14 @@ function updateActivity(bud, dt) {
     // slow breathing, and the odd z
     bud.syv += Math.sin(T * 2.2) * 0.0016;
     if (T > a.next) { say(bud, pick(['z', 'zz', 'zzz']), 1200); a.next = T + rand(2, 3.2); }
+  } else if (a.kind === 'koi') {
+    // watching the fish: eyes follow one, and the odd comment
+    const f = pond.fish[Math.floor(T / 3) % Math.max(1, pond.fish.length)];
+    if (f) bud.look = { x: pond.x + f.g.position.x, z: pond.z + f.g.position.z, y: -0.5 };
+    if (T > a.next) {
+      say(bud, pick(['hi fishies!', 'that one’s my favorite', 'blub blub', 'they’re so shiny', 'I wish I could swim', 'the orange one winked at me', 'hello, little fish']), 1800);
+      a.next = T + rand(4, 8); bud.happyUntil = T + 1;
+    }
   } else if (a.kind === 'fire') {
     if (NIGHT < 0.3) { endActivity(bud); return; }
     if (T > a.next) {
@@ -2058,6 +2082,7 @@ function clickAt(x, y) {
   const bud = budAt(x, y);
   if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return; }
   if (!bud && !composing) { const t = treeAt(x, y); if (t) { openTreeCard(t.heart); return; } }
+  if (!bud && !composing) { const w = pondAt(x, y); if (w) { tapPond(w); return; } }
   if (!bud) { if (!composing) closeCard(); return; }
   if (composing) return;
   bud.syv -= 0.12; bud.happyUntil = T + 1.1; bud.lookCameraUntil = T + 2.5;
@@ -3479,6 +3504,129 @@ function placeLabels() {
   }
 }
 
+/* ---------------- the koi pond ---------------- */
+// A little rock-rimmed pond in a clear spot, with lily pads, reeds and a few koi swimming lazy loops under the
+// water. Tap the water for a ripple (the fish dart off); buds sometimes wander over to watch the fish.
+const pond = { group: null, x: 0, z: 0, r: 0, fish: [], ripples: [], nextRipple: 0, edge: null };
+function buildPond() {
+  const PR = clamp(R * 0.13, 1.5, 2.6), pr = seeded('koi pond');
+  let spot = null;
+  for (let i = 0; i < 80 && !spot; i++) {
+    const a = pr() * Math.PI * 2, r = R * (0.3 + pr() * 0.32), p = { x: Math.cos(a) * r, z: Math.sin(a) * r };
+    if (obstacles.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + PR + 1.4)) spot = p;
+  }
+  if (!spot) return;
+  const g = new THREE.Group(); g.position.set(spot.x, 0, spot.z);
+  // a soft, uneven outline
+  const edge = (a) => PR * (1 + 0.09 * Math.sin(a * 3 + 1.3) + 0.05 * Math.sin(a * 5 + 0.4));
+  const blob = (k) => { const sh = new THREE.Shape(); for (let i = 0; i <= 48; i++) { const a = i / 48 * Math.PI * 2, r = edge(a) * k; i ? sh.lineTo(Math.cos(a) * r, Math.sin(a) * r) : sh.moveTo(Math.cos(a) * r, Math.sin(a) * r); } return sh; };
+  const flat = (geo, y, mat) => { const m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.position.y = y; return m; };
+  // a sandy bank, the deep teal bottom, and the water on top (see-through, so the koi show)
+  g.add(flat(new THREE.ShapeGeometry(blob(1.1)), 0.006, new THREE.MeshStandardMaterial({ color: toLinear('#D8C99A'), roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 })));
+  g.add(flat(new THREE.ShapeGeometry(blob(0.98)), 0.012, new THREE.MeshStandardMaterial({ color: toLinear('#2F6F78'), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 })));
+  const water = flat(new THREE.ShapeGeometry(blob(0.98)), 0.06, new THREE.MeshStandardMaterial({ color: toLinear('#6CC6D6'), transparent: true, opacity: 0.55, roughness: 0.12, metalness: 0.1, depthWrite: false }));
+  water.renderOrder = 2; g.add(water);
+  // rocks round the rim
+  const rock = new THREE.MeshStandardMaterial({ color: toLinear('#A9A7B8'), roughness: 1, flatShading: true });
+  const rockDark = new THREE.MeshStandardMaterial({ color: toLinear('#8E8BA0'), roughness: 1, flatShading: true });
+  const n = Math.round(PR * 9);
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2 + pr() * 0.2, r = edge(a) * 1.02, sz = 0.13 + pr() * 0.14;
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(sz, 0), i % 3 ? rock : rockDark);
+    m.position.set(Math.cos(a) * r, sz * 0.35, Math.sin(a) * r); m.rotation.set(pr() * 3, pr() * 3, pr() * 3); m.scale.y = 0.7; g.add(m);
+  }
+  // reeds and a couple of cattails on one side
+  const reed = new THREE.MeshStandardMaterial({ color: toLinear('#6FAF5C'), roughness: 0.9 }), cat = new THREE.MeshStandardMaterial({ color: toLinear('#7A5233'), roughness: 1 });
+  const side = pr() * Math.PI * 2;
+  for (let i = 0; i < 9; i++) {
+    const a = side + (i - 4) * 0.09, r = edge(a) * (0.92 + pr() * 0.08), h = 0.45 + pr() * 0.4;
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.02, h, 4), reed); st.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r); st.rotation.set((pr() - 0.5) * 0.3, 0, (pr() - 0.5) * 0.3); g.add(st);
+    if (i % 3 === 1) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 8), cat); c.position.set(st.position.x, h + 0.02, st.position.z); g.add(c); }
+  }
+  // lily pads (one with a pink lotus)
+  const pad = new THREE.MeshStandardMaterial({ color: toLinear('#5DBB63'), roughness: 0.7, side: THREE.DoubleSide });
+  const pads = [];
+  for (let i = 0; i < 4; i++) {
+    const a = pr() * Math.PI * 2, r = PR * (0.35 + pr() * 0.45), sz = 0.18 + pr() * 0.12;
+    const m = flat(new THREE.CircleGeometry(sz, 20, 0.35, Math.PI * 2 - 0.35), 0.068, pad);
+    m.rotation.z = pr() * 6; m.position.x = Math.cos(a) * r; m.position.z = Math.sin(a) * r; m.renderOrder = 3; g.add(m); pads.push(m);
+    if (i === 0) {
+      const lotus = new THREE.Group(), petal = new THREE.MeshStandardMaterial({ color: toLinear('#FFB3C7'), roughness: 0.6 });
+      for (let k = 0; k < 6; k++) { const pe = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), petal); pe.scale.set(0.6, 1.3, 0.35); const t = k / 6 * Math.PI * 2; pe.position.set(Math.cos(t) * 0.05, 0.06, Math.sin(t) * 0.05); pe.rotation.set(Math.sin(t) * 0.5, 0, -Math.cos(t) * 0.5); lotus.add(pe); }
+      const mid = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshStandardMaterial({ color: toLinear('#FFE08A') })); mid.position.y = 0.06; lotus.add(mid);
+      lotus.position.set(m.position.x, 0.07, m.position.z); g.add(lotus);
+    }
+  }
+  // the koi: orange and white, all white with a red cap, gold, and black-and-orange
+  const LOOKS = [['#FF7A2E', '#FFFFFF'], ['#FFFFFF', '#E8394B'], ['#FFC23E', '#FFE7A3'], ['#2B2B3A', '#FF7A2E'], ['#FF7A2E', '#FFFFFF']];
+  const nFish = PR > 2 ? 5 : 4;
+  for (let i = 0; i < nFish; i++) {
+    const [base, spot2] = LOOKS[i % LOOKS.length], f = new THREE.Group(), body = new THREE.Group();
+    const bm = new THREE.MeshStandardMaterial({ color: toLinear(base), roughness: 0.45 }), sm = new THREE.MeshStandardMaterial({ color: toLinear(spot2), roughness: 0.45 });
+    const torso = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), bm); torso.scale.set(2.3, 0.62, 0.95); body.add(torso);
+    for (let k = 0; k < 2; k++) { const sp = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), sm); sp.scale.set(1.4, 0.45, 1); sp.position.set(0.08 - k * 0.12, 0.035, (k ? -1 : 1) * 0.015); body.add(sp); }
+    const tail = new THREE.Group(); tail.position.x = -0.22;
+    for (const sd of [-1, 1]) { const t = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 6), bm); t.rotation.z = Math.PI / 2; t.position.set(-0.06, 0, sd * 0.035); t.scale.z = 0.35; tail.add(t); }
+    body.add(tail);
+    for (const sd of [-1, 1]) { const fin = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 5), bm); fin.rotation.set(0, 0, Math.PI / 2); fin.position.set(0.06, -0.01, sd * 0.09); fin.scale.z = 0.3; body.add(fin); }
+    f.add(body); f.scale.setScalar(clamp(PR / 2, 0.8, 1.15));
+    g.add(f);
+    pond.fish.push({ g: f, tail, a: pr() * Math.PI * 2, dir: pr() < 0.5 ? 1 : -1, speed: 0.25 + pr() * 0.2, boost: 0, k: 2 + Math.floor(pr() * 3), ph: pr() * 6, ring: 0.35 + pr() * 0.35, depth: 0.025 + pr() * 0.012 });
+  }
+  scene.add(g);
+  Object.assign(pond, { group: g, x: spot.x, z: spot.z, r: PR, edge, pads });
+  obstacles.push({ x: spot.x, z: spot.z, r: PR + 0.15 });
+  // no flowers growing in the water
+  if (islandDecor) for (const o of islandDecor.children) if (!o.userData.ground && Math.hypot(o.position.x - spot.x, o.position.z - spot.z) < PR * 1.25) o.visible = false;
+  for (let i = flowers.length - 1; i >= 0; i--) if (Math.hypot(flowers[i].x - spot.x, flowers[i].z - spot.z) < PR * 1.25) flowers.splice(i, 1);
+}
+function pondRipple(x, z, big = false) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); m.renderOrder = 4; m.scale.setScalar(0.05);
+  pond.group.add(m); pond.ripples.push({ m, t: 0, max: big ? 0.9 : 0.45, life: big ? 1.4 : 1.1 });
+}
+function pondTick(dt) {
+  if (!pond.group) return;
+  for (const f of pond.fish) {
+    f.boost = Math.max(0, f.boost - dt * 0.6);
+    f.a += f.dir * (f.speed + f.boost * 1.6) * dt / (pond.r * f.ring);
+    const rr = pond.r * f.ring * (1 + 0.22 * Math.sin(f.a * f.k + f.ph)), dirA = f.a;
+    const x = Math.cos(dirA) * rr, z = Math.sin(dirA) * rr;
+    // heading along the path
+    const dx = x - f.g.position.x, dz = z - f.g.position.z;
+    if (dx * dx + dz * dz > 1e-8) f.g.rotation.y = Math.atan2(-dz, dx);
+    f.g.position.set(x, f.depth + Math.sin(T * 1.3 + f.ph) * 0.004, z);
+    f.tail.rotation.y = Math.sin(T * (6 + f.boost * 10) + f.ph) * (0.35 + f.boost * 0.3);
+  }
+  // now and then a fish kisses the surface
+  if (T > pond.nextRipple) {
+    const f = pick(pond.fish); if (f) pondRipple(f.g.position.x, f.g.position.z);
+    pond.nextRipple = T + rand(2.5, 6);
+  }
+  for (let i = pond.ripples.length - 1; i >= 0; i--) {
+    const r = pond.ripples[i]; r.t += dt;
+    const k = r.t / r.life; r.m.scale.setScalar(0.05 + k * r.max); r.m.material.opacity = 0.7 * (1 - k);
+    if (k >= 1) { pond.group.remove(r.m); r.m.geometry.dispose(); r.m.material.dispose(); pond.ripples.splice(i, 1); }
+  }
+  for (const p of pond.pads || []) p.position.y = 0.068 + Math.sin(T * 0.8 + p.position.x * 3) * 0.004;
+}
+// a tap on the water: ripples, a plip, and the koi dart off
+function pondAt(x, y) {
+  if (!pond.group) return null;
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
+  const p = new THREE.Vector3(); if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.06), p)) return null;
+  const lx = p.x - pond.x, lz = p.z - pond.z, a = Math.atan2(lz, lx);
+  return Math.hypot(lx, lz) < pond.edge(a) * 0.98 ? { x: lx, z: lz } : null;
+}
+function tapPond(hit) {
+  pondRipple(hit.x, hit.z, true); setTimeout(() => pondRipple(hit.x, hit.z), 180);
+  S.play('pop', { rate: 0.55, gain: 0.6 });
+  for (const f of pond.fish) if (Math.hypot(f.g.position.x - hit.x, f.g.position.z - hit.z) < pond.r) f.boost = 1;
+  // a bud watching the fish reacts
+  const near = buds.find((b) => b.state === 'act' && b.act && b.act.kind === 'koi');
+  if (near) { say(near, pick(['whoa, they’re fast!', 'shh, you’ll scare them!', 'plip!', 'hehe, look at them go']), 1600); near.syv -= 0.1; }
+}
+
 /* ---------------- loop ---------------- */
 let T = 0, last = performance.now();
 function frame(now) {
@@ -3488,6 +3636,7 @@ function frame(now) {
   separateBuds();
   photoTick();
   gameTick(dt);
+  pondTick(dt);
   updateSky(dt);
   updateFriendTree();
   for (const c of clouds) {
