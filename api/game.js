@@ -9,7 +9,7 @@
 // Bud-a-pult test range (lib/catapult.js, the physics runs here): POST { action: 'bp-build' | 'bp-shoot' |
 // 'bp-repair', pieces, bud, state, angle, power, add, remove }
 // Island Race (lib/race.js, played on a call): GET ?rc=<room>[&full=1] checks in; POST { action: 'rc-new' |
-// 'rc-join' | 'rc-start' | 'rc-roll', room, item, golden, fork }
+// 'rc-join' | 'rc-start' | 'rc-roll' | 'rc-pick', room, item, golden, fork, pick }
 // Bud-a-pult the game (lib/bpgame.js): GET ?bpg= one game; POST { action: 'bpg-new' | 'bpg-build' | 'bpg-shoot' |
 // 'bpg-patch' | 'bpg-resign', id, opponent, pieces, bud, angle, power, add, remove, skip }
 // Doodle mail (lib/doodlemail.js): GET ?mail=list (your bud's doodles) | ?mail=<id> (one, to replay) | ?mailto=<user>;
@@ -104,6 +104,7 @@ export async function POST(request) {
       if (!okRoom(body.room)) return json({ error: 'which race?' }, 400);
       if (action === 'rc-join') return json(await race.joinRoom(body.room, session.id, session.name));
       if (action === 'rc-start') return json(await race.startRace(body.room, session.id));
+      if (action === 'rc-pick') return json(await race.pick(body.room, session.id, typeof body.pick === 'string' ? body.pick.slice(0, 40) : ''));
       if (action === 'rc-roll') {
         const item = typeof body.item === 'string' && race.ITEMS[body.item] ? body.item : null;
         return json(await race.roll(body.room, session.id, { item, golden: Number(body.golden), fork: body.fork === 1 ? 1 : 0 }));

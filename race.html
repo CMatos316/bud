@@ -157,16 +157,27 @@ const IR = 12;
   for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2 + 0.2; if (Math.abs(Math.sin(a) - 1) < 0.15) continue; tree(Math.cos(a) * 10.9, Math.sin(a) * 10.9, 0.8 + (i % 3) * 0.15); }
   scene.userData.tree = tree;
   // the sea's waves at the beach side, and a few flowers
-  for (let i = 0; i < 24; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), M(['#FFB3C7', '#FFE08A', '#FFFFFF', '#C9B8FF'][i % 4])); const a = i * 2.39, r = 2 + (i * 7.3) % 9; f.position.set(Math.cos(a) * r, 0.07, Math.sin(a) * r); scene.add(f); }
+  scene.userData.flowers = [];
+  for (let i = 0; i < 24; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), M(['#FFB3C7', '#FFE08A', '#FFFFFF', '#C9B8FF'][i % 4])); const a = i * 2.39, r = 2 + (i * 7.3) % 9; f.position.set(Math.cos(a) * r, 0.07, Math.sin(a) * r); scene.add(f); scene.userData.flowers.push(f); }
 }
 
 /* ---------- the board ---------- */
 const TILE_LOOK = {
   start: ['#FFFFFF', '🏁'], plain: ['#9CC8FF', ''], item: ['#FFD23F', '?'], launch: ['#FF7A59', '↑'], slide: ['#B98B5E', '≈'],
-  swap: ['#C9B8FF', '⇄'], nap: ['#E8E6F2', 'z'], fork: ['#9CC8FF', 'Y'],
+  swap: ['#C9B8FF', '⇄'], nap: ['#E8E6F2', 'z'], fork: ['#9CC8FF', 'Y'], koi: ['#5FC4D6', 'fish'], tree: ['#FF8FAB', 'heart'],
 };
 function glyphTexture(text, color) {
   const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  if (text === 'fish' || text === 'heart') {
+    // drawn, not typed, so they look the same everywhere
+    g.lineWidth = 9; g.strokeStyle = 'rgba(29,28,43,.85)'; g.fillStyle = color; g.lineJoin = 'round';
+    g.beginPath();
+    if (text === 'fish') { g.ellipse(58, 64, 32, 19, 0, 0, Math.PI * 2); g.moveTo(88, 64); g.lineTo(112, 44); g.lineTo(112, 84); g.closePath(); }
+    else { g.moveTo(64, 104); g.bezierCurveTo(10, 66, 22, 18, 64, 40); g.bezierCurveTo(106, 18, 118, 66, 64, 104); }
+    g.stroke(); g.fill();
+    if (text === 'fish') { g.fillStyle = '#1D1C2B'; g.beginPath(); g.arc(42, 60, 5, 0, 7); g.fill(); }
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+  }
   g.font = '700 86px Fredoka, Nunito, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.lineWidth = 10; g.strokeStyle = 'rgba(29,28,43,.85)'; g.strokeText(text, 64, 70); g.fillStyle = color; g.fillText(text, 64, 70);
   const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
@@ -187,12 +198,18 @@ function buildBoard() {
       for (let k = 1; k <= 2; k++) { const s = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.05, 10), M('#E8DCC0')); s.position.set(t.x + (o.x - t.x) * k / 3, 0.025, t.z + (o.z - t.z) * k / 3); scene.add(s); }
     }
   }
-  // trees in the woods, either side of the shortcut
+  // the koi pond beside the koi tile, the love tree beside the tree tile
+  const koiTile = board.find((t) => t.type === 'koi'), treeTile = board.find((t) => t.type === 'tree');
+  if (koiTile) buildPond(clearSpot(koiTile, 2.15, koi.r));
+  if (treeTile) buildLoveTree(clearSpot(treeTile, 1.6, 0.9));
+  // trees in the woods, either side of the shortcut (leaving room round the love tree and the pond)
   const woods = board.filter((t) => t.zone === 'woods');
+  const roomy = (x, z) => (!love.group || Math.hypot(x - love.x, z - love.z) > 1.7) && (!koi.group || Math.hypot(x - koi.x, z - koi.z) > koi.r + 0.9)
+    && board.every((o) => Math.hypot(o.x - x, o.z - z) > 0.95);
   woods.forEach((t, i) => {
     if (i % 2) return;
     const o = board[t.next[0]], dx = o.x - t.x, dz = o.z - t.z, l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l;
-    scene.userData.tree(t.x + nx * 1.5, t.z + nz * 1.5, 0.7); scene.userData.tree(t.x - nx * 1.6, t.z - nz * 1.6, 0.65);
+    for (const [d, sz] of [[1.5, 0.7], [-1.6, 0.65]]) if (roomy(t.x + nx * d, t.z + nz * d)) scene.userData.tree(t.x + nx * d, t.z + nz * d, sz);
   });
   // the campfire and a balloon arch at the start
   const st = board[0], fire = new THREE.Group();
@@ -208,6 +225,159 @@ function buildBoard() {
   const out = Math.hypot(st.x, st.z) || 1; flag.position.set(st.x + st.x / out * 1.3 - 0.9, 0, st.z + st.z / out * 1.3); scene.add(flag);
   scene.userData.cloth = cloth;
 }
+/* ---------- the koi pond and the love tree ---------- */
+// the open spot near a tile (away from the path and the island's edge) for something of radius `need`
+function clearSpot(t, dist, need) {
+  let best = { x: t.x * 0.7, z: t.z * 0.7 }, bestD = -1;
+  for (let k = 0; k < 24; k++) {
+    const a = k / 24 * Math.PI * 2, x = t.x + Math.cos(a) * dist, z = t.z + Math.sin(a) * dist;
+    if (Math.hypot(x, z) > IR - need - 0.8) continue;
+    const d = Math.min(...board.map((o) => Math.hypot(o.x - x, o.z - z)));
+    if (d > bestD) { bestD = d; best = { x, z }; }
+  }
+  return best;
+}
+const koi = { group: null, fish: [], ripples: [], r: 1.55, x: 0, z: 0, nextRipple: 0, edge: null, pads: [], rider: null };
+function koiFish(base, spot, s = 1) {
+  const f = new THREE.Group(), body = new THREE.Group();
+  const bm = M(base, { roughness: 0.45 }), sm = M(spot, { roughness: 0.45 });
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), bm); torso.scale.set(2.3, 0.62, 0.95); body.add(torso);
+  for (let k = 0; k < 2; k++) { const sp = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), sm); sp.scale.set(1.4, 0.45, 1); sp.position.set(0.08 - k * 0.12, 0.035, (k ? -1 : 1) * 0.015); body.add(sp); }
+  const tail = new THREE.Group(); tail.position.x = -0.22;
+  for (const sd of [-1, 1]) { const t = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 6), bm); t.rotation.z = Math.PI / 2; t.position.set(-0.06, 0, sd * 0.035); t.scale.z = 0.35; tail.add(t); }
+  body.add(tail); f.add(body); f.scale.setScalar(s);
+  return { g: f, tail };
+}
+function buildPond(spot) {
+  const PR = koi.r, g = new THREE.Group(); g.position.set(spot.x, 0, spot.z);
+  const edge = (a) => PR * (1 + 0.09 * Math.sin(a * 3 + 1.3) + 0.05 * Math.sin(a * 5 + 0.4));
+  const blob = (k) => { const sh = new THREE.Shape(); for (let i = 0; i <= 48; i++) { const a = i / 48 * Math.PI * 2, r = edge(a) * k; i ? sh.lineTo(Math.cos(a) * r, Math.sin(a) * r) : sh.moveTo(Math.cos(a) * r, Math.sin(a) * r); } return sh; };
+  const flat = (geo, y, mat) => { const m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.position.y = y; return m; };
+  g.add(flat(new THREE.ShapeGeometry(blob(1.12)), 0.006, M('#D8C99A', { roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 })));
+  g.add(flat(new THREE.ShapeGeometry(blob(0.98)), 0.012, M('#2F6F78', { roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 })));
+  const water = flat(new THREE.ShapeGeometry(blob(0.98)), 0.06, M('#6CC6D6', { transparent: true, opacity: 0.55, roughness: 0.12, metalness: 0.1, depthWrite: false }));
+  water.renderOrder = 2; g.add(water);
+  const rock = M('#A9A7B8', { roughness: 1, flatShading: true }), rockDark = M('#8E8BA0', { roughness: 1, flatShading: true });
+  const n = Math.round(PR * 9);
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2 + Math.sin(i * 7.1) * 0.1, r = edge(a) * 1.03, sz = 0.13 + ((i * 37) % 10) / 70;
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(sz, 0), i % 3 ? rock : rockDark);
+    m.position.set(Math.cos(a) * r, sz * 0.35, Math.sin(a) * r); m.rotation.set(i, i * 2, i * 3); m.scale.y = 0.7; g.add(m);
+  }
+  const reed = M('#6FAF5C', { roughness: 0.9 }), cat = M('#7A5233', { roughness: 1 });
+  for (let i = 0; i < 8; i++) {
+    const a = 2.2 + (i - 4) * 0.1, r = edge(a) * 0.94, h = 0.45 + (i % 3) * 0.15;
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.02, h, 4), reed); st.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r); g.add(st);
+    if (i % 3 === 1) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 8), cat); c.position.set(st.position.x, h + 0.02, st.position.z); g.add(c); }
+  }
+  const pad = M('#5DBB63', { roughness: 0.7, side: THREE.DoubleSide });
+  for (let i = 0; i < 4; i++) {
+    const a = i * 1.7 + 0.4, r = PR * (0.4 + (i % 2) * 0.3), sz = 0.18 + (i % 3) * 0.05;
+    const m = flat(new THREE.CircleGeometry(sz, 20, 0.35, Math.PI * 2 - 0.35), 0.068, pad);
+    m.rotation.z = i * 1.3; m.position.x = Math.cos(a) * r; m.position.z = Math.sin(a) * r; m.renderOrder = 3; g.add(m); koi.pads.push(m);
+    if (i === 0) {
+      const lotus = new THREE.Group(), petal = M('#FFB3C7', { roughness: 0.6 });
+      for (let k = 0; k < 6; k++) { const pe = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), petal); pe.scale.set(0.6, 1.3, 0.35); const t = k / 6 * Math.PI * 2; pe.position.set(Math.cos(t) * 0.05, 0.06, Math.sin(t) * 0.05); pe.rotation.set(Math.sin(t) * 0.5, 0, -Math.cos(t) * 0.5); lotus.add(pe); }
+      const mid = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), M('#FFE08A')); mid.position.y = 0.06; lotus.add(mid);
+      lotus.position.set(m.position.x, 0.07, m.position.z); g.add(lotus);
+    }
+  }
+  const LOOKS = [['#FF7A2E', '#FFFFFF'], ['#FFFFFF', '#E8394B'], ['#FFC23E', '#FFE7A3'], ['#2B2B3A', '#FF7A2E']];
+  LOOKS.forEach(([b, sp], i) => {
+    const f = koiFish(b, sp, 0.9); g.add(f.g);
+    koi.fish.push({ ...f, a: i * 1.6, dir: i % 2 ? 1 : -1, speed: 0.25 + i * 0.05, boost: 0, k: 2 + (i % 3), ph: i * 1.7, ring: 0.35 + (i % 3) * 0.15, depth: 0.03 });
+  });
+  // the big koi that gives rides
+  const big = koiFish('#FF7A2E', '#FFFFFF', 3.2); big.g.visible = false; scene.add(big.g); koi.rider = big;
+  scene.add(g);
+  Object.assign(koi, { group: g, x: spot.x, z: spot.z, edge });
+  for (const f of scene.userData.flowers || []) if (Math.hypot(f.position.x - spot.x, f.position.z - spot.z) < PR * 1.3) f.visible = false;
+}
+function koiRipple(x, z, big = false) {
+  if (!koi.group) return;
+  const m = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); m.renderOrder = 4; m.scale.setScalar(0.05);
+  koi.group.add(m); koi.ripples.push({ m, t: 0, max: big ? 0.9 : 0.45, life: big ? 1.4 : 1.1 });
+}
+function koiSplash() { koiRipple(0, 0, true); setTimeout(() => koiRipple(0.3, -0.2), 160); for (const f of koi.fish) f.boost = 1; S.play('pop', { rate: 0.55, gain: 0.6 }); }
+function koiTick(dt) {
+  if (!koi.group) return;
+  for (const f of koi.fish) {
+    f.boost = Math.max(0, f.boost - dt * 0.6);
+    f.a += f.dir * (f.speed + f.boost * 1.6) * dt / (koi.r * f.ring);
+    const rr = koi.r * f.ring * (1 + 0.22 * Math.sin(f.a * f.k + f.ph)), x = Math.cos(f.a) * rr, z = Math.sin(f.a) * rr;
+    const dx = x - f.g.position.x, dz = z - f.g.position.z;
+    if (dx * dx + dz * dz > 1e-8) f.g.rotation.y = Math.atan2(-dz, dx);
+    f.g.position.set(x, f.depth, z);
+    f.tail.rotation.y = Math.sin(T * (6 + f.boost * 10) + f.ph) * (0.35 + f.boost * 0.3);
+  }
+  if (T > koi.nextRipple) { const f = pick(koi.fish); koiRipple(f.g.position.x, f.g.position.z); koi.nextRipple = T + rand(2.5, 6); }
+  for (let i = koi.ripples.length - 1; i >= 0; i--) {
+    const r = koi.ripples[i]; r.t += dt;
+    const k = r.t / r.life; r.m.scale.setScalar(0.05 + k * r.max); r.m.material.opacity = 0.7 * (1 - k);
+    if (k >= 1) { koi.group.remove(r.m); r.m.geometry.dispose(); r.m.material.dispose(); koi.ripples.splice(i, 1); }
+  }
+  // the big koi swims under whoever's riding it
+  const rd = koi.rider, who = rd?.carrying;
+  if (rd && who) {
+    rd.g.visible = true;
+    const dx = who.x - rd.g.position.x, dz = who.z - rd.g.position.z;
+    if (dx * dx + dz * dz > 1e-6) rd.g.rotation.y = Math.atan2(-dz, dx);
+    rd.g.position.set(who.x, Math.max(0.05, who.y - 0.02), who.z);
+    rd.tail.rotation.y = Math.sin(T * 14) * 0.5;
+  } else if (rd) rd.g.visible = false;
+}
+
+const love = { group: null, x: 0, z: 0, canopyY: 0, hearts: [] };
+let heartGeo = null;
+function heartGeometry() {
+  if (heartGeo) return heartGeo;
+  const h = new THREE.Shape();
+  h.moveTo(0, -0.1); h.bezierCurveTo(-0.16, 0.02, -0.12, 0.16, 0, 0.08); h.bezierCurveTo(0.12, 0.16, 0.16, 0.02, 0, -0.1);
+  heartGeo = new THREE.ExtrudeGeometry(h, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 2 });
+  heartGeo.center(); return heartGeo;
+}
+const HEART_MAT = new THREE.MeshStandardMaterial({ color: toLinear('#FF3D6E'), emissive: toLinear('#FF3D6E'), emissiveIntensity: 0.5, roughness: 0.35 });
+function buildLoveTree(spot) {
+  const s = 1.15, g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * s, 0.26 * s, 1.5 * s, 9), M('#8A5A3C', { roughness: 1 }));
+  trunk.position.y = 0.75 * s; g.add(trunk);
+  const canopyY = 2.15 * s, canopyR = 1.0 * s, blossoms = ['#FFC2D6', '#FFB0C8', '#FFD6E4', '#FFE4EC'];
+  for (let k = 0; k < 7; k++) {
+    const a = k * 2.4, up = k === 0 ? 0 : 0.25 + (k % 3) * 0.2;
+    const b = new THREE.Mesh(new THREE.IcosahedronGeometry((k === 0 ? 0.95 : 0.62) * s, 1), M(blossoms[k % blossoms.length], { flatShading: true }));
+    b.position.set(k ? Math.cos(a) * canopyR * 0.6 : 0, canopyY + up * s, k ? Math.sin(a) * canopyR * 0.6 : 0); g.add(b);
+  }
+  for (let i = 0; i < 9; i++) {
+    const az = i * 2.39, el = -0.1 + (i % 4) * 0.3, dir = new THREE.Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+    const h = new THREE.Mesh(heartGeometry(), HEART_MAT);
+    h.position.copy(dir.clone().multiplyScalar(canopyR * 1.12 + 0.14)).add(new THREE.Vector3(0, canopyY + 0.2 * s, 0));
+    h.lookAt(h.position.clone().add(dir)); h.scale.setScalar(1.8); g.add(h); love.hearts.push(h);
+  }
+  g.position.set(spot.x, 0, spot.z); scene.add(g);
+  Object.assign(love, { group: g, x: spot.x, z: spot.z, canopyY: canopyY + 0.2 * s });
+  for (const f of scene.userData.flowers || []) if (Math.hypot(f.position.x - spot.x, f.position.z - spot.z) < 1.2) f.visible = false;
+}
+// a heart flying from one spot to a bud, in an arc
+const flyers = [];
+function flyHeart(from, to, ms = 900) {
+  return new Promise((done) => {
+    const m = new THREE.Mesh(heartGeometry(), HEART_MAT); m.scale.setScalar(2.4); scene.add(m);
+    flyers.push({ m, from: { x: from.x, y: from.y ?? 1.5, z: from.z }, to, t: 0, dur: ms / 1000, done });
+    S.play('chime', { gain: 0.5, rate: 1.3 });
+  });
+}
+function flyTick(dt) {
+  if (love.group) love.hearts.forEach((h, i) => h.scale.setScalar(1.8 + Math.sin(T * 3 + i) * 0.15));
+  for (let i = flyers.length - 1; i >= 0; i--) {
+    const f = flyers[i]; f.t += dt;
+    const k = Math.min(1, f.t / f.dur), tx = f.to.x, tz = f.to.z, ty = (f.to.y || 0) + (f.to.height || 1) + 0.3;
+    f.m.position.set(f.from.x + (tx - f.from.x) * k, f.from.y + (ty - f.from.y) * k + Math.sin(k * Math.PI) * 1.4, f.from.z + (tz - f.from.z) * k);
+    f.m.quaternion.copy(camera.quaternion); f.m.rotateZ(Math.sin(T * 8) * 0.2);
+    if (k >= 1) { scene.remove(f.m); flyers.splice(i, 1); f.done(); }
+  }
+}
+
 function bananaMesh() {
   const g = new THREE.Group(), m = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.06, 8, 16, Math.PI * 0.9), M('#FFD23F', { roughness: 0.5 }));
   m.rotation.x = -Math.PI / 2; g.add(m); g.position.y = 0.17; return g;
@@ -359,9 +529,11 @@ function banner(text, ms = 1500) { const b = $('banner'); b.textContent = text; 
 /* ---------- playing a turn: the steps from the server, one after another ---------- */
 let animatedN = -1, queue = [], playing = false;
 const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
-function moveTo(p, tile, { arc = 0.45, dur = 0.32, sound = 'boing' } = {}) {
+function moveTo(p, tile, { arc = 0.45, dur = 0.32, sound = 'boing', point = null } = {}) {
   return new Promise((done) => {
-    const from = { x: p.x, z: p.z }; p.at = tile; const to = spotOn(tile, p.id);
+    const from = { x: p.x, z: p.z };
+    let to = point;
+    if (!point) { p.at = tile; to = spotOn(tile, p.id); }
     p.moving = { from, to, t: 0, dur, arc, done }; p.lean = clamp((to.x - from.x) * 0.6, -0.6, 0.6);
     if (sound) S.play(sound, { gain: 0.35, rate: 1.3 + Math.random() * 0.2 });
   });
@@ -405,6 +577,38 @@ async function playSteps(steps, by) {
       S.play('squish', { gain: 0.6 }); await moveTo(p, s.to, { arc: 0.05, dur: 0.7, sound: null });
     }
     else if (s.k === 'swap') { const o = pieces.get(s.with); S.play('sparkle', { gain: 0.7 }); floatAt(p, '✨ swap! ✨', 1200); if (o) { const a = o.at; await Promise.all([moveTo(p, s.a, { arc: 1.4, dur: 0.6, sound: null }), moveTo(o, s.b, { arc: 1.4, dur: 0.6, sound: null })]); void a; say(o, pick(['hey, that was my spot!', 'huh? how did I get here', 'swapped!']), 1600); } }
+    else if (s.k === 'koi') {
+      if (s.choose) { say(p, pick(['ooh, fishies! 🐟', 'the koi look hungry…', 'hi koi!']), 1800); koiSplash(); await wait(800); }
+      else { koiSplash(); floatAt(p, '🐟 a shiny acorn!', 1300); say(p, pick(['for me? thank you!', 'a koi gift!']), 1500); await wait(700); }
+    }
+    else if (s.k === 'koiride') {
+      floatAt(p, '−2 🌰', 1100); koiSplash(); say(p, pick(['hop on, koi!', 'giddy up! 🐟', 'swimming!']), 1700); await wait(400);
+      koi.rider.carrying = p; S.play('whoosh', { gain: 0.5, rate: 0.8 });
+      await moveTo(p, null, { point: { x: koi.x, z: koi.z }, arc: 0.3, dur: 0.9, sound: null });
+      koiRipple(0, 0, true);
+      await moveTo(p, s.to, { arc: 0.9, dur: 0.9, sound: null }); koi.rider.carrying = null; S.play('thump', { gain: 0.5 });
+    }
+    else if (s.k === 'wish') {
+      floatAt(p, '−2 🌰', 1100); koiSplash(); await wait(400);
+      floatAt(p, `✨ ${ITEMS[s.item][0]} ${ITEMS[s.item][1]}!`, 1800); S.play('sparkle', { gain: 0.7 }); say(p, pick(['a wish come true!', 'thank you, koi!', 'yesss']), 1600); await wait(900);
+    }
+    else if (s.k === 'keep') { say(p, 'I’ll keep my acorns 🌰', 1500); await wait(600); }
+    else if (s.k === 'tree') {
+      say(p, pick(['a heart fell from the love tree! 💗', 'ooh, a heart! who gets it?']), 2000);
+      if (love.group) await flyHeart({ x: love.x, y: love.canopyY, z: love.z }, p, 800); else await wait(500);
+    }
+    else if (s.k === 'heart') {
+      const o = pieces.get(s.to);
+      if (o) {
+        focus = o;
+        await flyHeart({ x: p.x, y: p.y + p.height + 0.3, z: p.z }, o, 900);
+        floatAt(o, s.friends ? '💞 friends!' : '💗', 1500); o.happy = true; setTimeout(() => { o.happy = false; }, 2500);
+        say(o, pick(['aww, thank you!', 'for me?! 💗', 'you’re the best!']), 1700);
+        const hopAll = async (who, tiles) => { for (const t of tiles) await moveTo(who, t, { arc: 0.5, dur: 0.3 }); };
+        await Promise.all([hopAll(p, s.mine), hopAll(o, s.theirs)]);
+        focus = mover || null;
+      }
+    }
     else if (s.k === 'nap') { say(p, 'so… sleepy… 💤', 1800); S.play('tick', { gain: 0.3, rate: 0.5 }); await wait(600); }
     else if (s.k === 'skip') { say(p, 'zzz… (skips a turn)', 1800); await wait(900); }
     else if (s.k === 'wake') { say(p, '☕ awake!', 1500); await wait(600); }
@@ -463,7 +667,7 @@ const cam = { x: 0, z: 1.5, d: 26 };
 function placeCamera(dt) {
   const panelH = $('panel').hidden ? 0 : $('panel').getBoundingClientRect().height;
   const side = $('panel').getBoundingClientRect().left > innerWidth * 0.4;
-  const fit = (IR + 1) / Math.tan(Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect))) * 0.95;
+  const fit = (innerWidth < innerHeight ? IR - 0.4 : IR + 1) / Math.tan(Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect))) * 0.95;
   const goal = focus ? { x: focus.x * 0.55, z: focus.z * 0.55 + 1, d: fit * 0.82 } : { x: 0, z: 1.2, d: fit };
   const k = 1 - Math.pow(0.03, dt);
   cam.x += (goal.x - cam.x) * k; cam.z += (goal.z - cam.z) * k; cam.d += (goal.d - cam.d) * k;
@@ -505,7 +709,7 @@ function renderRacers() {
     const here = view.players.find((p) => p.id === r)?.here;
     const c = el('div', 'racer' + (view.turn === r ? ' turn' : '') + (here ? '' : ' away'));
     const dot = el('span', 'dot', ord[placeOf(r) - 1].replace(/\D/g, '')); dot.style.background = colorOf(r);
-    c.append(dot, el('span', null, r === me ? 'You' : nameOf(r)), el('small', null, `🌰${view.acorns[r] || 0}${view.itemCount[r] ? ` · ${'🎁'.repeat(view.itemCount[r])}` : ''}${view.asleep[r] ? ' · 💤' : ''}`));
+    c.append(dot, el('span', null, r === me ? 'You' : nameOf(r)), el('small', null, `🌰${view.acorns[r] || 0}${view.hearts?.[r] ? ` · 💗${view.hearts[r]}` : ''}${view.itemCount[r] ? ` · ${'🎁'.repeat(view.itemCount[r])}` : ''}${view.asleep[r] ? ' · 💤' : ''}`));
     box.append(c);
   }
 }
@@ -524,7 +728,7 @@ function forkAhead() {
 }
 let panelKey = '';
 function renderPanel() {
-  const key = JSON.stringify([view.phase, view.game, view.turn, view.host, view.winner, view.last?.by, view.myItems, view.pos[me], view.players.map((x) => [x.id, x.here, x.name]), playing, busy, msg, chosenItem, golden, fork]);
+  const key = JSON.stringify([view.phase, view.game, view.turn, view.host, view.winner, view.last?.by, view.myItems, view.pos[me], view.players.map((x) => [x.id, x.here, x.name]), playing, busy, msg, chosenItem, golden, fork, view.pending, view.acorns[me]]);
   if (key === panelKey) return; panelKey = key;
   const p = $('panel'); p.textContent = ''; p.hidden = false;
   const row = el('div', 'row');
@@ -535,8 +739,10 @@ function renderPanel() {
       p.append(el('h2', null, view.winner === me ? 'You won the race! 🥇' : `${nameOf(view.winner)} won the race! 🏁`));
       const ul = el('p'); (view.ranks || []).forEach((r, i) => { if (i) ul.append(el('br')); ul.append(`${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${r === me ? 'You' : nameOf(r)} · 🌰${view.acorns[r] || 0}`); }); p.append(ul);
       if (view.winner === me) p.append(el('p', null, 'Your bud got an Island Race medal for its wardrobe.'));
+      const kind = Object.entries(view.given || {}).sort((a, b) => b[1] - a[1])[0];
+      if (kind) p.append(el('p', null, `💝 Kindest bud: ${kind[0] === me ? 'you' : nameOf(kind[0])}, with ${kind[1]} heart${kind[1] > 1 ? 's' : ''} given from the love tree`));
     } else {
-      p.append(el('h2', null, 'Island Race'), el('p', null, 'Roll, hop round the island and grab items. First bud back to the campfire wins! Everyone on the call can race (2 to 6).'));
+      p.append(el('h2', null, 'Island Race'), el('p', null, 'Roll, hop round the island and grab items. Feed the koi for a ride or a wish, and share hearts from the love tree. First bud back to the campfire wins! Everyone on the call can race (2 to 6).'));
     }
     const lob = el('div', 'lobby');
     for (const pl of view.players) lob.append(el('span', pl.here ? null : 'away', (pl.id === me ? 'You' : pl.name) + (pl.id === view.host ? ' ⭐' : '')));
@@ -545,8 +751,13 @@ function renderPanel() {
     if (view.host === me) btn(done ? 'Race again' : here < 2 ? 'Waiting for one more…' : `Start the race (${Math.min(here, 6)})`, start, 'primary big').disabled = busy || here < 2;
     else p.append(el('p', null, `Waiting for ${nameOf(view.host)} to start${done ? ' another race' : ''}…`));
   } else if (view.phase === 'play' || playing) {
-    const mine = view.turn === me && !playing && view.phase === 'play';
-    if (!mine) {
+    const pend = !playing && view.phase === 'play' ? view.pending : null;
+    const mine = view.turn === me && !playing && view.phase === 'play' && !pend;
+    if (pend && pend.who === me) renderChoice(p, pend);
+    else if (pend) {
+      p.append(el('h2', null, pend.kind === 'koi' ? `${nameOf(pend.who)} is at the koi pond 🐟` : `${nameOf(pend.who)} is at the love tree 💗`));
+      p.append(el('p', null, pend.kind === 'koi' ? 'Deciding whether to feed the koi…' : 'Choosing who gets the heart…'));
+    } else if (!mine) {
       p.append(el('h2', null, playing ? (view.last?.by === me ? 'Hop hop hop…' : `${nameOf(view.last?.by)} is moving…`) : `${nameOf(view.turn)}’s turn`));
       p.append(el('p', null, view.turn && !playing ? `${nameOf(view.turn)} is rolling…` : 'Watch out for banana peels!'));
     } else {
@@ -570,7 +781,7 @@ function renderPanel() {
       if (forkAhead()) {
         p.append(el('div', 'label', 'If you reach the fork, go…'));
         const f = el('div', 'row left');
-        for (const [v, label] of [[0, '🏖️ The beach (safe)'], [1, '🌲 The woods (3 shorter, but sleepy and muddy)']]) {
+        for (const [v, label] of [[0, '🏖️ The beach, past the koi pond'], [1, '🌲 The woods: 3 shorter, with the love tree (and a nap cloud and mud)']]) {
           const c = el('button', 'chip', label); c.type = 'button'; c.setAttribute('aria-pressed', String(fork === v)); c.addEventListener('click', () => { fork = v; S.play('click'); render(); }); f.append(c);
         }
         p.append(f);
@@ -580,6 +791,35 @@ function renderPanel() {
   }
   if (msg) p.append(el('p', 'msg', msg));
   if (row.childNodes.length) p.append(row);
+}
+const isFriends = (a, b) => (view.friends || []).includes([a, b].sort().join('_'));
+function renderChoice(p, pend) {
+  const choice = (label, value, cls = 'chip') => { const c = el('button', cls); c.type = 'button'; c.disabled = busy; c.append(...label); c.addEventListener('click', () => pickNow(value)); return c; };
+  if (pend.kind === 'koi') {
+    p.append(el('h2', null, 'The koi pond 🐟'), el('p', null, `Feed the koi 2 acorns (you have ${view.acorns[me] || 0} 🌰) and they’ll help you out.`));
+    const r1 = el('div', 'row left');
+    r1.append(choice([el('span', 'em', '🐟'), 'Ride a koi across the pond (4 tiles ahead)'], 'ride'));
+    p.append(r1);
+    const wishes = pend.options.filter((o) => o.startsWith('wish:'));
+    if (wishes.length) {
+      p.append(el('div', 'label', 'Or make a wish for any item'));
+      const r2 = el('div', 'row left');
+      for (const w of wishes) { const it = ITEMS[w.slice(5)]; r2.append(choice([el('span', 'em', it[0]), it[1]], w)); }
+      p.append(r2);
+    }
+    const row = el('div', 'row'); const keep = el('button', 'btn', 'Keep my acorns'); keep.type = 'button'; keep.disabled = busy; keep.addEventListener('click', () => pickNow('keep')); row.append(keep); p.append(row);
+  } else {
+    p.append(el('h2', null, 'A heart from the love tree 💗'), el('p', null, 'Give it to someone: you both hop 2 tiles ahead, or 3 if you’re already friends on the island 💞.'));
+    const r = el('div', 'row left'), ord = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
+    for (const o of pend.options) r.append(choice([el('span', 'em', isFriends(me, o) ? '💞' : '💗'), `${nameOf(o)} (${ord[placeOf(o) - 1]})`], o));
+    p.append(r);
+  }
+}
+async function pickNow(value) {
+  if (busy) return;
+  busy = true; msg = ''; render();
+  try { S.play('click'); takeView(await api('POST', '/api/game', { action: 'rc-pick', room, pick: value })); } catch (e) { msg = e.message; }
+  busy = false; render();
 }
 async function start() {
   busy = true; msg = ''; render();
@@ -608,7 +848,7 @@ async function poll() {
 let T = 0, lastNow = performance.now();
 function loop(now) {
   const dt = Math.min(0.2, (now - lastNow) / 1000); lastNow = now; T += dt;
-  piecesTick(dt); diceTick(dt); bitsTick(dt);
+  piecesTick(dt); diceTick(dt); bitsTick(dt); koiTick(dt); flyTick(dt);
   for (const p of pieces.values()) drawFace(p, T);
   if (scene.userData.flame) scene.userData.flame.scale.set(1, 1 + Math.sin(T * 9) * 0.08, 1);
   if (scene.userData.cloth) { const g = scene.userData.cloth.geometry.attributes.position; for (let i = 0; i < g.count; i++) { const x = g.getX(i) + 0.5; g.setZ(i, Math.sin(T * 5 - x * 5) * 0.08 * x); } g.needsUpdate = true; }
