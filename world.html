@@ -542,14 +542,16 @@ const clouds = [];
 
 const toLinear = (hex) => new THREE.Color(hex).convertSRGBToLinear();
 
+const ISLAND_SEED = 2.1;   // the shape of the shoreline
 function islandEdge(a, seed) {
   return 1 + 0.05 * Math.sin(3 * a + seed) + 0.035 * Math.sin(5 * a + seed * 2.3) + 0.02 * Math.sin(9 * a + seed * 0.7);
 }
 
 function buildIsland(nBuds) {
   R = clamp(9 + Math.sqrt(nBuds) * 2.2, 11, 30);
+  if (TOWN) { R = Math.max(R, TOWN.R); for (const h of TOWN.homes) obstacles.push({ x: h.x, z: h.z, r: TOWN.homeR }); }
   WALK_R = R * 0.78;
-  const seed = 2.1;
+  const seed = ISLAND_SEED;
   const group = new THREE.Group();
 
   // grassy top with a soft rounded rim
@@ -599,7 +601,7 @@ function buildIsland(nBuds) {
     for (let tries = 0; tries < 40; tries++) {
       const a = rnd() * Math.PI * 2, r = R * islandEdge(a, seed) * (minR + rnd() * (maxR - minR));
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (obstacles.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + clear)) return { x, z };
+      if (obstacles.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + clear) && !townBlocked(x, z, clear * 0.4)) return { x, z };
     }
     return null;
   };
@@ -628,6 +630,7 @@ function buildIsland(nBuds) {
   const stem = new THREE.MeshStandardMaterial({ color: toLinear('#5FA868') });
   for (let i = 0; i < Math.round(R * 2.5); i++) {
     const fr = seeded('flower:' + i), a = fr() * Math.PI * 2, r = Math.sqrt(fr()) * R * 0.92;
+    if (TOWN && (townBlocked(Math.cos(a) * r, Math.sin(a) * r, 0.1) || nearHome(Math.cos(a) * r, Math.sin(a) * r, 0.2))) continue;
     const f = new THREE.Group();
     const st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 4), stem); st.position.y = 0.11; f.add(st);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), petal[i % petal.length]); head.position.y = 0.24; f.add(head);
@@ -651,6 +654,377 @@ function buildIsland(nBuds) {
   }
 
   scene.add(group); islandDecor = group;
+}
+
+/* ---------------- the town (a preview for now: /world?town=1) ---------------- */
+// Where every home goes is worked out on the server (lib/town.js). The island is round, so there are no rows
+// and no grid: the campfire square in the middle, one road down to the dock, and lanes branching off it.
+// No two homes are alike: each bud's home has its own shape and takes its colors from the bud's paint.
+const TOWN_PREVIEW = params.get('town') === '1';
+let TOWN = null;   // the plan from the server, when the town is on
+const town = { group: null, homes: new Map(), taps: [], lit: [], boat: null };
+const TM = (hex, o = {}) => new THREE.MeshStandardMaterial({ color: toLinear(hex), roughness: 0.85, ...o });
+const TBOX = (w, h, d, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); return m; };
+const TCYL = (r0, r1, h, seg, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, seg), mat); m.position.set(x, y, z); return m; };
+const townMats = {};
+const townMat = (hex, o) => townMats[hex] || (townMats[hex] = TM(hex, o));
+// a material that glows at night (windows, lamps)
+function townGlow(hex, day, night) {
+  const key = 'glow' + hex;
+  if (!townMats[key]) { townMats[key] = new THREE.MeshStandardMaterial({ color: toLinear(hex), emissive: toLinear(hex), emissiveIntensity: day, roughness: 0.4 }); town.lit.push({ mat: townMats[key], day, night }); }
+  return townMats[key];
+}
+function segDist(px, pz, ax, az, bx, bz) {
+  const vx = bx - ax, vz = bz - az, t = clamp(((px - ax) * vx + (pz - az) * vz) / (vx * vx + vz * vz || 1), 0, 1);
+  return Math.hypot(ax + vx * t - px, az + vz * t - pz);
+}
+// the lanes, the road, the square, the pond, the tree and the plots kept for later: trees, rocks and
+// flowers stay off them (homes are in `obstacles`, like everything else that's solid)
+function townBlocked(x, z, pad = 0) {
+  if (!TOWN) return false;
+  const s = TOWN.sites;
+  if (Math.hypot(x, z) < TOWN.squareR + 0.7 + pad) return true;
+  if (z > 0 && Math.abs(x) < TOWN.roadHalf + 0.6 + pad) return true;
+  if (Math.hypot(x - s.pond.x, z - s.pond.z) < s.pond.r + 1.4 + pad || Math.hypot(x - s.tree.x, z - s.tree.z) < s.tree.r + 1.4 + pad) return true;
+  for (const r of s.reserved) if (Math.hypot(x - r.x, z - r.z) < r.r + pad) return true;
+  for (const h of TOWN.homes) if (segDist(x, z, h.x, h.z, h.lane.x1, h.lane.z1) < 0.85 + pad) return true;
+  return false;
+}
+const nearHome = (x, z, pad) => !!TOWN && TOWN.homes.some((h) => Math.hypot(h.x - x, h.z - z) < TOWN.homeR + pad);
+
+// ---- the parts homes are made of (the front of a home faces +z) ----
+function gableRoof(w, d, rise, over, mat) {   // the ridge runs front to back
+  const s = new THREE.Shape(); s.moveTo(-w / 2 - over, 0); s.lineTo(w / 2 + over, 0); s.lineTo(0, rise); s.closePath();
+  const m = new THREE.Mesh(new THREE.ExtrudeGeometry(s, { depth: d + over * 2, bevelEnabled: false }), mat);
+  m.position.z = -(d / 2 + over);
+  const g = new THREE.Group(); g.add(m); return g;
+}
+function gableWall(w, rise, mat) {
+  const s = new THREE.Shape(); s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(0, rise); s.closePath();
+  return new THREE.Mesh(new THREE.ShapeGeometry(s), mat);
+}
+function roundWindow(r) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.CircleGeometry(r, 20), townGlow('#FFDF9E', 0.12, 1.25)));
+  const rim = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.08, 20), townMat('#FFFFFF')); rim.position.z = 0.004; g.add(rim);
+  return g;
+}
+function squareWindow(w, h) {
+  const g = new THREE.Group();
+  g.add(TBOX(w + 0.12, h + 0.12, 0.03, townMat('#FFFFFF')));
+  g.add(TBOX(w, h, 0.045, townGlow('#FFDF9E', 0.12, 1.25)));
+  g.add(TBOX(0.04, h, 0.055, townMat('#FFFFFF')));
+  return g;
+}
+const windowFor = (r, size = 1) => (r() < 0.5 ? roundWindow(0.22 * size) : squareWindow(0.34 * size, 0.4 * size));
+function doorOn(g, x, y, z, w, h, mat, arched) {
+  g.add(TBOX(w, h, 0.08, mat, x, y + h / 2, z));
+  if (arched) { const a = new THREE.Mesh(new THREE.CircleGeometry(w / 2, 14, 0, Math.PI), mat); a.position.set(x, y + h, z + 0.041); g.add(a); }
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), townMat('#FFC93C', { metalness: 0.5, roughness: 0.4 })); knob.position.set(x + w * 0.3, y + h * 0.5, z + 0.06); g.add(knob);
+}
+const STONE = '#CDBFA8', WOOD = '#9B6B43';
+const HOME_SHAPES = {
+  // a cottage: sometimes its roof runs front to back, sometimes side to side
+  cottage(g, r, u) {
+    const W = 2.0 + r() * 0.5, D = 1.75 + r() * 0.3, H = 1.35 + r() * 0.45, rise = 0.9 + r() * 0.5, F = D / 2, side = r() < 0.4;
+    g.add(TBOX(W + 0.12, 0.2, D + 0.12, townMat(STONE), 0, 0.1, 0));
+    g.add(TBOX(W, H, D, u.wall, 0, H / 2 + 0.1, 0));
+    const roof = side ? gableRoof(D, W, rise, 0.28, u.roof) : gableRoof(W, D, rise, 0.28, u.roof);
+    if (side) roof.rotation.y = Math.PI / 2;
+    roof.position.y = H + 0.1; g.add(roof);
+    if (side) for (const s of [-1, 1]) { const w = gableWall(D * 0.84, rise * 0.8, u.wall); w.rotation.y = s * Math.PI / 2; w.position.set(s * (W / 2 + 0.285), H + 0.13, 0); g.add(w); }
+    else for (const s of [-1, 1]) { const w = gableWall(W * 0.84, rise * 0.8, u.wall); if (s < 0) w.rotation.y = Math.PI; w.position.set(0, H + 0.13, s * (F + 0.285)); g.add(w); }
+    if (r() < 0.6) g.add(TBOX(0.3, 0.8, 0.3, townMat(STONE), (r() < 0.5 ? -1 : 1) * W * 0.26, H + rise * 0.75, -D * 0.15));
+    const dx = (r() < 0.5 ? -1 : 1) * W * 0.2;
+    doorOn(g, dx, 0.1, F + 0.02, 0.62, 1.05, u.door, r() < 0.5);
+    const w1 = windowFor(r); w1.position.set(-dx * 1.15, H * 0.62 + 0.1, F + 0.02); g.add(w1);
+    for (const s of [-1, 1]) { const w = windowFor(r); w.rotation.y = s * Math.PI / 2; w.position.set(s * (W / 2 + 0.02), H * 0.62 + 0.1, 0); g.add(w); }
+  },
+  // a round hut with a pointed roof
+  hut(g, r, u) {
+    const R0 = 1.0 + r() * 0.2, H = 1.25 + r() * 0.3, rh = 1.2 + r() * 0.7;
+    g.add(TCYL(R0, R0 * 1.05, H, 16, u.wall, 0, H / 2, 0));
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(R0 + 0.42, rh, 16), u.roof); roof.position.y = H + rh / 2 - 0.04; g.add(roof);
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), townMat('#FFC93C', { metalness: 0.5, roughness: 0.4 })); top.position.y = H + rh; g.add(top);
+    doorOn(g, 0, 0, R0 - 0.01, 0.6, 0.95, u.door, true);
+    for (const a of [-1.05, 1.05]) { const w = roundWindow(0.2); w.rotation.y = a; w.position.set(Math.sin(a) * (R0 + 0.02), H * 0.62, Math.cos(a) * (R0 + 0.02)); g.add(w); }
+  },
+  // tall and narrow, two floors, with a flower box
+  tall(g, r, u) {
+    const W = 1.55 + r() * 0.25, D = 1.55 + r() * 0.2, H = 2.55 + r() * 0.5, rise = 1.05 + r() * 0.45, F = D / 2;
+    g.add(TBOX(W + 0.12, 0.2, D + 0.12, townMat(STONE), 0, 0.1, 0));
+    g.add(TBOX(W, H, D, u.wall, 0, H / 2 + 0.1, 0));
+    g.add(TBOX(W + 0.07, 0.08, D + 0.07, townMat('#FFFFFF'), 0, H * 0.5 + 0.1, 0));
+    const roof = gableRoof(W, D, rise, 0.24, u.roof); roof.position.y = H + 0.1; g.add(roof);
+    for (const s of [-1, 1]) { const gw = gableWall(W * 0.84, rise * 0.8, u.wall); if (s < 0) gw.rotation.y = Math.PI; gw.position.set(0, H + 0.13, s * (F + 0.245)); g.add(gw); }
+    const back = squareWindow(0.3, 0.36); back.rotation.y = Math.PI; back.position.set(0, H * 0.76 + 0.1, -F - 0.02); g.add(back);
+    const dx = (r() < 0.5 ? -1 : 1) * W * 0.2;
+    doorOn(g, dx, 0.1, F + 0.02, 0.56, 1.0, u.door, false);
+    const low = roundWindow(0.17); low.position.set(-dx * 1.2, 0.85, F + 0.02); g.add(low);
+    for (const s of [-1, 1]) { const w = squareWindow(0.3, 0.36); w.position.set(s * W * 0.23, H * 0.76 + 0.1, F + 0.02); g.add(w); }
+    g.add(TBOX(W * 0.8, 0.12, 0.2, townMat(WOOD), 0, H * 0.76 - 0.22, F + 0.11));
+    for (let k = 0; k < 4; k++) g.add(flower(r, (k - 1.5) * W * 0.2, H * 0.76 - 0.1, F + 0.13));
+    if (r() < 0.5) g.add(TBOX(0.26, 0.7, 0.26, townMat(STONE), -dx * 1.2, H + rise * 0.8, -D * 0.1));
+  },
+  // an A-frame cabin: the roof comes all the way down
+  aframe(g, r, u) {
+    const W = 2.35 + r() * 0.3, rise = 2.3 + r() * 0.5, D = 1.85 + r() * 0.3, F = D / 2;
+    const roof = gableRoof(W, D, rise, 0.1, u.roof); roof.position.y = 0.06; g.add(roof);
+    for (const s of [-1, 1]) { const w = gableWall(W * 0.78, rise * 0.8, u.wall); w.position.set(0, 0.08, s * (F + 0.105)); if (s < 0) w.rotation.y = Math.PI; g.add(w); }
+    g.add(TBOX(W * 0.6, 0.1, 0.6, townMat(WOOD), 0, 0.05, F + 0.4));
+    doorOn(g, 0, 0.1, F + 0.12, 0.58, 1.0, u.door, false);
+    const w = roundWindow(0.2); w.position.set(0, 1.5, F + 0.115); g.add(w);
+  },
+  // a burrow: a round door in a grassy hill
+  burrow(g, r, u) {
+    const Rr = 1.22 + r() * 0.15;
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(Rr, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), townMat('#8FD08A')); dome.scale.y = 0.82; g.add(dome);
+    const face = TCYL(0.8, 0.8, 0.14, 22, u.wall, 0, 0.6, Rr * 0.8); face.rotation.x = Math.PI / 2; g.add(face);
+    const door = new THREE.Mesh(new THREE.CircleGeometry(0.47, 22), u.door); door.position.set(0, 0.6, Rr * 0.8 + 0.075); g.add(door);
+    const rim = new THREE.Mesh(new THREE.RingGeometry(0.47, 0.58, 22), u.roof); rim.position.set(0, 0.6, Rr * 0.8 + 0.078); g.add(rim);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), townMat('#FFC93C', { metalness: 0.5, roughness: 0.4 })); knob.position.set(0, 0.6, Rr * 0.8 + 0.1); g.add(knob);
+    const a = (r() < 0.5 ? -1 : 1) * 0.95, w = roundWindow(0.19); w.rotation.y = a; w.rotation.x = -0.35; w.position.set(Math.sin(a) * Rr * 0.9, 0.5, Math.cos(a) * Rr * 0.9); g.add(w);
+    g.add(TCYL(0.09, 0.09, 0.55, 8, townMat(STONE), -0.4, Rr * 0.82 * 0.9 + 0.15, -0.25));
+    g.add(TCYL(0.15, 0.13, 0.08, 8, u.roof, -0.4, Rr * 0.82 * 0.9 + 0.45, -0.25));
+    for (let k = 0; k < 4; k++) { const fa = r() * 6.28, fr = Rr * (0.25 + r() * 0.45); g.add(flower(r, Math.cos(fa) * fr, Math.sqrt(Math.max(0, Rr * Rr - fr * fr)) * 0.82 + 0.02, Math.sin(fa) * fr)); }
+  },
+  // a cabin on stilts, with a ladder
+  stilt(g, r, u) {
+    const W = 1.5 + r() * 0.2, D = 1.4, H = 1.1 + r() * 0.2, lift = 1.1 + r() * 0.3, rise = 0.75 + r() * 0.3, F = D / 2, wood = townMat(WOOD);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(TCYL(0.07, 0.08, lift, 7, wood, sx * (W / 2 + 0.2), lift / 2, sz * (D / 2 + 0.2)));
+    g.add(TBOX(W + 0.75, 0.1, D + 0.8, wood, 0, lift, 0.12));
+    g.add(TBOX(W, H, D, u.wall, 0, lift + 0.05 + H / 2, -0.05));
+    const roof = gableRoof(W, D, rise, 0.24, u.roof); roof.position.set(0, lift + 0.05 + H, -0.05); g.add(roof);
+    const gw = gableWall(W * 0.84, rise * 0.8, u.wall); gw.position.set(0, lift + 0.08 + H, F - 0.05 + 0.245); g.add(gw);
+    doorOn(g, -W * 0.2, lift + 0.05, F - 0.03, 0.5, 0.85, u.door, false);
+    const w = windowFor(r, 0.85); w.position.set(W * 0.24, lift + 0.05 + H * 0.6, F - 0.03); g.add(w);
+    for (const sx of [-1, 1]) g.add(TBOX(0.05, 0.4, 0.05, wood, sx * (W / 2 + 0.33), lift + 0.25, F + 0.47));
+    g.add(TBOX(W * 0.42, 0.05, 0.05, wood, W * 0.33, lift + 0.44, F + 0.47));
+    // the ladder leans on the front of the deck
+    const run = 0.55, L = Math.hypot(lift, run), lad = new THREE.Group();
+    for (const sx of [-1, 1]) lad.add(TBOX(0.05, L, 0.05, wood, sx * 0.2, 0, 0));
+    for (let k = 1; k <= 4; k++) lad.add(TBOX(0.4, 0.045, 0.05, wood, 0, -L / 2 + k * L / 5, 0));
+    lad.rotation.x = Math.atan2(run, lift); lad.position.set(-W * 0.2, lift / 2, F + 0.5 + run / 2); g.add(lad);
+  },
+  // a tent: where a newcomer stays for their first few days, before their home is built
+  tent(g, r, u) {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.25, 1.7, 4), u.wall); cone.rotation.y = Math.PI / 4; cone.position.y = 0.85; g.add(cone);
+    const s = new THREE.Shape(); s.moveTo(-0.34, 0); s.lineTo(0.34, 0); s.lineTo(0, 1.0); s.closePath();
+    const flap = new THREE.Mesh(new THREE.ShapeGeometry(s), townMat('#4A3B33')); flap.rotation.x = -Math.atan2(0.884, 1.7); flap.position.set(0, 0.02, 0.9); g.add(flap);
+    g.add(TCYL(0.02, 0.02, 0.6, 5, townMat(WOOD), 0, 1.95, 0));
+    g.add(TBOX(0.34, 0.2, 0.02, u.roof, 0.18, 2.12, 0));
+    g.add(TBOX(0.42, 0.38, 0.42, townMat(WOOD), 1.0, 0.19, 0.75));
+  },
+};
+const HOME_KINDS = ['cottage', 'cottage', 'hut', 'hut', 'tall', 'tall', 'aframe', 'burrow', 'stilt'];
+const HOME_WALLS = ['#F4EBDD', '#F7E3D0', '#E6EEF5', '#F1E9C9', '#E9F0DE', '#F5DDE2'];
+const HOME_ROOFS = ['#C96A5A', '#5B8FB8', '#7A9E59', '#D99A3D', '#8E6BB0', '#C9577A', '#4FA39A'];
+const HOME_DOORS = ['#8A5A3C', '#3F6E8C', '#B5503C', '#3F7A55', '#E0B34A', '#6B4E8A'];
+const FLOWER_COLS = ['#FF9EBB', '#FFE07A', '#FFFFFF', '#B9A6FF', '#FF8A6B'];
+let flowerGeo = null;
+function flower(r, x, y, z) {
+  flowerGeo = flowerGeo || new THREE.SphereGeometry(0.09, 7, 5);
+  const m = new THREE.Mesh(flowerGeo, townMat(FLOWER_COLS[Math.floor(r() * FLOWER_COLS.length)])); m.position.set(x, y, z); return m;
+}
+const NEW_HOME_MS = 3 * 864e5;   // a newcomer's first days are in a tent
+function makeHome(h) {
+  const r = seeded('home:' + h.id), g = new THREE.Group();
+  const kind = h.kind !== 'founder' && Date.now() - h.at < NEW_HOME_MS ? 'tent' : HOME_KINDS[Math.floor(r() * HOME_KINDS.length)];
+  const u = {
+    id: h.id, kind, group: g, bounce: 0,
+    wall: TM(HOME_WALLS[Math.floor(r() * HOME_WALLS.length)]), roof: TM(HOME_ROOFS[Math.floor(r() * HOME_ROOFS.length)], { roughness: 0.9 }),
+    door: townMat(HOME_DOORS[Math.floor(r() * HOME_DOORS.length)]),
+  };
+  HOME_SHAPES[kind](g, r, u);
+  // out front: a mailbox in the roof's color, a few flowers either side of the path, maybe a bush
+  const side = r() < 0.5 ? -1 : 1;
+  g.add(TBOX(0.07, 0.75, 0.07, townMat(WOOD), side * 1.05, 0.375, 1.45));
+  g.add(TBOX(0.28, 0.22, 0.36, u.roof, side * 1.05, 0.84, 1.45));
+  const nf = 3 + Math.floor(r() * 4);
+  for (let k = 0; k < nf; k++) { const fx = (0.4 + r() * 0.75) * (r() < 0.5 ? -1 : 1); g.add(flower(r, fx, 0.1, 1.2 + r() * 0.3)); }
+  if (r() < 0.45) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8), townMat('#6BBF7A')); b.scale.y = 0.8; b.position.set(-side * 1.2, 0.26, 0.85); g.add(b); }
+  u.scale = 1 + r() * 0.16;
+  g.scale.setScalar(u.scale);
+  g.position.set(h.x, 0, h.z); g.rotation.y = h.rot;
+  g.userData.homeId = h.id;
+  town.homes.set(h.id, u); town.taps.push(g);
+  return g;
+}
+// once a bud's paint has loaded, its home takes its colors: soft walls, and the roof in its brightest color
+function colorHome(id, img) {
+  const u = town.homes.get(id);
+  if (!u || !img) return;
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 16, 16);
+  const d = g.getImageData(0, 0, 16, 16).data;
+  let r = 0, gg = 0, b = 0, n = 0, best = null, bestSat = -1;
+  for (let i = 0; i < d.length; i += 4) {
+    r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++;
+    const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]), sat = mx ? (mx - mn) / mx : 0;
+    if (sat * (mx / 255) > bestSat) { bestSat = sat * (mx / 255); best = [d[i], d[i + 1], d[i + 2]]; }
+  }
+  u.wall.color.copy(new THREE.Color(r / n / 255, gg / n / 255, b / n / 255).lerp(new THREE.Color(1, 1, 1), 0.38)).convertSRGBToLinear();
+  u.roof.color.copy(new THREE.Color(best[0] / 255, best[1] / 255, best[2] / 255).lerp(new THREE.Color(1, 1, 0.92), 0.2)).convertSRGBToLinear();
+}
+function townLamp(x, z) {
+  const g = new THREE.Group();
+  g.add(TCYL(0.045, 0.065, 1.7, 6, townMat('#3B3F52'), 0, 0.85, 0));
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8), townGlow('#FFE9A8', 0.25, 1.9)); bulb.position.y = 1.8; g.add(bulb);
+  g.position.set(x, 0, z); obstacles.push({ x, z, r: 0.25 });
+  return g;
+}
+// a small round tree for the gaps between homes; some have fruit, some are just bushes
+function townTree(seed) {
+  const g = new THREE.Group(), r = seeded(seed), s = 0.75 + r() * 0.4;
+  if (r() < 0.3) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.5 * s, 10, 8), townMat('#7FCB8A')); b.scale.y = 0.75; b.position.y = 0.34 * s; g.add(b); g.userData.r = 0.45; return g; }
+  g.add(TCYL(0.11 * s, 0.15 * s, 0.9 * s, 7, townMat('#A47551'), 0, 0.45 * s, 0));
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.72 * s, 12, 10), townMat(['#7FCB8A', '#6BBF7A', '#A6E3A1'][Math.floor(r() * 3)])); leaf.position.y = 1.3 * s; leaf.scale.y = 0.9; g.add(leaf);
+  if (r() < 0.45) { const col = townMat(r() < 0.5 ? '#FF7A6B' : '#FFC23E'); for (let k = 0; k < 4; k++) { const fr = new THREE.Mesh(new THREE.SphereGeometry(0.085, 7, 5), col), a = r() * 6.28; fr.position.set(Math.cos(a) * 0.6 * s, (1.15 + r() * 0.4) * s, Math.sin(a) * 0.6 * s); g.add(fr); } }
+  g.userData.r = 0.55; return g;
+}
+
+function buildTown() {
+  if (!TOWN) return;
+  const group = new THREE.Group(), homes = TOWN.homes, SQ = TOWN.squareR, RH = TOWN.roadHalf;
+  const shoreZ = R * islandEdge(-Math.PI / 2, ISLAND_SEED);   // the south shore, where the dock is
+  // lanes and the road are soft blobs of worn earth; busy ones get flat stones too
+  const dirtPts = [], stonePts = [];
+  const run = (ax, az, bx, bz, width, key) => {
+    const len = Math.hypot(bx - ax, bz - az) || 1, n = Math.ceil(len / (0.3 * width)), nx = -(bz - az) / len, nz = (bx - ax) / len, amp = Math.min(0.45, len * 0.08);
+    for (let k = 0; k <= n; k++) {
+      const t = k / n, w = Math.sin(t * Math.PI) * amp * Math.sin(t * len * 0.9 + key);
+      dirtPts.push([ax + (bx - ax) * t + nx * w, az + (bz - az) * t + nz * w, width]);
+    }
+  };
+  for (const h of homes) {
+    const width = h.use >= 10 ? 1.15 : h.use >= 3 ? 0.9 : 0.6;
+    const sx = h.x + Math.sin(h.rot) * 1.0, sz = h.z + Math.cos(h.rot) * 1.0;
+    run(sx, sz, h.lane.x1, h.lane.z1, width, h.x * 1.7 + h.z);
+    if (h.use >= 10) { const len = Math.hypot(h.lane.x1 - sx, h.lane.z1 - sz); for (let d = 0.5; d < len; d += 0.85) stonePts.push([sx + (h.lane.x1 - sx) * d / len, sz + (h.lane.z1 - sz) * d / len, 1]); }
+  }
+  for (const s of [-1, 1]) run(s * RH * 0.45, SQ - 0.4, s * RH * 0.45, shoreZ - 0.5, 1.5, s * 3.1);
+  for (let z = SQ + 0.4, k = 0; z < shoreZ - 0.6; z += 0.8, k++) stonePts.push([(k % 2 ? 0.34 : -0.34) + Math.sin(k * 2.3) * 0.12, z, 1.15]);
+  for (let i = 0; i < 22; i++) { const a = i / 22 * Math.PI * 2; stonePts.push([Math.cos(a) * (SQ - 0.2), Math.sin(a) * (SQ - 0.2), 1.45]); }
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  const instanced = (geo, mat, pts, y) => {
+    const inst = new THREE.InstancedMesh(geo, mat, pts.length);
+    pts.forEach(([x, z, w], k) => { q.setFromAxisAngle(up, (k * 1.7) % 6.28); m4.compose(v.set(x, y + (k % 3) * 0.001, z), q, sc.set(w, 1, w)); inst.setMatrixAt(k, m4); });
+    group.add(inst);
+  };
+  instanced(new THREE.CylinderGeometry(0.55, 0.6, 0.05, 12), TM('#BCA27C', { roughness: 1 }), dirtPts, 0.02);
+  instanced(new THREE.CylinderGeometry(0.27, 0.3, 0.06, 8), TM('#B4A994', { roughness: 1, flatShading: true }), stonePts, 0.035);
+  // the campfire square: worn ground inside the ring of stones
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(SQ + 0.25, 40), TM('#C4A772', { roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 }));
+  ground.rotation.x = -Math.PI / 2; ground.position.y = 0.012; group.add(ground);
+  // a notice board (and a well once ten buds live here) on the edge of the square, where no lane comes in
+  const arrivals = [Math.PI / 2, ...homes.filter((h) => h.up === 'square').map((h) => Math.atan2(h.lane.z1, h.lane.x1))];
+  const gapAt = (a) => Math.min(...arrivals.map((b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))));
+  const free = Array.from({ length: 24 }, (_, i) => i / 24 * Math.PI * 2).sort((a, b) => gapAt(b) - gapAt(a));
+  const edgeSpot = (a) => ({ x: Math.cos(a) * (SQ + 1.1), z: Math.sin(a) * (SQ + 1.1) });
+  {
+    const a = free[0], p = edgeSpot(a), b = new THREE.Group(), wood = townMat(WOOD);
+    b.add(TBOX(0.1, 1.5, 0.1, wood, -0.6, 0.75, 0)); b.add(TBOX(0.1, 1.5, 0.1, wood, 0.6, 0.75, 0)); b.add(TBOX(1.5, 0.9, 0.08, townMat('#C9965F'), 0, 1.2, 0));
+    b.add(TBOX(1.66, 0.1, 0.3, townMat('#C96A5A'), 0, 1.72, 0));
+    [['#FFE98A', -0.42, 1.3], ['#BFDFFF', 0.05, 1.18], ['#FFC9DE', 0.44, 1.32], ['#CDEFCF', -0.2, 0.98]].forEach(([c, x, y]) => b.add(TBOX(0.3, 0.3, 0.02, townMat(c), x, y, 0.05)));
+    b.position.set(p.x, 0, p.z); b.rotation.y = Math.atan2(-p.x, -p.z); group.add(b); obstacles.push({ x: p.x, z: p.z, r: 0.75 });
+    town.board = { x: p.x, z: p.z };
+  }
+  if (homes.length >= 10) {
+    const a = free.find((f) => Math.abs(Math.atan2(Math.sin(f - free[0]), Math.cos(f - free[0]))) > 0.9) ?? free[1], p = edgeSpot(a), w = new THREE.Group(), wood = townMat(WOOD);
+    w.add(TCYL(0.62, 0.66, 0.6, 14, townMat(STONE, { flatShading: true }), 0, 0.3, 0));
+    const water = new THREE.Mesh(new THREE.CircleGeometry(0.5, 14), TM('#6CC6D6', { roughness: 0.15 })); water.rotation.x = -Math.PI / 2; water.position.y = 0.5; w.add(water);
+    for (const s of [-1, 1]) w.add(TBOX(0.09, 1.5, 0.09, wood, s * 0.6, 0.75, 0));
+    const roof = gableRoof(1.3, 0.7, 0.45, 0.12, townMat('#C96A5A')); roof.position.y = 1.5; w.add(roof);
+    w.add(TCYL(0.05, 0.05, 1.2, 6, wood, 0, 1.3, 0).rotateZ(Math.PI / 2));
+    w.add(TBOX(0.22, 0.24, 0.22, wood, 0, 0.95, 0));
+    w.position.set(p.x, 0, p.z); w.rotation.y = Math.atan2(-p.x, -p.z); group.add(w); obstacles.push({ x: p.x, z: p.z, r: 0.85 });
+  }
+  // the homes
+  for (const h of homes) group.add(makeHome(h));
+  // lamps down the road, and where a busy lane meets the network
+  let lamps = 0;
+  for (let z = SQ + 2.2, k = 0; z < shoreZ - 1.5; z += 5.2, k++) { group.add(townLamp((k % 2 ? 1 : -1) * (RH + 0.45), z)); lamps++; }
+  for (const h of homes) {
+    if (h.use < 8 || lamps >= 26) continue;
+    const dx = h.lane.x1 - h.lane.x0, dz = h.lane.z1 - h.lane.z0, len = Math.hypot(dx, dz) || 1, x = h.lane.x1 - dz / len * 0.95, z = h.lane.z1 + dx / len * 0.95;
+    if (nearHome(x, z, 0.4) || Math.hypot(x, z) < SQ + 0.6 || (z > 0 && Math.abs(x) < RH + 0.3)) continue;
+    group.add(townLamp(x, z)); lamps++;
+  }
+  // fruit trees and bushes in the gaps
+  const reach = homes.reduce((mx, h) => Math.max(mx, Math.hypot(h.x, h.z)), 8) + 2.5;
+  for (let i = 0, want = Math.round(homes.length * 0.9) + 3; i < want; i++) {
+    const tr = seeded('towntree:' + i);
+    for (let tries = 0; tries < 30; tries++) {
+      const a = tr() * Math.PI * 2, rr = Math.sqrt(tr()) * Math.min(reach, WALK_R), x = Math.cos(a) * rr, z = Math.sin(a) * rr;
+      if (townBlocked(x, z, 0.7) || nearHome(x, z, 1.0) || obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 0.9)) continue;
+      const t = townTree('towntree:' + i); t.position.set(x, 0, z); group.add(t); obstacles.push({ x, z, r: t.userData.r });
+      break;
+    }
+  }
+  // the dock: a pier off the south shore, and the ferry, a little boat that hangs from a balloon
+  {
+    const d = new THREE.Group(), wood = townMat(WOOD), dark = townMat('#7A5233'), z0 = shoreZ - 1.4, z1 = shoreZ + 4.6, PW = 2.1;
+    for (let z = z0, k = 0; z < z1; z += 0.5, k++) d.add(TBOX(PW + (k % 2) * 0.06, 0.08, 0.44, wood, 0, 0.1, z + 0.22));
+    for (const s of [-1, 1]) {
+      d.add(TBOX(0.12, 0.12, z1 - z0, dark, s * PW / 2, 0.03, (z0 + z1) / 2));
+      for (const z of [shoreZ + 1.2, shoreZ + 4.3]) d.add(TCYL(0.09, 0.09, 2.4, 7, dark, s * PW / 2, -1.05, z));
+      for (const z of [shoreZ + 0.4, shoreZ + 2.4, shoreZ + 4.4]) d.add(TCYL(0.06, 0.06, 0.7, 6, dark, s * PW / 2, 0.45, z));
+      d.add(TBOX(0.06, 0.06, 4.1, dark, s * PW / 2, 0.78, shoreZ + 2.4));
+      const l = townLamp(s * PW / 2, z1 - 0.1); obstacles.pop(); d.add(l);
+    }
+    // the ferry
+    const boat = new THREE.Group(), hullMat = townMat('#B5703E'), rim = townMat('#F4EBDD');
+    const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), hullMat); hull.scale.set(0.72, 0.6, 1.25); boat.add(hull);
+    const deck = new THREE.Mesh(new THREE.CircleGeometry(1, 20), townMat('#D9A066')); deck.rotation.x = -Math.PI / 2; deck.scale.set(0.7, 1.22, 1); deck.position.y = -0.02; boat.add(deck);
+    const gun = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 6, 24), rim); gun.rotation.x = Math.PI / 2; gun.scale.set(0.72, 1.25, 1); boat.add(gun);
+    const balloon = new THREE.Mesh(new THREE.SphereGeometry(1.15, 20, 16), TM('#FF7A59', { roughness: 0.5 })); balloon.scale.y = 1.12; balloon.position.y = 3.1; boat.add(balloon);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(1.12, 0.09, 8, 28), rim); band.rotation.x = Math.PI / 2; band.position.y = 3.1; boat.add(band);
+    const knot = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.3, 8), TM('#E8552F')); knot.position.y = 1.75; boat.add(knot);
+    for (const [x, z] of [[-0.5, -0.8], [0.5, -0.8], [-0.5, 0.8], [0.5, 0.8]]) {
+      const a = new THREE.Vector3(x, 0.02, z), b = new THREE.Vector3(x * 0.55, 2.15, z * 0.45), rope = TCYL(0.014, 0.014, a.distanceTo(b), 4, rim);
+      rope.position.copy(a).add(b).multiplyScalar(0.5); rope.quaternion.setFromUnitVectors(up, b.clone().sub(a).normalize()); boat.add(rope);
+    }
+    boat.position.set(PW / 2 + 1.05, 0.2, shoreZ + 3.1); d.add(boat);
+    group.add(d); town.boat = { g: boat, y: 0.2 };
+  }
+  scene.add(group); town.group = group;
+}
+function homeAt(x, y) {
+  if (!town.group || !town.group.visible) return null;
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(town.taps, true)[0];
+  if (!hit) return null;
+  let o = hit.object;
+  while (o && !o.userData.homeId) o = o.parent;
+  return o ? town.homes.get(o.userData.homeId) : null;
+}
+// tap a home: it gives a little hop, and its bud tells you whose it is
+function tapHome(u) {
+  const bud = buds.find((b) => b.data.id === u.id);
+  u.bounce = 1; S.play('pop', { gain: 0.6, rate: 0.9 });
+  if (!bud) return;
+  cam.follow = bud; cam.followUntil = T + 5; camGoal.dist = Math.max(9, R * 0.6);
+  bud.syv -= 0.1; bud.happyUntil = T + 1.2; bud.lookCameraUntil = T + 2.5;
+  if (bud.state === 'act') endActivity(bud, 1.6);
+  say(bud, bud.data.isMe ? pick(['that’s my place!', 'home sweet home!', 'we live there!']) : pick(['that’s my house!', 'you found my place!', 'come visit anytime!']), 1800);
+  openCard(bud);
+}
+// the spot outside a bud's front door
+function homeFront(id) {
+  const h = TOWN && TOWN.homes.find((x) => x.id === id);
+  return h ? { x: h.lane.x0, z: h.lane.z0 } : null;
+}
+function townTick(dt) {
+  if (!town.group) return;
+  for (const l of town.lit) l.mat.emissiveIntensity = l.day + (l.night - l.day) * NIGHT;
+  if (town.boat) { const b = town.boat; b.g.position.y = b.y + Math.sin(T * 1.1) * 0.12; b.g.rotation.z = Math.sin(T * 0.8) * 0.04; b.g.rotation.x = Math.sin(T * 0.6 + 1) * 0.03; }
+  for (const u of town.homes.values()) {
+    if (!u.bounce) continue;
+    u.bounce = Math.max(0, u.bounce - dt * 2.2);
+    const k = Math.sin((1 - u.bounce) * Math.PI * 3) * u.bounce * 0.12;
+    u.group.scale.set(u.scale * (1 - k * 0.5), u.scale * (1 + k), u.scale * (1 - k * 0.5));
+  }
 }
 
 /* ---------------- the sky follows your clock; Halloween comes and goes on its own ---------------- */
@@ -715,7 +1089,7 @@ function buildSkyAndSeason() {
   // a campfire near the middle: just a fire pit by day, lit at night, and buds gather round
   let spot = { x: 0, z: 0 };
   const fireR = seeded('campfire');
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 40 && !TOWN; i++) {   // (with the town on, the campfire is the middle of the square)
     const a = fireR() * Math.PI * 2, r = fireR() * R * 0.3, p = { x: Math.cos(a) * r, z: Math.sin(a) * r };
     if (obstacles.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + 3)) { spot = p; break; }
   }
@@ -1230,6 +1604,7 @@ async function makeBud(data) {
   const { geom, face } = buildMesh(b);
   const img = await loadImage(data.paint);
   const s = BUD_SIZE / Math.max(b.w, b.h);
+  if (TOWN) colorHome(data.id, img);
 
   const paintTex = img ? new THREE.Texture(img) : null;
   if (paintTex) { paintTex.encoding = THREE.sRGBEncoding; paintTex.anisotropy = 4; paintTex.needsUpdate = true; }
@@ -1934,7 +2309,7 @@ function buildFriendTree(list, lastVisit, me) {
   friendships = list;
   const n = list.length, grow = 1 + Math.min(n, 40) / 40, s = 1.15 * grow;
   const fire = skyBits.fire || { x: 0, z: 0 }, rr = seeded('friendtree');
-  let spot = null;
+  let spot = TOWN ? { x: TOWN.sites.tree.x, z: TOWN.sites.tree.z } : null;
   for (let i = 0; i < 60 && !spot; i++) {
     const a = rr() * Math.PI * 2, d = 4.5 + rr() * 2, p = { x: fire.x + Math.cos(a) * d, z: fire.z + Math.sin(a) * d };
     if (Math.hypot(p.x, p.z) < WALK_R * 0.8 && obstacles.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + 1.6 * s)) spot = p;
@@ -2088,6 +2463,7 @@ function clickAt(x, y) {
   if (game) { gameTap(x, y); return; }
   const bud = budAt(x, y);
   if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return; }
+  if (!bud && !composing) { const h = homeAt(x, y); if (h) { tapHome(h); return; } }
   if (!bud && !composing) { const t = treeAt(x, y); if (t) { openTreeCard(t.heart); return; } }
   if (!bud && !composing) { const w = pondAt(x, y); if (w) { tapPond(w); return; } }
   if (!bud) { if (!composing) closeCard(); return; }
@@ -2926,6 +3302,7 @@ async function enterGame(id) {
   try { v = await api('GET', '/api/game?id=' + encodeURIComponent(id)); }
   catch (e) { const m = myBud(); if (m) say(m, 'hmm, I can’t find that game', 2200); return; }
   if (ftree.group) ftree.group.visible = false;   // keep the Peekaboo board clear
+  if (town.group) town.group.visible = false;
   game = { id, v, board: 'mine', picks: [], yell: false, busy: false, msg: '', hover: null, group: new THREE.Group(), tiles: new Map(), marks: [], key: viewKey(v) };
   game.board = defaultBoard(v);
   scene.add(game.group);
@@ -2956,6 +3333,7 @@ function gameDist() {
 function exitGame() {
   if (!game) return;
   if (ftree.group) ftree.group.visible = true;
+  if (town.group) town.group.visible = true;
   clearInterval(game.poll);
   clearTimeout(game.flip);
   throws.length = 0;
@@ -3516,8 +3894,8 @@ function placeLabels() {
 // water. Tap the water for a ripple (the fish dart off); buds sometimes wander over to watch the fish.
 const pond = { group: null, x: 0, z: 0, r: 0, fish: [], ripples: [], nextRipple: 0, edge: null };
 function buildPond() {
-  const PR = clamp(R * 0.13, 1.5, 2.6), pr = seeded('koi pond');
-  let spot = null;
+  const PR = TOWN ? TOWN.sites.pond.r : clamp(R * 0.13, 1.5, 2.6), pr = seeded('koi pond');
+  let spot = TOWN ? { x: TOWN.sites.pond.x, z: TOWN.sites.pond.z } : null;
   for (let i = 0; i < 80 && !spot; i++) {
     const a = pr() * Math.PI * 2, r = R * (0.3 + pr() * 0.32), p = { x: Math.cos(a) * r, z: Math.sin(a) * r };
     if (obstacles.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + PR + 1.4)) spot = p;
@@ -3645,6 +4023,7 @@ function frame(now) {
   gameTick(dt);
   pondTick(dt);
   updateSky(dt);
+  townTick(dt);
   updateFriendTree();
   for (const c of clouds) {
     c.a += c.sp * dt;
@@ -3692,7 +4071,7 @@ function showCenter(title, text, linkText, href = '/') {
   resize();
   let world;
   try {
-    const res = await fetch('/api/world', { credentials: 'same-origin', cache: 'no-store' });
+    const res = await fetch('/api/world' + (TOWN_PREVIEW ? '?town=1' : ''), { credentials: 'same-origin', cache: 'no-store' });
     if (res.status === 401) { location.replace('/'); return; }
     if (!res.ok) throw new Error(String(res.status));
     world = await res.json();
@@ -3706,8 +4085,10 @@ function showCenter(title, text, linkText, href = '/') {
   document.getElementById('whoAvatar').src = world.me.avatarUrl;
   document.getElementById('who').hidden = false;
 
+  TOWN = world.town || null;
   buildIsland(world.buds.length);
   buildSkyAndSeason();
+  buildTown();
   updateSky(0);
   const n = world.buds.length;
   document.getElementById('titleSub').textContent = (HALLOWEEN ? 'Happy Halloween! ' : '') + (n === 1 ? 'Just one bud here so far.' : `${n} buds live here.`);
@@ -3768,7 +4149,8 @@ function showCenter(title, text, linkText, href = '/') {
   // everyone else starts somewhere on the island
   for (const bud of buds) {
     if (DROP && bud === mine) continue;
-    const p = freeSpot(2.4); bud.x = p.x; bud.z = p.z; bud.placed = true;
+    const door = TOWN && Math.random() < 0.6 ? homeFront(bud.data.id) : null;
+    const p = door ? freeSpot(1.6, door, 2.2) : freeSpot(2.4); bud.x = p.x; bud.z = p.z; bud.placed = true;
   }
 
   if (!buds.length) {

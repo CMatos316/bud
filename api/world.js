@@ -13,6 +13,7 @@ import { counts as doodleCounts } from '../lib/doodlemail.js';
 import { myGames as myPults } from '../lib/bpgame.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
+import { growTown, townForWorld } from '../lib/town.js';
 import { waitUntil } from '@vercel/functions';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -98,6 +99,17 @@ export async function GET(request) {
       };
     }).filter((b) => b.r.length === 64);
     const budNames = new Map(list.map((b) => [b.id, b.nickname || b.trueName]));
+    // The town, as a preview only (/world?town=1): worked out fresh from who lives here, in the order they
+    // arrived. Nothing is saved yet, and everyone here now counts as a founder.
+    let town = null;
+    if (new URL(request.url).searchParams.get('town') === '1') {
+      try {
+        const born = new Map(snap.docs.map((d) => [d.id, d.get('createdAt')?.toMillis() ?? 0]));
+        const people = list.map((b) => ({ id: b.id, at: born.get(b.id) || 0, by: null, founder: true }))
+          .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
+        town = townForWorld(growTown(people));
+      } catch (err) { console.error('town preview failed:', err); }
+    }
     inbox.sort((a, b) => a.at - b.at);
 
     // doodles friends sent you: how many are in your bud's inventory, and how many you haven't looked at
@@ -147,6 +159,7 @@ export async function GET(request) {
         found: granted?.found || [],
       },
       buds: list,
+      town,
       // the friendship tree: which buds are friends (as bud ids; the island shows bud names), newest last
       friendships: allFriends.docs.map((f) => ({ a: f.get('members')[0], b: f.get('members')[1], since: f.get('since')?.toMillis() ?? 0 }))
         .filter((f) => budNames.has(f.a) && budNames.has(f.b)).sort((x, y) => x.since - y.since),
