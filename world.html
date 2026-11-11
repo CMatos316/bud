@@ -687,7 +687,9 @@ function townBlocked(x, z, pad = 0) {
   if (z > 0 && Math.abs(x) < TOWN.roadHalf + 0.6 + pad) return true;
   if (Math.hypot(x - s.pond.x, z - s.pond.z) < s.pond.r + 1.4 + pad || Math.hypot(x - s.tree.x, z - s.tree.z) < s.tree.r + 1.4 + pad) return true;
   for (const r of s.reserved) if (Math.hypot(x - r.x, z - r.z) < r.r + pad) return true;
-  for (const h of TOWN.homes) if (segDist(x, z, h.x, h.z, h.lane.x1, h.lane.z1) < 0.85 + pad) return true;
+  for (const r of [s.board, s.well]) if (Math.hypot(x - r.x, z - r.z) < r.r + 0.3 + pad) return true;
+  for (const h of TOWN.homes) { let ax = h.x, az = h.z; for (const [bx, bz] of h.lane.pts) { if (segDist(x, z, ax, az, bx, bz) < 0.85 + pad) return true; ax = bx; az = bz; } }
+  for (const sp of TOWN.spokes) for (let i = 0; i + 1 < sp.pts.length; i++) if (segDist(x, z, sp.pts[i][0], sp.pts[i][1], sp.pts[i + 1][0], sp.pts[i + 1][1]) < 0.85 + pad) return true;
   return false;
 }
 const nearHome = (x, z, pad) => !!TOWN && TOWN.homes.some((h) => Math.hypot(h.x - x, h.z - z) < TOWN.homeR + pad);
@@ -726,14 +728,14 @@ const STONE = '#CDBFA8', WOOD = '#9B6B43';
 const HOME_SHAPES = {
   // a cottage: sometimes its roof runs front to back, sometimes side to side
   cottage(g, r, u) {
-    const W = 2.0 + r() * 0.5, D = 1.75 + r() * 0.3, H = 1.35 + r() * 0.45, rise = 0.9 + r() * 0.5, F = D / 2, side = r() < 0.4;
+    const W = 1.95 + r() * 0.35, D = 1.75 + r() * 0.25, H = 1.35 + r() * 0.45, rise = 0.9 + r() * 0.5, F = D / 2, side = r() < 0.4;
     g.add(TBOX(W + 0.12, 0.2, D + 0.12, townMat(STONE), 0, 0.1, 0));
     g.add(TBOX(W, H, D, u.wall, 0, H / 2 + 0.1, 0));
-    const roof = side ? gableRoof(D, W, rise, 0.28, u.roof) : gableRoof(W, D, rise, 0.28, u.roof);
+    const roof = side ? gableRoof(D, W, rise, 0.2, u.roof) : gableRoof(W, D, rise, 0.2, u.roof);
     if (side) roof.rotation.y = Math.PI / 2;
     roof.position.y = H + 0.1; g.add(roof);
-    if (side) for (const s of [-1, 1]) { const w = gableWall(D * 0.84, rise * 0.8, u.wall); w.rotation.y = s * Math.PI / 2; w.position.set(s * (W / 2 + 0.285), H + 0.13, 0); g.add(w); }
-    else for (const s of [-1, 1]) { const w = gableWall(W * 0.84, rise * 0.8, u.wall); if (s < 0) w.rotation.y = Math.PI; w.position.set(0, H + 0.13, s * (F + 0.285)); g.add(w); }
+    if (side) for (const s of [-1, 1]) { const w = gableWall(D * 0.84, rise * 0.8, u.wall); w.rotation.y = s * Math.PI / 2; w.position.set(s * (W / 2 + 0.205), H + 0.13, 0); g.add(w); }
+    else for (const s of [-1, 1]) { const w = gableWall(W * 0.84, rise * 0.8, u.wall); if (s < 0) w.rotation.y = Math.PI; w.position.set(0, H + 0.13, s * (F + 0.205)); g.add(w); }
     if (r() < 0.6) g.add(TBOX(0.3, 0.8, 0.3, townMat(STONE), (r() < 0.5 ? -1 : 1) * W * 0.26, H + rise * 0.75, -D * 0.15));
     const dx = (r() < 0.5 ? -1 : 1) * W * 0.2;
     doorOn(g, dx, 0.1, F + 0.02, 0.62, 1.05, u.door, r() < 0.5);
@@ -742,9 +744,9 @@ const HOME_SHAPES = {
   },
   // a round hut with a pointed roof
   hut(g, r, u) {
-    const R0 = 1.0 + r() * 0.2, H = 1.25 + r() * 0.3, rh = 1.2 + r() * 0.7;
+    const R0 = 0.95 + r() * 0.13, H = 1.25 + r() * 0.3, rh = 1.2 + r() * 0.7;
     g.add(TCYL(R0, R0 * 1.05, H, 16, u.wall, 0, H / 2, 0));
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(R0 + 0.42, rh, 16), u.roof); roof.position.y = H + rh / 2 - 0.04; g.add(roof);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(R0 + 0.3, rh, 16), u.roof); roof.position.y = H + rh / 2 - 0.04; g.add(roof);
     const top = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), townMat('#FFC93C', { metalness: 0.5, roughness: 0.4 })); top.position.y = H + rh; g.add(top);
     doorOn(g, 0, 0, R0 - 0.01, 0.6, 0.95, u.door, true);
     for (const a of [-1.05, 1.05]) { const w = roundWindow(0.2); w.rotation.y = a; w.position.set(Math.sin(a) * (R0 + 0.02), H * 0.62, Math.cos(a) * (R0 + 0.02)); g.add(w); }
@@ -768,16 +770,16 @@ const HOME_SHAPES = {
   },
   // an A-frame cabin: the roof comes all the way down
   aframe(g, r, u) {
-    const W = 2.35 + r() * 0.3, rise = 2.3 + r() * 0.5, D = 1.85 + r() * 0.3, F = D / 2;
+    const W = 2.15 + r() * 0.25, rise = 2.3 + r() * 0.5, D = 1.8 + r() * 0.2, F = D / 2;
     const roof = gableRoof(W, D, rise, 0.1, u.roof); roof.position.y = 0.06; g.add(roof);
     for (const s of [-1, 1]) { const w = gableWall(W * 0.78, rise * 0.8, u.wall); w.position.set(0, 0.08, s * (F + 0.105)); if (s < 0) w.rotation.y = Math.PI; g.add(w); }
-    g.add(TBOX(W * 0.6, 0.1, 0.6, townMat(WOOD), 0, 0.05, F + 0.4));
+    g.add(TBOX(W * 0.6, 0.1, 0.36, townMat(WOOD), 0, 0.05, F + 0.28));
     doorOn(g, 0, 0.1, F + 0.12, 0.58, 1.0, u.door, false);
     const w = roundWindow(0.2); w.position.set(0, 1.5, F + 0.115); g.add(w);
   },
   // a burrow: a round door in a grassy hill
   burrow(g, r, u) {
-    const Rr = 1.22 + r() * 0.15;
+    const Rr = 1.2 + r() * 0.15;
     const dome = new THREE.Mesh(new THREE.SphereGeometry(Rr, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), townMat('#8FD08A')); dome.scale.y = 0.82; g.add(dome);
     const face = TCYL(0.8, 0.8, 0.14, 22, u.wall, 0, 0.6, Rr * 0.8); face.rotation.x = Math.PI / 2; g.add(face);
     const door = new THREE.Mesh(new THREE.CircleGeometry(0.47, 22), u.door); door.position.set(0, 0.6, Rr * 0.8 + 0.075); g.add(door);
@@ -791,20 +793,20 @@ const HOME_SHAPES = {
   // a cabin on stilts, with a ladder
   stilt(g, r, u) {
     const W = 1.5 + r() * 0.2, D = 1.4, H = 1.1 + r() * 0.2, lift = 1.1 + r() * 0.3, rise = 0.75 + r() * 0.3, F = D / 2, wood = townMat(WOOD);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(TCYL(0.07, 0.08, lift, 7, wood, sx * (W / 2 + 0.2), lift / 2, sz * (D / 2 + 0.2)));
-    g.add(TBOX(W + 0.75, 0.1, D + 0.8, wood, 0, lift, 0.12));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(TCYL(0.07, 0.08, lift, 7, wood, sx * (W / 2 + 0.14), lift / 2, sz * (D / 2 + 0.16)));
+    g.add(TBOX(W + 0.55, 0.1, D + 0.7, wood, 0, lift, 0.1));
     g.add(TBOX(W, H, D, u.wall, 0, lift + 0.05 + H / 2, -0.05));
     const roof = gableRoof(W, D, rise, 0.24, u.roof); roof.position.set(0, lift + 0.05 + H, -0.05); g.add(roof);
     const gw = gableWall(W * 0.84, rise * 0.8, u.wall); gw.position.set(0, lift + 0.08 + H, F - 0.05 + 0.245); g.add(gw);
     doorOn(g, -W * 0.2, lift + 0.05, F - 0.03, 0.5, 0.85, u.door, false);
     const w = windowFor(r, 0.85); w.position.set(W * 0.24, lift + 0.05 + H * 0.6, F - 0.03); g.add(w);
-    for (const sx of [-1, 1]) g.add(TBOX(0.05, 0.4, 0.05, wood, sx * (W / 2 + 0.33), lift + 0.25, F + 0.47));
-    g.add(TBOX(W * 0.42, 0.05, 0.05, wood, W * 0.33, lift + 0.44, F + 0.47));
+    for (const sx of [-1, 1]) g.add(TBOX(0.05, 0.4, 0.05, wood, sx * (W / 2 + 0.23), lift + 0.25, F + 0.4));
+    g.add(TBOX(W * 0.42, 0.05, 0.05, wood, W * 0.3, lift + 0.44, F + 0.4));
     // the ladder leans on the front of the deck
-    const run = 0.55, L = Math.hypot(lift, run), lad = new THREE.Group();
+    const run = 0.42, L = Math.hypot(lift, run), lad = new THREE.Group();
     for (const sx of [-1, 1]) lad.add(TBOX(0.05, L, 0.05, wood, sx * 0.2, 0, 0));
     for (let k = 1; k <= 4; k++) lad.add(TBOX(0.4, 0.045, 0.05, wood, 0, -L / 2 + k * L / 5, 0));
-    lad.rotation.x = Math.atan2(run, lift); lad.position.set(-W * 0.2, lift / 2, F + 0.5 + run / 2); g.add(lad);
+    lad.rotation.x = Math.atan2(run, lift); lad.position.set(-W * 0.2, lift / 2, F + 0.38 + run / 2); g.add(lad);
   },
   // a tent: where a newcomer stays for their first few days, before their home is built
   tent(g, r, u) {
@@ -838,12 +840,12 @@ function makeHome(h) {
   HOME_SHAPES[kind](g, r, u);
   // out front: a mailbox in the roof's color, a few flowers either side of the path, maybe a bush
   const side = r() < 0.5 ? -1 : 1;
-  g.add(TBOX(0.07, 0.75, 0.07, townMat(WOOD), side * 1.05, 0.375, 1.45));
-  g.add(TBOX(0.28, 0.22, 0.36, u.roof, side * 1.05, 0.84, 1.45));
+  g.add(TBOX(0.07, 0.75, 0.07, townMat(WOOD), side * 0.95, 0.375, 1.2));
+  g.add(TBOX(0.28, 0.22, 0.36, u.roof, side * 0.95, 0.84, 1.2));
   const nf = 3 + Math.floor(r() * 4);
-  for (let k = 0; k < nf; k++) { const fx = (0.4 + r() * 0.75) * (r() < 0.5 ? -1 : 1); g.add(flower(r, fx, 0.1, 1.2 + r() * 0.3)); }
-  if (r() < 0.45) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8), townMat('#6BBF7A')); b.scale.y = 0.8; b.position.set(-side * 1.2, 0.26, 0.85); g.add(b); }
-  u.scale = 1 + r() * 0.16;
+  for (let k = 0; k < nf; k++) { const fx = (0.4 + r() * 0.5) * (r() < 0.5 ? -1 : 1); g.add(flower(r, fx, 0.1, 1.05 + r() * 0.25)); }
+  if (r() < 0.45) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8), townMat('#6BBF7A')); b.scale.y = 0.8; b.position.set(-side * 0.98, 0.26, 0.7); g.add(b); }
+  u.scale = 0.95 + r() * 0.1;
   g.scale.setScalar(u.scale);
   g.position.set(h.x, 0, h.z); g.rotation.y = h.rot;
   g.userData.homeId = h.id;
@@ -889,18 +891,27 @@ function buildTown() {
   const shoreZ = R * islandEdge(-Math.PI / 2, ISLAND_SEED);   // the south shore, where the dock is
   // lanes and the road are soft blobs of worn earth; busy ones get flat stones too
   const dirtPts = [], stonePts = [];
-  const run = (ax, az, bx, bz, width, key) => {
-    const len = Math.hypot(bx - ax, bz - az) || 1, n = Math.ceil(len / (0.3 * width)), nx = -(bz - az) / len, nz = (bx - ax) / len, amp = Math.min(0.45, len * 0.08);
+  const run = (ax, az, bx, bz, width, key, owner = null) => {
+    const len = Math.hypot(bx - ax, bz - az) || 1, n = Math.ceil(len / (0.3 * width)), nx = -(bz - az) / len, nz = (bx - ax) / len, amp = Math.min(0.16, len * 0.04);
     for (let k = 0; k <= n; k++) {
       const t = k / n, w = Math.sin(t * Math.PI) * amp * Math.sin(t * len * 0.9 + key);
-      dirtPts.push([ax + (bx - ax) * t + nx * w, az + (bz - az) * t + nz * w, width]);
+      dirtPts.push([ax + (bx - ax) * t + nx * w, az + (bz - az) * t + nz * w, width, owner]);
     }
   };
   for (const h of homes) {
-    const width = h.use >= 10 ? 1.15 : h.use >= 3 ? 0.9 : 0.6;
-    const sx = h.x + Math.sin(h.rot) * 1.0, sz = h.z + Math.cos(h.rot) * 1.0;
-    run(sx, sz, h.lane.x1, h.lane.z1, width, h.x * 1.7 + h.z);
-    if (h.use >= 10) { const len = Math.hypot(h.lane.x1 - sx, h.lane.z1 - sz); for (let d = 0.5; d < len; d += 0.85) stonePts.push([sx + (h.lane.x1 - sx) * d / len, sz + (h.lane.z1 - sz) * d / len, 1]); }
+    const width = h.use >= 10 ? 1 : h.use >= 3 ? 0.85 : 0.6;
+    let ax = h.x + Math.sin(h.rot) * 1.0, az = h.z + Math.cos(h.rot) * 1.0;   // from the front door
+    h.lane.pts.forEach(([bx, bz], k) => {
+      run(ax, az, bx, bz, width, h.x * 1.7 + h.z + k, h.id);
+      if (h.use >= 10) { const len = Math.hypot(bx - ax, bz - az); for (let d = 0.5; d < len; d += 0.85) stonePts.push([ax + (bx - ax) * d / len, az + (bz - az) * d / len, 1]); }
+      ax = bx; az = bz;
+    });
+  }
+  // the spokes: lanes that wander out from the square, drawn as far as someone uses them
+  for (const sp of TOWN.spokes) for (let i = 0; i + 1 < sp.pts.length; i++) {
+    const [ax, az] = sp.pts[i], [bx, bz] = sp.pts[i + 1], use = sp.use[i], width = use >= 10 ? 1 : use >= 3 ? 0.85 : 0.6;
+    run(ax, az, bx, bz, width, i * 1.9 + ax);
+    if (use >= 10) { const len = Math.hypot(bx - ax, bz - az); for (let d = 0.3; d < len; d += 0.85) stonePts.push([ax + (bx - ax) * d / len, az + (bz - az) * d / len, 1]); }
   }
   for (const s of [-1, 1]) run(s * RH * 0.45, SQ - 0.4, s * RH * 0.45, shoreZ - 0.5, 1.5, s * 3.1);
   for (let z = SQ + 0.4, k = 0; z < shoreZ - 0.6; z += 0.8, k++) stonePts.push([(k % 2 ? 0.34 : -0.34) + Math.sin(k * 2.3) * 0.12, z, 1.15]);
@@ -916,13 +927,9 @@ function buildTown() {
   // the campfire square: worn ground inside the ring of stones
   const ground = new THREE.Mesh(new THREE.CircleGeometry(SQ + 0.25, 40), TM('#C4A772', { roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 }));
   ground.rotation.x = -Math.PI / 2; ground.position.y = 0.012; group.add(ground);
-  // a notice board (and a well once ten buds live here) on the edge of the square, where no lane comes in
-  const arrivals = [Math.PI / 2, ...homes.filter((h) => h.up === 'square').map((h) => Math.atan2(h.lane.z1, h.lane.x1))];
-  const gapAt = (a) => Math.min(...arrivals.map((b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))));
-  const free = Array.from({ length: 24 }, (_, i) => i / 24 * Math.PI * 2).sort((a, b) => gapAt(b) - gapAt(a));
-  const edgeSpot = (a) => ({ x: Math.cos(a) * (SQ + 1.1), z: Math.sin(a) * (SQ + 1.1) });
+  // the notice board, and a well once ten buds live here, either side of the road where it meets the square
   {
-    const a = free[0], p = edgeSpot(a), b = new THREE.Group(), wood = townMat(WOOD);
+    const p = TOWN.sites.board, b = new THREE.Group(), wood = townMat(WOOD);
     b.add(TBOX(0.1, 1.5, 0.1, wood, -0.6, 0.75, 0)); b.add(TBOX(0.1, 1.5, 0.1, wood, 0.6, 0.75, 0)); b.add(TBOX(1.5, 0.9, 0.08, townMat('#C9965F'), 0, 1.2, 0));
     b.add(TBOX(1.66, 0.1, 0.3, townMat('#C96A5A'), 0, 1.72, 0));
     [['#FFE98A', -0.42, 1.3], ['#BFDFFF', 0.05, 1.18], ['#FFC9DE', 0.44, 1.32], ['#CDEFCF', -0.2, 0.98]].forEach(([c, x, y]) => b.add(TBOX(0.3, 0.3, 0.02, townMat(c), x, y, 0.05)));
@@ -930,7 +937,7 @@ function buildTown() {
     town.board = { x: p.x, z: p.z };
   }
   if (homes.length >= 10) {
-    const a = free.find((f) => Math.abs(Math.atan2(Math.sin(f - free[0]), Math.cos(f - free[0]))) > 0.9) ?? free[1], p = edgeSpot(a), w = new THREE.Group(), wood = townMat(WOOD);
+    const p = TOWN.sites.well, w = new THREE.Group(), wood = townMat(WOOD);
     w.add(TCYL(0.62, 0.66, 0.6, 14, townMat(STONE, { flatShading: true }), 0, 0.3, 0));
     const water = new THREE.Mesh(new THREE.CircleGeometry(0.5, 14), TM('#6CC6D6', { roughness: 0.15 })); water.rotation.x = -Math.PI / 2; water.position.y = 0.5; w.add(water);
     for (const s of [-1, 1]) w.add(TBOX(0.09, 1.5, 0.09, wood, s * 0.6, 0.75, 0));
@@ -939,15 +946,23 @@ function buildTown() {
     w.add(TBOX(0.22, 0.24, 0.22, wood, 0, 0.95, 0));
     w.position.set(p.x, 0, p.z); w.rotation.y = Math.atan2(-p.x, -p.z); group.add(w); obstacles.push({ x: p.x, z: p.z, r: 0.85 });
   }
+  const laneEnd = (h) => h.lane.pts[h.lane.pts.length - 1];
   // the homes
   for (const h of homes) group.add(makeHome(h));
   // lamps down the road, and where a busy lane meets the network
   let lamps = 0;
   for (let z = SQ + 2.2, k = 0; z < shoreZ - 1.5; z += 5.2, k++) { group.add(townLamp((k % 2 ? 1 : -1) * (RH + 0.45), z)); lamps++; }
+  for (const sp of TOWN.spokes) for (let i = 1; i + 1 < sp.pts.length; i += 2) {
+    if (sp.use[i] < 6 || lamps >= 26) continue;
+    const [ax, az] = sp.pts[i], [bx, bz] = sp.pts[i + 1], len = Math.hypot(bx - ax, bz - az) || 1, side = i % 4 === 1 ? 1 : -1, x = ax - (bz - az) / len * 0.95 * side, z = az + (bx - ax) / len * 0.95 * side;
+    if (nearHome(x, z, 0.5) || townBlocked(x, z, -0.15)) continue;
+    group.add(townLamp(x, z)); lamps++;
+  }
   for (const h of homes) {
     if (h.use < 8 || lamps >= 26) continue;
-    const dx = h.lane.x1 - h.lane.x0, dz = h.lane.z1 - h.lane.z0, len = Math.hypot(dx, dz) || 1, x = h.lane.x1 - dz / len * 0.95, z = h.lane.z1 + dx / len * 0.95;
-    if (nearHome(x, z, 0.4) || Math.hypot(x, z) < SQ + 0.6 || (z > 0 && Math.abs(x) < RH + 0.3)) continue;
+    const [ex, ez] = laneEnd(h), [fx, fz] = h.lane.pts.length > 1 ? h.lane.pts[h.lane.pts.length - 2] : [h.lane.x0, h.lane.z0];
+    const dx = ex - fx, dz = ez - fz, len = Math.hypot(dx, dz) || 1, x = ex - dx / len * 1.2 - dz / len * 0.95, z = ez - dz / len * 1.2 + dx / len * 0.95;
+    if (nearHome(x, z, 0.5) || townBlocked(x, z, -0.15)) continue;   // beside the lane, never on one
     group.add(townLamp(x, z)); lamps++;
   }
   // fruit trees and bushes in the gaps
@@ -987,7 +1002,7 @@ function buildTown() {
     boat.position.set(PW / 2 + 1.05, 0.2, shoreZ + 3.1); d.add(boat);
     group.add(d); town.boat = { g: boat, y: 0.2 };
   }
-  scene.add(group); town.group = group;
+  scene.add(group); town.group = group; town.dirt = dirtPts;
 }
 function homeAt(x, y) {
   if (!town.group || !town.group.visible) return null;
