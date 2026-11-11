@@ -13,7 +13,7 @@ import { counts as doodleCounts } from '../lib/doodlemail.js';
 import { myGames as myPults } from '../lib/bpgame.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
-import { growTown, townForWorld } from '../lib/town.js';
+import { townFor } from '../lib/townStore.js';
 import { waitUntil } from '@vercel/functions';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -99,16 +99,15 @@ export async function GET(request) {
       };
     }).filter((b) => b.r.length === 64);
     const budNames = new Map(list.map((b) => [b.id, b.nickname || b.trueName]));
-    // The town, as a preview only (/world?town=1): worked out fresh from who lives here, in the order they
-    // arrived. Nothing is saved yet, and everyone here now counts as a founder.
+    // The town: every bud's home and the lanes between them (lib/town.js), saved so homes never move.
+    // If it can't be worked out the island simply shows without it. TOWN=off turns it off for everyone;
+    // /world?town=0 hides it for one visit.
     let town = null;
-    if (new URL(request.url).searchParams.get('town') === '1') {
+    if (process.env.TOWN !== 'off' && new URL(request.url).searchParams.get('town') !== '0') {
       try {
         const born = new Map(snap.docs.map((d) => [d.id, d.get('createdAt')?.toMillis() ?? 0]));
-        const people = list.map((b) => ({ id: b.id, at: born.get(b.id) || 0, by: null, founder: true }))
-          .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
-        town = townForWorld(growTown(people));
-      } catch (err) { console.error('town preview failed:', err); }
+        town = await townFor(list.map((b) => ({ id: b.id, at: born.get(b.id) || 0 })));
+      } catch (err) { console.error('town failed:', err); }
     }
     inbox.sort((a, b) => a.at - b.at);
 

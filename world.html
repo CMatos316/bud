@@ -549,7 +549,7 @@ function islandEdge(a, seed) {
 
 function buildIsland(nBuds) {
   R = clamp(9 + Math.sqrt(nBuds) * 2.2, 11, 30);
-  if (TOWN) { R = Math.max(R, TOWN.R); for (const h of TOWN.homes) obstacles.push({ x: h.x, z: h.z, r: TOWN.homeR }); }
+  if (TOWN) { R = Math.max(R, TOWN.R); for (const h of TOWN.homes) if (!h.gone) obstacles.push({ x: h.x, z: h.z, r: TOWN.homeR, town: true }); }
   WALK_R = R * 0.78;
   const seed = ISLAND_SEED;
   const group = new THREE.Group();
@@ -656,11 +656,12 @@ function buildIsland(nBuds) {
   scene.add(group); islandDecor = group;
 }
 
-/* ---------------- the town (a preview for now: /world?town=1) ---------------- */
-// Where every home goes is worked out on the server (lib/town.js). The island is round, so there are no rows
-// and no grid: the campfire square in the middle, one road down to the dock, and lanes branching off it.
+/* ---------------- the town ---------------- */
+// Where every home goes is worked out on the server (lib/town.js) and saved, so homes never move. The island
+// is round, so there are no rows and no grid: the campfire square is the hub, lanes wander out from it like
+// the spokes of a wheel, one road runs down to the dock, and each home's own lane branches off the nearest.
 // No two homes are alike: each bud's home has its own shape and takes its colors from the bud's paint.
-const TOWN_PREVIEW = params.get('town') === '1';
+// (/world?town=0 shows the island without it.)
 let TOWN = null;   // the plan from the server, when the town is on
 const town = { group: null, homes: new Map(), taps: [], lit: [], boat: null };
 const TM = (hex, o = {}) => new THREE.MeshStandardMaterial({ color: toLinear(hex), roughness: 0.85, ...o });
@@ -692,7 +693,7 @@ function townBlocked(x, z, pad = 0) {
   for (const sp of TOWN.spokes) for (let i = 0; i + 1 < sp.pts.length; i++) if (segDist(x, z, sp.pts[i][0], sp.pts[i][1], sp.pts[i + 1][0], sp.pts[i + 1][1]) < 0.85 + pad) return true;
   return false;
 }
-const nearHome = (x, z, pad) => !!TOWN && TOWN.homes.some((h) => Math.hypot(h.x - x, h.z - z) < TOWN.homeR + pad);
+const nearHome = (x, z, pad) => !!TOWN && TOWN.homes.some((h) => !h.gone && Math.hypot(h.x - x, h.z - z) < TOWN.homeR + pad);
 
 // ---- the parts homes are made of (the front of a home faces +z) ----
 function gableRoof(w, d, rise, over, mat) {   // the ridge runs front to back
@@ -887,7 +888,7 @@ function townTree(seed) {
 
 function buildTown() {
   if (!TOWN) return;
-  const group = new THREE.Group(), homes = TOWN.homes, SQ = TOWN.squareR, RH = TOWN.roadHalf;
+  const group = new THREE.Group(), homes = TOWN.homes, SQ = TOWN.squareR, RH = TOWN.roadHalf, solidFrom = obstacles.length;
   const shoreZ = R * islandEdge(-Math.PI / 2, ISLAND_SEED);   // the south shore, where the dock is
   // lanes and the road are soft blobs of worn earth; busy ones get flat stones too
   const dirtPts = [], stonePts = [];
@@ -947,8 +948,8 @@ function buildTown() {
     w.position.set(p.x, 0, p.z); w.rotation.y = Math.atan2(-p.x, -p.z); group.add(w); obstacles.push({ x: p.x, z: p.z, r: 0.85 });
   }
   const laneEnd = (h) => h.lane.pts[h.lane.pts.length - 1];
-  // the homes
-  for (const h of homes) group.add(makeHome(h));
+  // the homes (a bud that has left keeps its lot and its lane, but there's no house on it)
+  for (const h of homes) if (!h.gone) group.add(makeHome(h));
   // lamps down the road, and where a busy lane meets the network
   let lamps = 0;
   for (let z = SQ + 2.2, k = 0; z < shoreZ - 1.5; z += 5.2, k++) { group.add(townLamp((k % 2 ? 1 : -1) * (RH + 0.45), z)); lamps++; }
@@ -1002,6 +1003,7 @@ function buildTown() {
     boat.position.set(PW / 2 + 1.05, 0.2, shoreZ + 3.1); d.add(boat);
     group.add(d); town.boat = { g: boat, y: 0.2 };
   }
+  for (let i = solidFrom; i < obstacles.length; i++) obstacles[i].town = true;
   scene.add(group); town.group = group; town.dirt = dirtPts;
 }
 function homeAt(x, y) {
@@ -3074,12 +3076,20 @@ function lineUp() {
   let cx = 0, cz = 0;
   for (const b of picked) { cx += b.x; cz += b.z; }
   cx /= picked.length; cz /= picked.length;
-  const lim = WALK_R * 0.5, cr = Math.hypot(cx, cz);
+  const lim = WALK_R * (TOWN ? 0.85 : 0.5), cr = Math.hypot(cx, cz);
   if (cr > lim) { cx *= lim / cr; cz *= lim / cr; }
-  // keep the photo spot clear of trees and rocks
-  for (let tries = 0; tries < 30 && obstacles.some((o) => Math.hypot(o.x - cx, o.z - cz) < o.r + 3.2); tries++) {
-    const a = Math.random() * Math.PI * 2, r = Math.random() * lim;
-    cx = Math.cos(a) * r; cz = Math.sin(a) * r;
+  // keep the photo spot clear of trees, rocks and homes (in the town that means looking further out)
+  const crowded = (x, z) => obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 3.2);
+  if (crowded(cx, cz)) {
+    let best = null;
+    for (let tries = 0; tries < (TOWN ? 240 : 30); tries++) {
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * lim, x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (crowded(x, z)) continue;
+      const d = Math.hypot(x - cx, z - cz);
+      if (!best || d < best.d) best = { x, z, d };
+      if (!TOWN) break;
+    }
+    if (best) { cx = best.x; cz = best.z; }
   }
   const yaw = cam.yaw, f = { x: Math.sin(yaw), z: Math.cos(yaw) }, rt = { x: Math.cos(yaw), z: -Math.sin(yaw) };
   const n = picked.length, rows = n > 4 ? [Math.ceil(n / 2), Math.floor(n / 2)] : [n];
@@ -3317,7 +3327,11 @@ async function enterGame(id) {
   try { v = await api('GET', '/api/game?id=' + encodeURIComponent(id)); }
   catch (e) { const m = myBud(); if (m) say(m, 'hmm, I can’t find that game', 2200); return; }
   if (ftree.group) ftree.group.visible = false;   // keep the Peekaboo board clear
-  if (town.group) town.group.visible = false;
+  if (town.group) {   // the town steps aside too: out of sight, and nothing of it left to bump into
+    town.group.visible = false;
+    town.solid = obstacles.filter((o) => o.town);
+    for (let i = obstacles.length - 1; i >= 0; i--) if (obstacles[i].town) obstacles.splice(i, 1);
+  }
   game = { id, v, board: 'mine', picks: [], yell: false, busy: false, msg: '', hover: null, group: new THREE.Group(), tiles: new Map(), marks: [], key: viewKey(v) };
   game.board = defaultBoard(v);
   scene.add(game.group);
@@ -3348,7 +3362,7 @@ function gameDist() {
 function exitGame() {
   if (!game) return;
   if (ftree.group) ftree.group.visible = true;
-  if (town.group) town.group.visible = true;
+  if (town.group) { town.group.visible = true; obstacles.push(...(town.solid || [])); town.solid = []; }
   clearInterval(game.poll);
   clearTimeout(game.flip);
   throws.length = 0;
@@ -4086,7 +4100,7 @@ function showCenter(title, text, linkText, href = '/') {
   resize();
   let world;
   try {
-    const res = await fetch('/api/world' + (TOWN_PREVIEW ? '?town=1' : ''), { credentials: 'same-origin', cache: 'no-store' });
+    const res = await fetch('/api/world' + (params.get('town') === '0' ? '?town=0' : ''), { credentials: 'same-origin', cache: 'no-store' });
     if (res.status === 401) { location.replace('/'); return; }
     if (!res.ok) throw new Error(String(res.status));
     world = await res.json();
