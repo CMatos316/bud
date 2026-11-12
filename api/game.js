@@ -14,6 +14,8 @@
 // 'bpg-patch' | 'bpg-resign', id, opponent, pieces, bud, angle, power, add, remove, skip }
 // Doodle mail (lib/doodlemail.js): GET ?mail=list (your bud's doodles) | ?mail=<id> (one, to replay) | ?mailto=<user>;
 // POST { action: 'mail-send' | 'mail-star' | 'mail-toss', to, strokes, caption, id, fav }
+// Hold the Fort, the daily puzzle (lib/fort.js, lib/fortStore.js): GET ?fort=today | ?fort=<day number> (any other
+// day is practice); POST { action: 'hf-try', n, pieces }
 import { readSession, sameOrigin } from '../lib/session.js';
 import { createGame, hide, shoot, resign, getGame, myGames } from '../lib/peekaboo.js';
 import { isDiscordId } from '../lib/notes.js';
@@ -24,6 +26,7 @@ import * as mail from '../lib/doodlemail.js';
 import * as pult from '../lib/catapult.js';
 import * as bpg from '../lib/bpgame.js';
 import * as race from '../lib/race.js';
+import * as fortStore from '../lib/fortStore.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
 
@@ -42,6 +45,11 @@ export async function GET(request) {
   if (dd != null) {
     if (!/^[A-Za-z0-9]{10,40}$/.test(dd)) return json({ error: 'which game?' }, 400);
     try { return json(await doodle.getGame(session.id, dd)); } catch (err) { return fail(err); }
+  }
+  const hf = url.searchParams.get('fort');
+  if (hf != null) {
+    if (hf !== 'today' && !/^[0-9]{1,6}$/.test(hf)) return json({ error: 'which day?' }, 400);
+    try { return json(await fortStore.view(session.id, hf === 'today' ? null : Number(hf))); } catch (err) { return fail(err); }
   }
   const rc = url.searchParams.get('rc');
   if (rc != null) {
@@ -97,6 +105,9 @@ export async function POST(request) {
       if (action === 'dd-giveup') return json(await doodle.giveUp(session.id, id));
       return json({ error: 'unknown move' }, 400);
     } catch (err) { return fail(err); }
+  }
+  if (action === 'hf-try') {
+    try { return json(await fortStore.attempt(session.id, session.name, body.n == null ? null : Number(body.n), body.pieces)); } catch (err) { return fail(err); }
   }
   if (typeof action === 'string' && action.startsWith('rc-')) {
     try {

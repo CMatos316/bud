@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+/* no zooming on phones (see /js/nozoom.js): no double-tap zoom, and text boxes big enough that iPhones don't zoom into them */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@supports (-webkit-touch-callout: none) { input, textarea, select { font-size: max(16px, 1em) !important; } }
+</style>
+<script src="/js/nozoom.js"></script>
+<title>Hold the Fort · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="The daily puzzle: your bud ordered three things, and the island delivers by catapult. Build a fort that keeps it standing.">
+<meta name="theme-color" content="#BFD9FF">
+<style>
+/* Hold the Fort, the daily puzzle. Your bud is napping where three deliveries are about to land. You build with
+   the day's pile of pieces; the server flings all three (lib/fort.js, the physics is Bud-a-pult's) and this page
+   replays what happened. Most of the scene is borrowed from catapult.html. */
+:root {
+  --ink: #1D1C2B; --muted: #5E5D75; --card: rgba(255,255,255,.92); --line: rgba(29,28,43,.1); --shadow: rgba(46,40,90,.22);
+  --btn: #1D1C2B; --btn-ink: #fff; --chip: rgba(127,127,160,.12); --bad: #C93A46; --good: #23804E;
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink: #EDECF6; --muted: #A9A7C4; --card: rgba(30,32,52,.92); --line: rgba(255,255,255,.12); --shadow: rgba(0,0,0,.5); --btn: #EDECF6; --btn-ink: #15161F; --chip: rgba(255,255,255,.08); --bad: #FF8A93; --good: #6FD39B; color-scheme: dark; } }
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; color: var(--ink); font-family: var(--font); -webkit-tap-highlight-color: transparent; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.top { position: fixed; top: max(10px, env(safe-area-inset-top)); left: 16px; right: 16px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.top > * { pointer-events: auto; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; color: #1D1C2B; text-decoration: none; background: rgba(255,255,255,.82); border-radius: 999px; padding: 5px 12px 5px 6px; }
+.brand img { width: 24px; height: 24px; }
+.pill { margin-left: auto; background: rgba(255,255,255,.82); color: #1D1C2B; border-radius: 999px; padding: 5px 12px; font-size: 13.5px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
+.pill .dots { display: inline-flex; gap: 4px; }
+.pill .dots i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #5E5D75; display: block; }
+.pill .dots i.used { background: #FF7A59; border-color: #FF7A59; }
+.icon-btn { border: 0; background: rgba(255,255,255,.82); color: #1D1C2B; width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; cursor: pointer; padding: 0; flex: none; }
+.icon-btn svg { width: 17px; height: 17px; }
+.top .small { border: 0; background: rgba(255,255,255,.82); color: #1D1C2B; border-radius: 999px; padding: 6px 12px; font: 600 13.5px var(--font); cursor: pointer; white-space: nowrap; }
+@media (max-width: 520px) { .brand span { display: none; } .brand { padding: 5px 6px; } }
+.panel { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); width: min(520px, calc(100% - 32px)); max-height: min(62%, 560px); overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 12px 14px; box-shadow: 0 18px 40px -22px var(--shadow); display: grid; gap: 9px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.panel h2 { margin: 0; font-size: 17px; line-height: 1.2; text-wrap: balance; }
+.panel h3 { margin: 4px 0 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.panel p { margin: 0; font-size: 14px; line-height: 1.35; color: var(--muted); }
+.panel p b { color: var(--ink); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.btn { font: 600 15px var(--font); border-radius: 999px; padding: 10px 18px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn.primary { background: var(--btn); color: var(--btn-ink); border-color: transparent; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn:focus-visible, .tool:focus-visible, .top .small:focus-visible { outline: 3px solid #FF7A59; outline-offset: 2px; }
+/* today's three deliveries */
+.orders { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.orders li { display: grid; grid-template-columns: 22px 1.5em minmax(0, 1fr); gap: 6px; align-items: baseline; font-size: 14px; line-height: 1.3; }
+.orders .n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 12.5px; font-weight: 700; align-self: center; }
+.orders .e { font-size: 17px; text-align: center; }
+.orders b { font-weight: 600; }
+.orders span.note { color: var(--muted); }
+.tools { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.tool { appearance: none; border: 1.5px solid transparent; background: var(--chip); color: inherit; border-radius: 14px; padding: 6px 2px 5px; cursor: pointer; display: grid; justify-items: center; gap: 2px; font: 600 11.5px var(--font); min-width: 0; }
+.tool[aria-pressed="true"] { border-color: currentColor; }
+.tool.out { opacity: .4; }
+.tool .sw { height: 22px; display: grid; place-items: center; }
+.tool .sw i { display: block; border-radius: 3px; }
+.tool .left { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; }
+.count { font-size: 13px; color: var(--muted); }
+.count b { color: var(--ink); }
+.msg { min-height: 1em; font-size: 13.5px; color: var(--bad); margin: 0; }
+.board ol { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; max-height: 28vh; overflow-y: auto; }
+.board li { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; gap: 8px; align-items: baseline; font-size: 14px; padding: 5px 8px; border-radius: 10px; }
+.board li.me { background: var(--chip); font-weight: 600; }
+.board .rk { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.board .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board .sc { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.board li.me .sc { color: var(--ink); }
+.good { color: var(--good) !important; font-weight: 600; }
+.err-toast { position: fixed; left: 50%; top: 58px; transform: translateX(-50%); background: rgba(232,80,91,.95); color: #fff; border-radius: 999px; padding: 6px 14px; font-size: 13.5px; font-weight: 600; max-width: calc(100% - 32px); text-align: center; }
+.banner { position: fixed; left: 50%; top: 24%; transform: translate(-50%, -50%) scale(.6); font: 700 clamp(26px, 8vw, 52px) var(--font); color: #fff; -webkit-text-stroke: 2px #1D1C2B; paint-order: stroke fill; text-shadow: 0 5px 0 #1D1C2B; opacity: 0; pointer-events: none; transition: opacity .25s, transform .45s cubic-bezier(.3,1.6,.5,1); white-space: nowrap; text-align: center; }
+.banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.banner small { display: block; font-size: .5em; -webkit-text-stroke: 1.5px #1D1C2B; text-shadow: 0 3px 0 #1D1C2B; }
+@media (prefers-reduced-motion: reduce) { .banner { transition: opacity .2s; transform: translate(-50%, -50%); } }
+/* phones held sideways: the panel docks on the right, so the fort gets the whole width */
+@media (orientation: landscape) and (max-height: 520px) {
+  .panel { left: auto; right: max(10px, env(safe-area-inset-right)); transform: none; top: 54px; bottom: auto; max-height: calc(100% - 64px); width: min(320px, 44vw); align-content: start; padding: 10px 12px; gap: 8px; }
+  .panel h2 { font-size: 15px; } .panel p { font-size: 13px; }
+  .panel p.help { display: none; }
+  .tools { grid-template-columns: repeat(3, 1fr); }
+  .btn { padding: 8px 14px; font-size: 14px; }
+}
+/* what the bud says: a little speech bubble that follows it */
+.say { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; background: #fff; color: #2B2A3A; font: 600 14px/1.25 var(--font); padding: 7px 11px; border-radius: 14px; max-width: 200px; text-align: center; box-shadow: 0 6px 16px -8px rgba(30,25,60,.45); transition: opacity .2s; }
+.say::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: inherit; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
+.gate { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; }
+.gate .panel { position: static; transform: none; max-width: 420px; }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="A catapult on the left, and your bud napping on the right where three deliveries will land"></canvas>
+<header class="top">
+  <a class="brand" href="/world"><img src="/img/favicon.svg" alt=""><span>Hold the Fort</span></a>
+  <span class="pill" id="pill"></span>
+  <button class="small" id="skipBtn" type="button" hidden>Skip ▸▸</button>
+  <button class="icon-btn" id="soundBtn" type="button"></button>
+</header>
+<div class="banner" id="banner" aria-live="assertive"></div>
+<div class="err-toast" id="errToast" hidden role="alert"></div>
+<section class="panel" id="panel" hidden></section>
+<div class="gate" id="gate" hidden><div class="panel"><h2 id="gateTitle"></h2><p id="gateText"></p><div class="row" id="gateRow"></div></div></div>
+
+<script src="/js/sound.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
+<script type="module">
+import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
+const S = window.BudSound || { play() {}, bindToggle() {}, muted: true };
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const toLinear = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+
+// the same numbers as lib/catapult.js
+const CELL = 0.5, COLS = 14, ROWS = 10, FORT_X = 14;
+const PIECES = { wood: { w: 1, h: 1 }, stone: { w: 1, h: 1 }, beam: { w: 3, h: 1 }, pillar: { w: 1, h: 2 }, jelly: { w: 1, h: 1 } };
+const PIECE_ORDER = ['wood', 'stone', 'beam', 'pillar', 'jelly'], PIECE_NAME = { wood: 'Wood', stone: 'Stone', beam: 'Beam', pillar: 'Pillar', jelly: 'Jelly' };
+const LAUNCH = { x: 0.6, y: 1.5 }, MIN_SPEED = 9, MAX_SPEED = 19, GROUND_END = FORT_X + COLS * CELL + 5;
+const BUD_W = 0.52;   // how wide the bud is drawn (meters)
+const ORDER_COLORS = ['#F2643D', '#7B5CF0', '#0E9C8A'];   // delivery 1, 2, 3: the same color on the list and on its arc
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, credentials: 'same-origin', cache: 'no-store', body: body ? JSON.stringify(body) : undefined });
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw Object.assign(new Error(data.error || 'something went wrong'), { status: res.status });
+  return data;
+}
+
+/* ---------- the scene ---------- */
+const canvas = $('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 400);
+{
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#8EC5FF'); gr.addColorStop(0.65, '#D9ECFF'); gr.addColorStop(1, '#FBE3EF');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; scene.background = t;
+}
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8FBF8F, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 0.85); sun.position.set(-6, 14, 10); scene.add(sun);
+const M = (hex, o = {}) => new THREE.MeshStandardMaterial({ color: toLinear(hex), roughness: 0.85, ...o });
+
+// the ground: a long strip of the island ending in a little cliff, then the sea
+const ground = new THREE.Group(); scene.add(ground);
+{
+  const w = GROUND_END + 14, top = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, 7), M('#86CF86')); top.position.set(GROUND_END - w / 2, -0.15, -1); ground.add(top);
+  const soil = new THREE.Mesh(new THREE.BoxGeometry(w, 3.2, 6.8), M('#C9A27A', { flatShading: true })); soil.position.set(GROUND_END - w / 2, -1.9, -1); ground.add(soil);
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(400, 200), M('#9FD3F0', { roughness: 0.4 })); sea.rotation.x = -Math.PI / 2; sea.position.set(60, -3.2, -40); ground.add(sea);
+  const leaf = [M('#5FB36A', { flatShading: true }), M('#7BC67E', { flatShading: true })], trunk = M('#A47551');
+  for (const [x, z, s] of [[-4, -3.2, 1.2], [3.5, -3.8, 1], [8, -3.4, 1.3], [12.5, -4.2, 0.9], [22.5, -3.6, 1.1], [-8, -4, 1.1]]) {
+    const t = new THREE.Group();
+    const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * s, 0.2 * s, 1.1 * s, 7), trunk); tr.position.y = 0.55 * s; t.add(tr);
+    for (let k = 0; k < 3; k++) { const l = new THREE.Mesh(new THREE.IcosahedronGeometry((0.85 - k * 0.2) * s, 0), leaf[k % 2]); l.position.y = (1.25 + k * 0.5) * s; t.add(l); }
+    t.position.set(x, 0, z); ground.add(t);
+  }
+  for (let i = 0; i < 40; i++) {
+    const f = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), M(['#FFB3C7', '#FFE08A', '#FFFFFF', '#C9B8FF'][i % 4]));
+    f.position.set(-10 + (i * 7.3) % (GROUND_END + 9), 0.06, -0.6 - (i * 1.7) % 3.4); ground.add(f);
+  }
+}
+
+// the catapult: a wooden base and a throwing arm that swings forward on launch
+const catapult = new THREE.Group(); scene.add(catapult);
+const ARM_PIVOT = new THREE.Vector3(0, 0.75, 0), ARM_LEN = Math.hypot(LAUNCH.x - ARM_PIVOT.x, LAUNCH.y - ARM_PIVOT.y);
+const ARM_FIRE = Math.atan2(LAUNCH.y - ARM_PIVOT.y, LAUNCH.x - ARM_PIVOT.x), ARM_COCK = Math.PI + 0.45;
+const arm = new THREE.Group();
+{
+  const wood = M('#B5834F'), dark = M('#8A5A3C');
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.22, 1.0), wood); base.position.set(-0.1, 0.16, 0); catapult.add(base);
+  for (const z of [-0.36, 0.36]) {
+    const up = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.75, 0.12), dark); up.position.set(0, 0.55, z); catapult.add(up);
+    for (const x of [-0.65, 0.5]) { const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 16), dark); wh.rotation.x = Math.PI / 2; wh.position.set(x, 0.2, z * 1.45); catapult.add(wh); }
+  }
+  const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 10), dark); axle.rotation.x = Math.PI / 2; axle.position.copy(ARM_PIVOT); catapult.add(axle);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(ARM_LEN, 0.1, 0.12), wood); beam.position.x = ARM_LEN / 2; arm.add(beam);
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.18, 0.14, 16, 1, true), dark); cup.position.set(ARM_LEN, 0.04, 0); arm.add(cup);
+  arm.position.copy(ARM_PIVOT); catapult.add(arm);
+}
+const armAt = (a) => { arm.rotation.z = a; };
+armAt(ARM_COCK);
+const cupPos = (a) => new THREE.Vector3(ARM_PIVOT.x + Math.cos(a) * ARM_LEN, ARM_PIVOT.y + Math.sin(a) * ARM_LEN + 0.28, 0);
+const windAngle = (power) => ARM_FIRE + (ARM_COCK - ARM_FIRE) * (0.3 + 0.7 * power);
+
+/* textures and meshes for the pieces */
+function tex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t; }
+const woodTex = () => tex(128, 128, (g) => {
+  g.fillStyle = '#D9A86C'; g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = 'rgba(140, 90, 50, .45)'; g.lineWidth = 2;
+  for (let y = 8; y < 128; y += 14) { g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= 128; x += 16) g.lineTo(x, y + Math.sin(x * 0.08 + y) * 2); g.stroke(); }
+  g.strokeStyle = 'rgba(110, 70, 40, .8)'; g.lineWidth = 6; g.strokeRect(3, 3, 122, 122);
+});
+const stoneTex = (moss) => tex(128, 128, (g) => {
+  g.fillStyle = '#A8A6B8'; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 70; i++) { g.fillStyle = `rgba(${i % 2 ? 255 : 60},${i % 2 ? 255 : 60},${i % 2 ? 255 : 80},.08)`; g.beginPath(); g.arc((i * 37) % 128, (i * 59) % 128, 4 + (i % 5) * 3, 0, 7); g.fill(); }
+  g.strokeStyle = 'rgba(70, 68, 90, .55)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(20, 30); g.lineTo(46, 52); g.lineTo(40, 80); g.moveTo(90, 100); g.lineTo(104, 76); g.stroke();
+  if (moss) { g.fillStyle = 'rgba(96, 160, 96, .75)'; for (let i = 0; i < 16; i++) { g.beginPath(); g.arc(8 + (i * 29) % 112, 6 + (i % 3) * 5, 9 + (i % 4) * 3, 0, 7); g.fill(); } }
+  g.strokeStyle = 'rgba(70, 68, 90, .8)'; g.lineWidth = 6; g.strokeRect(3, 3, 122, 122);
+});
+const TEX = { wood: woodTex(), stone: stoneTex(false), given: stoneTex(true) };
+const MATS = {};
+function pieceMat(t, given) {
+  const key = given ? 'given' : t;
+  if (MATS[key]) return MATS[key];
+  // jelly: see-through and shiny (it wobbles in the loop)
+  if (t === 'jelly') return (MATS[key] = new THREE.MeshPhysicalMaterial({ color: toLinear('#FF7FB0'), roughness: 0.15, clearcoat: 0.8, transparent: true, opacity: 0.78 }));
+  const P = PIECES[t], base = given ? TEX.given : t === 'stone' ? TEX.stone : TEX.wood;
+  const map = base.clone(); map.needsUpdate = true; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(P.w, P.h);
+  return (MATS[key] = new THREE.MeshStandardMaterial({ map, roughness: 0.9 }));
+}
+function pieceMesh(t, given) {
+  const P = PIECES[t];
+  const m = new THREE.Mesh(new THREE.BoxGeometry(P.w * CELL - 0.012, P.h * CELL - 0.012, 0.9), pieceMat(t, given));
+  m.userData.jelly = t === 'jelly';
+  return m;
+}
+
+/* the things that get delivered, each built from a few simple shapes (sizes match lib/catapult.js, FLUNG) */
+const stripes = (colors, n) => tex(128, 16, (g, w, h) => { for (let i = 0; i < n; i++) { g.fillStyle = colors[i % colors.length]; g.fillRect(Math.floor(i * w / n), 0, Math.ceil(w / n) + 1, h); } });
+function thingMesh(what) {
+  const g = new THREE.Group();
+  const add = (geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, typeof mat === 'string' ? M(mat, { roughness: 0.6 }) : mat); m.position.set(x, y, z); g.add(m); return m; };
+  if (what === 'melon') {
+    const m = add(new THREE.SphereGeometry(0.36, 24, 16), new THREE.MeshStandardMaterial({ map: stripes(['#2F7D3B', '#7CC96B'], 14), roughness: 0.5 }));
+    m.rotation.z = Math.PI / 2; m.scale.set(0.95, 1.1, 0.95);
+  } else if (what === 'duck') {
+    const Y = '#FFD23F';
+    add(new THREE.SphereGeometry(0.2, 18, 12), Y, -0.03, -0.05, 0).scale.set(1.15, 0.9, 1);
+    add(new THREE.SphereGeometry(0.125, 16, 12), Y, 0.1, 0.13, 0);
+    const beak = add(new THREE.ConeGeometry(0.05, 0.12, 10), '#FF8A3D', 0.24, 0.11, 0); beak.rotation.z = -Math.PI / 2; beak.scale.z = 1.5;
+    add(new THREE.ConeGeometry(0.06, 0.12, 8), Y, -0.25, 0.03, 0).rotation.z = Math.PI / 3;
+    for (const z of [-0.1, 0.1]) add(new THREE.SphereGeometry(0.022, 8, 6), '#1D1C2B', 0.17, 0.17, z);
+  } else if (what === 'bowling') {
+    add(new THREE.SphereGeometry(0.22, 24, 16), M('#27336B', { roughness: 0.18 }));
+    for (const [x, y] of [[0.05, 0.09], [-0.04, 0.1], [0, 0.02]]) add(new THREE.SphereGeometry(0.028, 8, 6), '#0B0E26', x, y, Math.sqrt(0.22 * 0.22 - x * x - y * y) - 0.008);
+  } else if (what === 'piano') {
+    const B = M('#22222C', { roughness: 0.3 });
+    add(new THREE.BoxGeometry(1, 0.56, 0.5), B, 0, 0.07, -0.05);
+    add(new THREE.BoxGeometry(1, 0.07, 0.5), B, 0, -0.315, -0.05);
+    add(new THREE.BoxGeometry(1, 0.06, 0.2), B, 0, -0.06, 0.28);
+    add(new THREE.BoxGeometry(0.92, 0.03, 0.15), '#F7F4EC', 0, -0.02, 0.3);
+    for (let i = 0; i < 10; i++) if (i % 7 !== 2 && i % 7 !== 6) add(new THREE.BoxGeometry(0.035, 0.03, 0.08), '#15151C', -0.4 + i * 0.088, 0.0, 0.27);
+    for (const x of [-0.44, 0.44]) add(new THREE.BoxGeometry(0.08, 0.2, 0.1), B, x, -0.18, 0.3);
+  } else if (what === 'cheese') {
+    const face = tex(128, 128, (c) => { c.fillStyle = '#FFD45C'; c.fillRect(0, 0, 128, 128); c.fillStyle = '#E3A52A'; for (const [x, y, r] of [[40, 44, 13], [84, 34, 8], [88, 82, 15], [48, 92, 9], [64, 62, 6], [24, 72, 6]]) { c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); } });
+    const capM = new THREE.MeshStandardMaterial({ map: face, roughness: 0.6 });
+    add(new THREE.CylinderGeometry(0.3, 0.3, 0.3, 28), [M('#F0B63A', { roughness: 0.6 }), capM, capM]).rotation.x = Math.PI / 2;
+  } else if (what === 'sock') {
+    add(new THREE.BoxGeometry(0.1, 0.2, 0.09), '#F4F1EA', -0.03, 0.03, 0);
+    add(new THREE.BoxGeometry(0.2, 0.09, 0.09), '#F4F1EA', 0.02, -0.1, 0);
+    add(new THREE.SphereGeometry(0.048, 10, 8), '#F4F1EA', 0.12, -0.1, 0);
+    for (const y of [0.1, 0.045]) add(new THREE.BoxGeometry(0.106, 0.03, 0.096), '#E8505B', -0.03, y, 0);
+  } else if (what === 'beachball') {
+    add(new THREE.SphereGeometry(0.5, 28, 18), new THREE.MeshStandardMaterial({ map: stripes(['#FFFFFF', '#FF5A5F', '#FFFFFF', '#FFD23F', '#FFFFFF', '#3FA7FF'], 6), roughness: 0.3 })).rotation.x = 0.7;
+  } else if (what === 'anvil') {
+    const I = M('#4B4F5C', { roughness: 0.4, metalness: 0.2 });
+    add(new THREE.BoxGeometry(0.4, 0.09, 0.3), I, 0.03, -0.155, 0);
+    add(new THREE.BoxGeometry(0.2, 0.13, 0.2), I, 0.03, -0.045, 0);
+    add(new THREE.BoxGeometry(0.44, 0.15, 0.26), I, 0.06, 0.095, 0);
+    add(new THREE.ConeGeometry(0.075, 0.16, 10), I, -0.24, 0.095, 0).rotation.z = Math.PI / 2;
+  } else if (what === 'gnome') {
+    add(new THREE.CylinderGeometry(0.11, 0.15, 0.28, 12), '#3F6FD8', 0, -0.17, 0);
+    add(new THREE.SphereGeometry(0.1, 14, 10), '#F1C9A5', 0, 0.03, 0);
+    add(new THREE.ConeGeometry(0.085, 0.16, 10), '#FFFFFF', 0, -0.05, 0.07).rotation.x = Math.PI;
+    add(new THREE.SphereGeometry(0.026, 8, 6), '#E39E82', 0, 0.035, 0.1);
+    add(new THREE.ConeGeometry(0.115, 0.26, 12), '#D9342B', 0, 0.2, 0);
+  } else add(new THREE.SphereGeometry(0.3, 16, 12), '#C9B8FF');
+  return g;
+}
+// a see-through copy, for showing where a delivery will come in
+function ghostOf(mesh) {
+  mesh.traverse((o) => { if (!o.isMesh) return; const fade = (m) => { const c = m.clone(); c.transparent = true; c.opacity = 0.45; c.depthWrite = false; return c; }; o.material = Array.isArray(o.material) ? o.material.map(fade) : fade(o.material); o.renderOrder = 5; });
+  return mesh;
+}
+
+/* the bud, drawn the way the island draws it, centered on its middle */
+const FACE_W = 256, FACE_H = 175;
+async function loadImage(src) { return new Promise((ok) => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; }); }
+// Light or dark eyes, whichever stands out on the paint under them (the same check the maker and island use).
+function eyeColorFor(img, b) {
+  if (!img) return '#15161F';
+  const c = document.createElement('canvas'); c.width = c.height = 8;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const W = img.width, H = img.height, er = b.eyeR;
+  const sx = (b.eyeRel.x - er * 1.2 - b.minX) / b.w * W, sy = (b.eyeRel.y - er * 0.7 - b.minY) / b.h * H;
+  g.drawImage(img, clamp(sx, 0, W - 1), clamp(sy, 0, H - 1), Math.max(1, er * 2.4 / b.w * W), Math.max(1, er * 1.4 / b.h * H), 0, 0, 8, 8);
+  const d = g.getImageData(0, 0, 8, 8).data; let r = 0, gg = 0, bb = 0;
+  for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; bb += d[i + 2]; }
+  const n = d.length / 4, lum = (0.2126 * r + 0.7152 * gg + 0.0722 * bb) / n / 255;
+  return lum < 0.42 ? '#F3F4F8' : '#15161F';
+}
+async function makeBud(data, width) {
+  const b = setExtents({ r: data.r.map(([x, y]) => ({ x, y })), eyeRel: data.eyeRel, eyeR: data.eyeR });
+  const { geom, face } = buildMesh(b);
+  const img = await loadImage(data.paint);
+  const s = width / Math.max(b.w, b.h);
+  const map = img ? new THREE.Texture(img) : null;
+  if (map) { map.encoding = THREE.sRGBEncoding; map.needsUpdate = true; }
+  const body = new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: map ? 0xffffff : toLinear('#EEE8DF'), map, roughness: 0.58, clearcoat: 0.3 }));
+  const fc = document.createElement('canvas'); fc.width = FACE_W; fc.height = FACE_H;
+  const faceTex = new THREE.CanvasTexture(fc); faceTex.encoding = THREE.sRGBEncoding;
+  const faceMesh = new THREE.Mesh(face, new THREE.MeshStandardMaterial({ map: faceTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  faceMesh.renderOrder = 2;
+  const inner = new THREE.Group(); inner.add(body, faceMesh); inner.scale.setScalar(s);
+  geom.computeBoundingBox(); const c = geom.boundingBox.getCenter(new THREE.Vector3());
+  inner.position.set(-c.x * s, -c.y * s, -c.z * s);
+  const spin = new THREE.Group(), root = new THREE.Group();
+  spin.add(inner); root.add(spin); scene.add(root);
+  const bubble = el('div', 'say'); bubble.hidden = true; document.body.append(bubble);
+  const bud = { data, b, root, spin, faceTex, g: fc.getContext('2d'), happy: false, ouch: false, look: { x: -0.5, y: 0 }, blinkAt: 0, eyeCol: eyeColorFor(img, b), bubble, bubbleUntil: 0, size: width };
+  drawFace(bud, 0);
+  return bud;
+}
+function drawFace(bud, t) {
+  const r = bud.b.eyeR, sc = FACE_W / (r * 4.4), g = bud.g;
+  const blink = bud.ouch ? 1 : (t > bud.blinkAt && t < bud.blinkAt + 0.15) ? Math.sin((t - bud.blinkAt) / 0.15 * Math.PI) : 0;
+  if (t > bud.blinkAt + 0.15) bud.blinkAt = t + 2 + Math.random() * 4;
+  const key = [blink.toFixed(1), bud.happy, bud.look.x.toFixed(2), bud.look.y.toFixed(2)].join();
+  if (key === bud.key) return; bud.key = key;
+  g.clearRect(0, 0, FACE_W, FACE_H);
+  drawEyeStyle(g, bud.data.eyes, FACE_W / 2, FACE_H / 2, r * sc, blink, bud.happy, bud.eyeCol, bud.look);
+  bud.faceTex.needsUpdate = true;
+}
+
+/* ---------- camera ---------- */
+const view = { x: 17, y: 2.5, w: 12 }, goal = { x: 17, y: 2.5, w: 12 };
+function frame(x0, x1, y0, y1) {
+  // fit this box into the part of the screen the top bar and the panel leave free
+  const pr = $('panel').hidden ? null : $('panel').getBoundingClientRect();
+  const docked = pr && pr.left > innerWidth * 0.4;   // the panel on the right (phones held sideways)
+  const L = 8, R = docked ? pr.left - 12 : innerWidth - 8, Tp = 58, B = pr && !docked ? pr.top - 10 : innerHeight - 8;
+  const fw = Math.max(80, R - L), fh = Math.max(80, B - Tp), aspect = innerWidth / innerHeight;
+  const W = Math.max((x1 - x0) * innerWidth / fw, (y1 - y0) * innerHeight / fh * aspect), H = W / aspect;
+  goal.w = W;
+  goal.x = (x0 + x1) / 2 - ((L + R) / 2 - innerWidth / 2) * W / innerWidth;
+  goal.y = (y0 + y1) / 2 + ((Tp + B) / 2 - innerHeight / 2) * H / innerHeight;
+}
+function placeCamera(dt, snap) {
+  const k = snap ? 1 : 1 - Math.pow(0.02, dt);
+  view.x += (goal.x - view.x) * k; view.y += (goal.y - view.y) * k; view.w += (goal.w - view.w) * k;
+  const fovH = 2 * Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect);
+  const dist = view.w / 2 / Math.tan(fovH / 2);
+  camera.position.set(view.x, view.y + dist * 0.12, dist);
+  camera.lookAt(view.x, view.y, 0);
+}
+// building: tight around the plot, so the squares are big enough to tap on a phone (a little more of the
+// incoming arcs on a wide screen)
+const frameBuild = () => frame(FORT_X - (innerWidth < 640 ? 0.35 : 1.6), FORT_X + COLS * CELL + 0.35, -0.3, ROWS * CELL + 0.3);
+// Watching: close in on the bud and whatever stands (or lies) near it, with room for what's coming in.
+function frameFort(incoming) {
+  const p = bud.root.position; let x0 = p.x - 2.4, x1 = p.x + 2.4, top = p.y + 2.2;
+  const take = (x, y, r) => { x0 = Math.min(x0, x - r); x1 = Math.max(x1, x + r); top = Math.max(top, y + r); };
+  for (const m of bodyMeshes) { const q = m.position; if (Math.abs(q.x - p.x) < 4.5 && q.y > -0.5) take(q.x, q.y, 1); }
+  if (incoming && incoming[0] > x0 - 5 && incoming[0] < x1 + 3 && incoming[1] > -0.5) take(incoming[0], Math.min(incoming[1], 6.5), 0.9);
+  frame(x0 - 0.6, x1 + 0.6, -0.4, top + 0.3);
+}
+function frameFollow(x) { const w = Math.min(14, GROUND_END + 2); const cx = Math.max(-1.5 + w / 2, Math.min(GROUND_END + 1 - w / 2, x + 2)); frame(cx - w / 2, cx + w / 2, -0.5, 6); }
+function resize() {
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+addEventListener('resize', () => { resize(); reframe(); });
+
+/* ---------- the game on this page ---------- */
+// mode: 'build' (placing pieces) | 'fly' (the three deliveries, replayed) | 'result' | 'board'
+const st = { mode: 'build', tool: 'wood', pieces: [], busy: false, msg: '', run: null, flying: 0 };
+let me = null, day = null, bud = null;   // who you are, today's puzzle (as /api/game?fort= sent it), your bud on screen
+const budName = () => (me && me.bud && (me.bud.nickname || me.bud.trueName)) || 'your bud';
+const DAY_PARAM = /^[0-9]{1,6}$/.test(new URLSearchParams(location.search).get('day') || '') ? Number(new URLSearchParams(location.search).get('day')) : null;
+
+const bodyMeshes = [];   // the fort (and anything delivered so far) on screen, in the same order as the state
+function clearBodies() { for (const m of bodyMeshes) scene.remove(m); bodyMeshes.length = 0; }
+const meshFor = (t, given) => (PIECES[t] ? pieceMesh(t, given) : thingMesh(t));
+// draw a settled state ({ bodies: [{ t, x, y, a }], bud })
+function showState(s) {
+  clearBodies();
+  for (const b of s.bodies) { const m = meshFor(b.t); m.position.set(b.x, b.y, 0); m.rotation.z = b.a; scene.add(m); bodyMeshes.push(m); }
+  bud.root.position.set(s.bud.x, s.bud.y, 0); bud.spin.rotation.z = s.bud.a;
+}
+const cellMid = (p) => [FORT_X + (p.x + PIECES[p.t].w / 2) * CELL, (p.y + PIECES[p.t].h / 2) * CELL];
+// draw the fort as you're building it (nothing has settled yet)
+function showBuild() {
+  clearBodies();
+  const P = day.puzzle;
+  for (const p of P.given) { const m = pieceMesh(p.t, true); m.position.set(...cellMid(p), 0); scene.add(m); bodyMeshes.push(m); }
+  for (const p of st.pieces) { const m = pieceMesh(p.t); m.position.set(...cellMid(p), 0); scene.add(m); bodyMeshes.push(m); }
+  bud.root.position.set(FORT_X + (P.bud.x + 0.5) * CELL, (P.bud.y + 0.5) * CELL, 0); bud.spin.rotation.z = 0;
+}
+
+// the build grid, drawn in front of the fort
+const gridMesh = (() => {
+  const px = 64, t = tex(COLS * px, ROWS * px, (g, w, h) => {
+    g.strokeStyle = 'rgba(255,255,255,.75)'; g.lineWidth = 2; g.setLineDash([6, 6]);
+    for (let i = 0; i <= COLS; i++) { g.beginPath(); g.moveTo(i * px, 0); g.lineTo(i * px, h); g.stroke(); }
+    for (let j = 0; j <= ROWS; j++) { g.beginPath(); g.moveTo(0, j * px); g.lineTo(w, j * px); g.stroke(); }
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(COLS * CELL, ROWS * CELL), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+  m.position.set(FORT_X + COLS * CELL / 2, ROWS * CELL / 2, 0.47); m.renderOrder = 3; scene.add(m);
+  return m;
+})();
+const cursor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false }));
+cursor.position.z = 0.48; cursor.renderOrder = 4; cursor.visible = false; scene.add(cursor);
+
+/* where each delivery will come in: a dotted arc, a see-through copy of the thing, and its number */
+// (stepped the way the physics steps it, 60 times a second, so the dots are where it will really fly)
+function pathOf(angle, power) {
+  const a = angle * Math.PI / 180, v = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * power;
+  let x = LAUNCH.x, y = LAUNCH.y, vx = Math.cos(a) * v, vy = Math.sin(a) * v; const pts = [];
+  for (let i = 0; i < 480; i++) { vy -= 9.8 / 60; x += vx / 60; y += vy / 60; pts.push([x, y]); if (y < 0 || x > GROUND_END) break; }
+  return pts;
+}
+const arcs = new THREE.Group(); scene.add(arcs);
+function buildArcs() {
+  while (arcs.children.length) arcs.remove(arcs.children[0]);
+  const dot = new THREE.SphereGeometry(0.055, 8, 6);
+  day.puzzle.shots.forEach((s, i) => {
+    const pts = pathOf(s.angle, s.power), mat = new THREE.MeshBasicMaterial({ color: toLinear(ORDER_COLORS[i]) });
+    pts.forEach(([x, y], k) => { if (k % 3 || x < FORT_X - 9) return; const d = new THREE.Mesh(dot, mat); d.position.set(x, y, 0.5); arcs.add(d); });
+    // the copy sits where the arc comes into the building view
+    const at = pts.find(([x, y]) => x >= FORT_X + 0.65 && y <= ROWS * CELL - 0.45) || pts[pts.length - 1];
+    const ghost = ghostOf(thingMesh(s.what)); ghost.position.set(at[0], at[1], 0.5); arcs.add(ghost);
+    const badge = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: false, map: tex(64, 64, (g) => { g.fillStyle = ORDER_COLORS[i]; g.beginPath(); g.arc(32, 32, 28, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 5; g.stroke(); g.fillStyle = '#fff'; g.font = '700 38px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(i + 1), 32, 35); }) }));
+    const size = s.r ? s.r : Math.max(s.w, s.h) / 2;
+    badge.scale.setScalar(0.42); badge.position.set(at[0] + size * 0.75 + 0.1, at[1] + size * 0.75 + 0.1, 0.6); badge.renderOrder = 6; arcs.add(badge);
+  });
+}
+
+/* ---------- building ---------- */
+const cellsOf = (p) => { const P = PIECES[p.t], out = []; for (let i = 0; i < P.w; i++) for (let j = 0; j < P.h; j++) out.push(`${p.x + i},${p.y + j}`); return out; };
+const occupied = () => {
+  const m = new Map();
+  day.puzzle.given.forEach((p) => cellsOf(p).forEach((k) => m.set(k, 'given')));
+  st.pieces.forEach((p, i) => cellsOf(p).forEach((k) => m.set(k, i)));
+  m.set(`${day.puzzle.bud.x},${day.puzzle.bud.y}`, 'bud');
+  return m;
+};
+const leftOf = (t) => (day.puzzle.pile[t] || 0) - st.pieces.filter((p) => p.t === t).length;
+const tools = () => PIECE_ORDER.filter((t) => day.puzzle.pile[t]);
+function rayAt(cx, cy) { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1), camera); return r; }
+function cellAt(cx, cy) {
+  const p = new THREE.Vector3(); if (!rayAt(cx, cy).ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), p)) return null;
+  const gx = Math.floor((p.x - FORT_X) / CELL), gy = Math.floor(p.y / CELL);
+  return gx >= 0 && gy >= 0 && gx < COLS && gy < ROWS ? { gx, gy } : null;
+}
+function fits(t, gx, gy, occ) {
+  const P = PIECES[t];
+  if (gx + P.w > COLS || gy + P.h > ROWS) return false;
+  for (let i = 0; i < P.w; i++) for (let j = 0; j < P.h; j++) if (occ.has(`${gx + i},${gy + j}`)) return false;
+  return true;
+}
+function buildTap(c) {
+  if (!c) return;
+  const occ = occupied(), here = occ.get(`${c.gx},${c.gy}`);
+  st.msg = '';
+  if (here === 'bud') { st.msg = `${cap(budName())} is napping and will not be moved.`; say(pick(LINES.nap), 1800); S.play('snore', { gain: 0.4 }); }
+  else if (here === 'given') st.msg = 'That was already here. It stays.';
+  else if (here != null) { st.pieces.splice(here, 1); S.play('squish', { gain: 0.6 }); }
+  else if (st.tool === 'remove') st.msg = 'Tap one of your pieces to take it back.';
+  else if (leftOf(st.tool) <= 0) st.msg = `No ${PIECE_NAME[st.tool].toLowerCase()} left in today’s pile.`;
+  else if (!fits(st.tool, c.gx, c.gy, occ)) st.msg = 'It doesn’t fit there.';
+  else {
+    st.pieces.push({ t: st.tool, x: c.gx, y: c.gy }); S.play('thump', { gain: 0.5, rate: 1.2 });
+    // out of that piece: move on to one you still have
+    if (leftOf(st.tool) <= 0) { const next = tools().find((t) => leftOf(t) > 0); if (next) st.tool = next; }
+  }
+  showBuild(); renderPanel();
+}
+
+/* ---------- the panel ---------- */
+const swatch = (w, h, bg) => { const i = el('i'); i.style.width = w + 'px'; i.style.height = h + 'px'; i.style.background = bg; return i; };
+const SWATCH = { wood: () => swatch(18, 18, '#D9A86C'), stone: () => swatch(18, 18, '#A8A6B8'), beam: () => swatch(30, 10, '#D9A86C'), pillar: () => swatch(10, 22, '#D9A86C'), jelly: () => { const i = swatch(18, 18, '#FF7FB0'); i.style.borderRadius = '6px'; return i; } };
+function toolButton(t, label, sw, left) {
+  const b = el('button', 'tool' + (left === 0 ? ' out' : '')); b.type = 'button'; b.setAttribute('aria-pressed', String(st.tool === t));
+  const s = el('span', 'sw'); s.append(sw);
+  b.append(s, el('span', null, label));
+  if (left != null) b.append(el('span', 'left', `${left} left`));
+  b.addEventListener('click', () => { st.tool = t; st.msg = ''; S.play('click'); renderPanel(); });
+  return b;
+}
+function ordersList() {
+  const ul = el('ul', 'orders');
+  day.puzzle.shots.forEach((s, i) => {
+    const li = el('li'), n = el('span', 'n', String(i + 1)); n.style.background = ORDER_COLORS[i];
+    const text = el('span'); text.append(el('b', null, cap(s.a)), el('span', 'note', ` · ${s.note}`));
+    li.append(n, el('span', 'e', s.emoji), text); ul.append(li);
+  });
+  return ul;
+}
+function boardBlock() {
+  const wrap = el('div', 'board');
+  if (day.rolled) { wrap.append(el('p', null, 'A new day started while you were building, so this one was practice. Today’s puzzle is waiting.')); return wrap; }
+  if (day.practice) { wrap.append(el('p', null, 'This is a practice day. Nothing is saved, and it isn’t on the scoreboard.')); return wrap; }
+  const rows = day.board || [];
+  wrap.append(el('h3', null, `Today’s forts${day.streak > 1 ? ` · you’re on ${day.streak} days in a row` : ''}`));
+  const ol = el('ol');
+  rows.forEach((r, i) => {
+    const li = el('li', r.me ? 'me' : null);
+    const score = r.held ? `${plural(r.pieces, 'piece')} · ${r.tries === 1 ? 'first try' : `try ${r.tries}`}` : `no fort yet · ${plural(r.tries, 'try', 'tries')}`;
+    li.append(el('span', 'rk', String(i + 1)), el('span', 'nm', r.me ? `${r.name} (you)` : r.name), el('span', 'sc', score));
+    ol.append(li);
+  });
+  wrap.append(ol);
+  return wrap;
+}
+const button = (label, fn, primary) => { const b = el('button', 'btn' + (primary ? ' primary' : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; };
+function copyButton() {
+  const b = button('Copy my result', async () => {
+    try { await navigator.clipboard.writeText(day.share); b.textContent = 'Copied!'; S.play('pop'); }
+    catch (e) { prompt('Copy your result:', day.share); }
+    setTimeout(() => { b.textContent = 'Copy my result'; }, 1800);
+  });
+  return b;
+}
+function setPill() {
+  const p = $('pill'); p.textContent = '';
+  if (!day) return;
+  if (st.mode === 'fly') {
+    const dots = el('span', 'dots'); for (let i = 0; i < 3; i++) dots.append(el('i', i <= st.flying ? 'used' : null));
+    p.append(dots, `${st.flying + 1} of 3 ${day.puzzle.shots[st.flying].emoji}`);
+  } else p.append(day.practice ? `practice · day ${day.n}` : `#${day.n}${day.me && day.me.held ? ` · best ${day.me.pieces}` : ''}`);
+}
+function renderPanel() {
+  const p = $('panel'); p.textContent = '';
+  $('skipBtn').hidden = st.mode !== 'fly';
+  $('errToast').hidden = true;
+  setPill();
+  if (st.mode === 'fly') { p.hidden = true; reframe(); return; }
+  p.hidden = false;
+  const P = day.puzzle, name = cap(budName());
+  if (st.mode === 'build') {
+    p.append(el('h2', null, `Hold the Fort #${day.n}`));
+    if (!(day.me && day.me.tries) && !st.run) p.append(el('p', 'help', `${name} ordered three things, then fell asleep right where they’ll land. Build a fort that keeps it standing through all three. Whatever lands, stays. Fewest pieces wins.`));
+    p.append(ordersList());
+    const row = el('div', 'tools');
+    for (const t of tools()) row.append(toolButton(t, PIECE_NAME[t], SWATCH[t](), leftOf(t)));
+    const x = el('i'); x.textContent = '✕'; x.style.fontStyle = 'normal'; x.style.fontSize = '16px'; x.style.lineHeight = '1';
+    row.append(toolButton('remove', 'Take back', x, null));
+    p.append(row);
+    const count = el('span', 'count'); count.append(el('b', null, plural(st.pieces.length, 'piece')), ` used · the island’s builders did it with ${P.par}`);
+    if (day.me && day.me.held) count.append(` · your best: ${day.me.pieces}`);
+    p.append(count, el('p', 'msg', st.msg));
+    const r = el('div', 'row');
+    if (!day.practice && day.board) r.append(button('Scores', () => { st.mode = 'board'; renderPanel(); }));
+    if (day.me && day.me.best && day.me.held) r.append(button('My best fort', () => { st.pieces = day.me.best.map((q) => ({ ...q })); st.msg = ''; showBuild(); renderPanel(); }));
+    const clear = button('Start over', () => { st.pieces = []; st.msg = ''; showBuild(); renderPanel(); }); clear.disabled = !st.pieces.length;
+    const go = button(st.busy ? 'Loading the catapult…' : 'Bring it on', bringItOn, true); go.disabled = st.busy;
+    r.append(clear, go); p.append(r);
+  } else if (st.mode === 'result') {
+    const R = st.run.result;
+    if (R.held) {
+      p.append(el('h2', null, `📦 All three delivered. ${name} held the fort!`));
+      const line = el('p'); line.append('With ', el('b', null, plural(R.used, 'piece')), '. ');
+      if (R.used < P.par) { const g = el('span', 'good', `That beats the island’s builders (${P.par}).`); line.append(g); }
+      else if (R.used === P.par) line.append(`That matches the island’s builders.`);
+      else line.append(`The island’s builders did it with ${P.par}. Can you spare a piece?`);
+      p.append(line);
+    } else {
+      const s = P.shots[R.out.launch - 1];
+      p.append(el('h2', null, R.out.how === 'dizzy' ? `🌀 ${name} got too dizzy!` : `💥 ${cap(s.the)} got ${budName()}!`));
+      p.append(el('p', null, `${({ direct: `It landed right on ${budName()}.`, knocked: `${name} got sent flying.`, fell: `${name} got knocked off its spot.`, dizzy: 'All those bumps added up.' })[R.out.how] || ''} That was delivery ${R.out.launch} of 3.${R.out.launch === 3 ? ' So close!' : ''}`));
+    }
+    if (st.msg) p.append(el('p', 'msg', st.msg));
+    p.append(boardBlock());
+    const r = el('div', 'row');
+    r.append(button('↻ Watch again', () => startRun(st.run)));
+    if (!day.practice && day.share) r.append(copyButton());
+    r.append(button(R.held ? 'Try with fewer' : 'Change my fort', toBuild, true));
+    p.append(r);
+    if (day.practice) p.append(practiceRow());
+  } else if (st.mode === 'board') {
+    p.append(el('h2', null, `Hold the Fort #${day.n}`), boardBlock());
+    const r = el('div', 'row');
+    if (day.share) r.append(copyButton());
+    r.append(button('Back to my fort', toBuild, true));
+    p.append(r);
+  }
+  reframe();
+}
+// practice days (bud.oqw.one/fort?day=7): step through them
+function practiceRow() {
+  const r = el('div', 'row'), link = (label, href) => { const a = el('a', 'btn', label); a.href = href; return a; };
+  if (day.n > 1) r.append(link('‹ Day ' + (day.n - 1), `/fort?day=${day.n - 1}`));
+  r.append(link('Today', '/fort'), link('Day ' + (day.n + 1) + ' ›', `/fort?day=${day.n + 1}`));
+  return r;
+}
+function reframe() {
+  if (st.mode === 'build' || st.mode === 'board') frameBuild();
+  else if (st.mode === 'result') frameFort();
+}
+
+/* ---------- moves ---------- */
+function toBuild() {
+  clearTimeout(nextTimer); play = null; starsOn = false;
+  st.mode = 'build'; st.msg = ''; gridMesh.visible = true; arcs.visible = true; shotMesh.visible = false; armAt(ARM_COCK);
+  bud.ouch = true; bud.happy = false;   // asleep
+  if (!tools().includes(st.tool) || leftOf(st.tool) <= 0) st.tool = tools().find((t) => leftOf(t) > 0) || tools()[0];
+  showBuild(); renderPanel();
+}
+async function bringItOn() {
+  if (st.busy) return;
+  st.busy = true; st.msg = ''; renderPanel();
+  try {
+    const r = await api('POST', '/api/game', { action: 'hf-try', n: day.n, pieces: st.pieces });
+    st.busy = false;
+    if (!r.practice) { day.me = r.me; day.board = r.board; day.streak = r.streak; day.share = r.share; }
+    else if (!day.practice) { day.practice = true; day.rolled = true; }   // a new day began while you were building
+    startRun(r);
+  } catch (e) { st.busy = false; st.msg = e.message; renderPanel(); }
+}
+
+/* ---------- the replay: three deliveries, one after another ---------- */
+let play = null, nextTimer = 0;   // play: { L (the launch), i, t (seconds of replay time), ... }
+const shotMesh = new THREE.Group(); scene.add(shotMesh); shotMesh.visible = false;
+function startRun(run) {
+  st.run = run; st.msg = '';
+  gridMesh.visible = false; cursor.visible = false; arcs.visible = false; starsOn = false;
+  bud.ouch = false; bud.happy = false;
+  playLaunch(0);
+}
+function playLaunch(i) {
+  const L = st.run.launches[i], s = day.puzzle.shots[i];
+  showState(L.before);
+  while (shotMesh.children.length) shotMesh.remove(shotMesh.children[0]);
+  shotMesh.add(thingMesh(s.what)); shotMesh.visible = true; shotMesh.rotation.z = 0;
+  play = { L, i, s, t: -1.4, from: windAngle(s.power), hitIdx: 0, koShown: false };
+  st.mode = 'fly'; st.flying = i; renderPanel();
+  banner(cap(s.a) + '!', `delivery ${i + 1} of 3`);
+  if (i === 0) setTimeout(() => say(pick(LINES.wake), 2000), 500);
+  S.play('whoosh', { gain: 0.5, rate: 0.8 });
+}
+function endLaunch() {
+  const { L, i } = play, run = st.run; play = null;
+  const after = i + 1 < run.launches.length ? run.launches[i + 1].before : run.end;
+  showState(after); shotMesh.visible = false;
+  if (L.ko || i + 1 >= run.launches.length) return showResult();
+  const gain = L.dizzy ? L.dizzy.gain : 0, total = L.dizzy ? L.dizzy.after : 0;
+  say(pick(total >= 70 && gain > 0 ? LINES.wobbly : gain >= 15 ? LINES.shaken : LINES.signed), 1500);
+  nextTimer = setTimeout(() => playLaunch(i + 1), 1200);
+}
+function showResult() {
+  clearTimeout(nextTimer); play = null;
+  const R = st.run.result;
+  showState(st.run.end); shotMesh.visible = false; armAt(ARM_COCK);
+  bud.ouch = !R.held; bud.happy = R.held; starsOn = !R.held;
+  st.mode = 'result'; renderPanel();
+  if (R.held) { banner('DELIVERED!'); S.play('chime'); setTimeout(() => say(pick(LINES.held), 3000), 500); }
+  else setTimeout(() => say(pick(R.out.how === 'dizzy' ? LINES.dizzyOut : LINES.out), 3000), 600);
+}
+$('skipBtn').addEventListener('click', () => { if (st.mode === 'fly') showResult(); });
+
+// The bud ordered all this, so it's delighted. Nothing hurts: buds are squishy.
+const LINES = {
+  nap: ['zzz', 'zzz… five more minutes', 'zzz… did my order ship…', 'mmm… free shipping… zzz', 'zzz… no returns…'],
+  wake: ['huh? is that my order?', 'oh! it’s today?', 'that was fast shipping', 'wait, what did I order again?', 'ooh, deliveries!'],
+  signed: ['signed for it!', 'delivered. sort of', 'five stars', 'just leave it anywhere!', 'no signature needed', 'that’s one!', 'careful, that’s fragile (it isn’t)'],
+  shaken: ['whoa… the room is spinning', 'ok that one I felt', 'which way is up?', 'is the fort supposed to do that?'],
+  wobbly: ['I don’t feel so good…', 'one more like that and I’m done for', 'everything’s twirly…'],
+  out: ['delivered… directly to my face', 'I’m okay!! just squished', 'worth it. I love it', 'I should have paid for careful handling', 'bonk! I’m fine, I promise'],
+  dizzyOut: ['too… dizzy… I’m fine though!', 'I need a little sit-down', 'the island won’t stop spinning!'],
+  held: ['everything arrived! best day', 'ten out of ten, would order again', 'now, where do I put a piano', 'back to my nap', 'I’m never moving. this is home now'],
+};
+function say(text, ms = 2600) {
+  if (!bud) return;
+  bud.bubble.textContent = text; bud.bubble.hidden = false; bud.bubbleUntil = performance.now() + ms;
+}
+function placeBubble() {
+  if (!bud || bud.bubble.hidden) return;
+  if (performance.now() > bud.bubbleUntil) { bud.bubble.hidden = true; return; }
+  const v = bud.root.position.clone().add(new THREE.Vector3(0, bud.size * 0.55, 0)).project(camera);
+  bud.bubble.style.opacity = Math.abs(v.x) > 1.02 ? 0 : 1;
+  const w = bud.bubble.offsetWidth, h = bud.bubble.offsetHeight;
+  const x = clamp((v.x + 1) / 2 * innerWidth - w / 2, 8, innerWidth - w - 8), y = Math.max(56, (1 - v.y) / 2 * innerHeight - h - 12);
+  bud.bubble.style.transform = `translate(${x}px, ${y}px)`;
+}
+// stars circle the bud's head once it's out
+let starsOn = false;
+const stars = [];
+{
+  const starGeo = new THREE.OctahedronGeometry(0.13, 0), starMat = new THREE.MeshStandardMaterial({ color: toLinear('#FFD23F'), emissive: toLinear('#FFB800'), emissiveIntensity: 0.6 });
+  for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(starGeo, starMat); m.scale.set(1, 1, 0.5); m.visible = false; scene.add(m); stars.push(m); }
+}
+function placeStars(dt) {
+  stars.forEach((m, i) => {
+    m.visible = starsOn && !!bud;
+    if (!m.visible) return;
+    const a = T * 3 + i * Math.PI * 2 / 3, p = bud.root.position;
+    m.position.set(p.x + Math.cos(a) * BUD_W * 0.75, p.y + BUD_W * 0.75 + Math.sin(T * 6 + i) * 0.04, Math.sin(a) * BUD_W * 0.75);
+    m.rotation.y += dt * 4;
+  });
+}
+let bannerTimer = 0;
+function banner(text, small) {
+  const b = $('banner'); b.textContent = text; if (small) b.append(el('small', null, small));
+  b.classList.add('on'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.classList.remove('on'), 1500);
+}
+function lerpFrame(frames, f) {
+  const i = Math.max(0, Math.min(frames.length - 1, Math.floor(f))), j = Math.min(frames.length - 1, i + 1), k = Math.max(0, Math.min(1, f - i));
+  return frames[i].map((a, n) => { const b = frames[j][n]; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]; });
+}
+function playTick(dt) {
+  const L = play.L, hz = L.hz, frames = L.frames, last = frames.length - 1;
+  // slow motion around the moment the bud is out
+  const koT = L.ko ? L.ko.frame / hz : null;
+  const near = koT != null && play.t > koT - 0.25 && play.t < koT + 0.9;
+  // (and once it has landed and been watched for a couple of seconds, the rest of the rolling about goes by faster)
+  const late = koT == null && L.firstHit != null && play.t > L.firstHit / hz + 2.2;
+  play.t += dt * (near ? 0.25 : late ? 2.5 : 1);
+  // first the catapult is loaded and wound back, then it swings, carrying the delivery in its cup
+  if (play.t < 0) {
+    const k = clamp((play.t + 0.42) / 0.42, 0, 1), a = play.from + (ARM_FIRE - play.from) * (k * k);
+    armAt(a); shotMesh.position.copy(cupPos(a)); shotMesh.rotation.z = 0;
+    if (!play.thwack && k > 0.95) { play.thwack = true; S.play('boing', { gain: 0.7, rate: 0.7 }); }
+    frameFollow(LAUNCH.x);
+    return;
+  }
+  armAt(ARM_FIRE + Math.sin(Math.min(1, play.t / 0.3) * Math.PI) * 0.15);
+  const f = play.t * hz, pos = lerpFrame(frames, f), n = pos.length - 2;
+  for (let i = 0; i < n; i++) { const m = bodyMeshes[i]; if (!m) continue; m.position.set(pos[i][0], pos[i][1], 0); m.rotation.z = pos[i][2]; }
+  const tb = pos[n], sb = pos[n + 1];
+  bud.root.position.set(tb[0], tb[1], 0); bud.spin.rotation.z = tb[2];
+  shotMesh.position.set(sb[0], sb[1], 0); shotMesh.rotation.z = sb[2]; shotMesh.visible = sb[1] > -3;
+  bud.look = { x: clamp((sb[0] - tb[0]) / 3, -0.6, 0.6), y: clamp(-(sb[1] - tb[1]) / 3, -0.4, 0.4) };
+  // big impacts: a puff and a thump
+  while (play.hitIdx < L.hits.length && L.hits[play.hitIdx][0] <= f) {
+    const first = play.hitIdx === 0, h = L.hits[play.hitIdx++], land = first && LANDING[play.s.what];
+    puff(h[1], h[2], 0.4 + h[3] * 0.06, land ? land.puff : null);
+    if (land) for (const [name, rate, gain = 0.8] of land.sounds) S.play(name, { rate, gain });
+    else S.play('thump', { gain: Math.min(1, 0.3 + h[3] * 0.08), rate: 0.9 + Math.random() * 0.3 });
+  }
+  if (L.ko && !play.koShown && f >= L.ko.frame) {
+    play.koShown = true; bud.ouch = true; starsOn = true;
+    banner(L.ko.how === 'dizzy' ? 'TOO DIZZY!' : pick(['BONK!', 'OOF!', 'SPECIAL DELIVERY!'])); S.play('sparkle', { gain: 0.9 });
+  }
+  // camera: follow the delivery, then stay on the fort; zoom in if the bud goes
+  if (near) frame(tb[0] - 2.2, tb[0] + 2.2, tb[1] - 1.6, tb[1] + 1.6);
+  else if (sb[0] > FORT_X - 4 || (L.firstHit != null && f >= L.firstHit)) frameFort(sb);
+  else frameFollow(sb[0]);
+  if (f >= last + hz * 0.5) endLaunch();
+}
+
+// the first thing a delivery hits: its own sound (a piano lands as a crashing chord), and its own color of puff
+const LANDING = {
+  melon: { puff: '#FF6B81', sounds: [['squish', 0.7, 1], ['thump', 0.8]] },
+  duck: { puff: null, sounds: [['pop', 1.9, 0.9]] },
+  bowling: { puff: null, sounds: [['thump', 0.55, 1]] },
+  piano: { puff: null, sounds: [['thump', 0.6, 1], ['ding', 0.5], ['ding', 0.63], ['ding', 0.84], ['chime', 0.45, 0.6]] },
+  cheese: { puff: '#FFD45C', sounds: [['thump', 1.1]] },
+  sock: { puff: null, sounds: [['pop', 0.6, 0.3]] },
+  beachball: { puff: null, sounds: [['boing', 1.3]] },
+  anvil: { puff: null, sounds: [['thump', 0.5, 1], ['ding', 0.4, 0.9]] },
+  gnome: { puff: null, sounds: [['thump', 1], ['pop', 1.4, 0.5]] },
+};
+/* dust */
+const puffs = [], puffMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true });
+function puff(x, y, k = 1, color = null) {
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry((0.08 + Math.random() * 0.1) * k, 8, 6), puffMat.clone());
+    if (color) m.material.color = toLinear(color);
+    const a = i / 10 * Math.PI * 2; m.position.set(x, y, 0.4); scene.add(m);
+    puffs.push({ m, vx: Math.cos(a) * 2 * k, vy: Math.sin(a) * 2 * k + 0.6, life: 0 });
+  }
+}
+
+/* ---------- input ---------- */
+let down = null;
+canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointerup', (e) => {
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) { down = null; return; }
+  down = null;
+  if (st.mode === 'build' && !st.busy) buildTap(cellAt(e.clientX, e.clientY));
+});
+canvas.addEventListener('pointercancel', () => { down = null; });
+canvas.addEventListener('pointermove', (e) => {
+  const c = st.mode === 'build' ? cellAt(e.clientX, e.clientY) : null;
+  cursor.visible = !!c && e.pointerType === 'mouse';
+  if (c) {
+    const P = (st.tool !== 'remove' && PIECES[st.tool]) || { w: 1, h: 1 };
+    cursor.scale.set(P.w * CELL, P.h * CELL, 1); cursor.position.set(FORT_X + (c.gx + P.w / 2) * CELL, (c.gy + P.h / 2) * CELL, 0.48);
+  }
+});
+
+/* ---------- loop ---------- */
+let T = 0, lastNow = performance.now(), napAt = 4;
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastNow) / 1000); lastNow = now; T += dt;
+  if (play) playTick(dt);
+  for (let i = puffs.length - 1; i >= 0; i--) {
+    const p = puffs[i]; p.life += dt; p.m.position.x += p.vx * dt; p.m.position.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92;
+    p.m.material.opacity = Math.max(0, 1 - p.life / 0.8); p.m.scale.setScalar(1 + p.life * 1.4);
+    if (p.life > 0.8) { scene.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose(); puffs.splice(i, 1); }
+  }
+  // jelly wobbles
+  bodyMeshes.forEach((m, i) => { if (m.userData.jelly) { const k = Math.sin(T * 5 + i) * 0.035; m.scale.set(1 + k, 1 - k, 1); } });
+  if (bud) {
+    drawFace(bud, T);
+    // asleep while you build: it breathes slowly, and mumbles now and then
+    if (st.mode === 'build' || st.mode === 'board') {
+      bud.spin.scale.set(1 + Math.sin(T * 1.6) * 0.03, 1 - Math.sin(T * 1.6) * 0.03, 1);
+      if (T > napAt) { napAt = T + 9 + Math.random() * 8; if (bud.bubble.hidden) say(pick(LINES.nap), 2200); }
+    } else bud.spin.scale.set(1, 1, 1);
+  }
+  if (st.mode === 'build') arcs.children.forEach((c) => { if (c.isGroup) c.rotation.z = Math.sin(T * 1.5 + c.position.x) * 0.12; });
+  placeCamera(dt, false);
+  placeStars(dt); placeBubble();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+function gate(title, text, actions) {
+  $('gate').hidden = false; $('panel').hidden = true;
+  $('gateTitle').textContent = title; $('gateText').textContent = text;
+  const r = $('gateRow'); r.textContent = '';
+  for (const [label, href, primary] of actions) { const a = el('a', 'btn' + (primary ? ' primary' : ''), label); a.href = href; r.append(a); }
+}
+(async () => {
+  S.bindToggle($('soundBtn')); if (!window.BudSound) $('soundBtn').hidden = true;
+  resize(); frameBuild(); placeCamera(0, true);
+  requestAnimationFrame(loop);
+  try { me = await api('GET', '/api/me'); }
+  catch (e) {
+    if (e.status === 401) return gate('Sign in first', 'Hold the Fort is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', `/api/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`, true]]);
+    return gate('Couldn’t load your bud', e.message, [['Go to the island', '/world', true]]);
+  }
+  if (!me.bud) return gate('Make your bud first', 'You need a bud to keep safe!', [['Make your bud', '/', true]]);
+  try { day = await api('GET', `/api/game?fort=${DAY_PARAM == null ? 'today' : DAY_PARAM}`); }
+  catch (e) { return gate('Couldn’t load today’s puzzle', e.message, [['Go to the island', '/world', true]]); }
+  bud = await makeBud(me.bud, BUD_W);
+  buildArcs();
+  // back again today: pick up the fort you last tried
+  if (day.me && day.me.last) st.pieces = day.me.last.filter((p) => PIECES[p.t]).map((p) => ({ t: p.t, x: p.x, y: p.y }));
+  toBuild(); placeCamera(0, true);
+})();
+</script>
+</body>
+</html>
