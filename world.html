@@ -4236,6 +4236,10 @@ function renderGamesPanel() {
     cardBody.append(row);
   }
   cardBody.append(el('p', 'muted', 'On a Discord call? Island Race, Prankster and Question Showdown are in bud’s Activity: the rocket button in the call.'));
+  // party night: a laptop on the TV, everyone's phone a controller (/tv)
+  const tv = el('p', 'muted'), link = el('a', null, 'Start a party night');
+  link.href = '/tv'; link.style.cssText = 'color: inherit; font-weight: 600;'; tv.append('Everyone in one room? Put the island on a TV and play from your phones. ', link, '.');
+  cardBody.append(tv);
 }
 function updateGamesPill() {
   const n = waitingOnMe().length, c = document.getElementById('gamesCount');

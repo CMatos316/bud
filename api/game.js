@@ -17,6 +17,9 @@
 // POST { action: 'mail-send' | 'mail-star' | 'mail-toss', to, strokes, caption, id, fav }
 // Hold the Fort, the daily puzzle (lib/fort.js, lib/fortStore.js): GET ?fort=today | ?fort=<day number> (any other
 // day is practice); POST { action: 'hf-try', n, pieces }
+// Party night (lib/party.js: a TV and everyone's phones): GET ?party=<CODE>[&tv=1] where the party is now;
+// POST { action: 'party-new' | 'party-set' | 'party-token', code, game, tv }. The TV watches a race or a Prankster
+// game without joining: GET ?rc=<room>&watch=1, ?pk=<room>&watch=1
 import { readSession, sameOrigin } from '../lib/session.js';
 import { createGame, hide, shoot, resign, getGame, myGames } from '../lib/peekaboo.js';
 import { isDiscordId } from '../lib/notes.js';
@@ -28,6 +31,7 @@ import * as pult from '../lib/catapult.js';
 import * as bpg from '../lib/bpgame.js';
 import * as race from '../lib/race.js';
 import * as fortStore from '../lib/fortStore.js';
+import * as party from '../lib/party.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
 
@@ -59,9 +63,17 @@ export async function GET(request) {
     if (hf !== 'today' && !/^[0-9]{1,6}$/.test(hf)) return json({ error: 'which day?' }, 400);
     try { return json(await fortStore.view(session.id, hf === 'today' ? null : Number(hf))); } catch (err) { return fail(err); }
   }
+  const pt = url.searchParams.get('party');
+  if (pt != null) {
+    const code = pt.toUpperCase();
+    if (!party.okCode(code)) return json({ error: 'codes are four letters. check the TV?' }, 400);
+    try { return json(await party.look(code, session.id, session.name, url.searchParams.get('tv') === '1')); } catch (err) { return fail(err); }
+  }
+  const watching = url.searchParams.get('watch') === '1';
   const rc = url.searchParams.get('rc');
   if (rc != null) {
     if (!okRoom(rc)) return json({ error: 'which race?' }, 400);
+    if (watching) { try { return json(await race.watch(rc, url.searchParams.get('full') === '1')); } catch (err) { return fail(err); } }
     try { return json(await race.checkIn(rc, session.id, session.name, url.searchParams.get('full') === '1')); } catch (err) { return fail(err); }
   }
   const bg = url.searchParams.get('bpg');
@@ -81,6 +93,7 @@ export async function GET(request) {
   const pk = url.searchParams.get('pk');
   if (pk != null) {
     if (!okRoom(pk)) return json({ error: 'which game?' }, 400);
+    if (watching) { try { return json(await prank.watch(pk)); } catch (err) { return fail(err); } }
     try { return json(await prank.checkIn(pk, session.id, session.name)); } catch (err) { return fail(err); }
   }
   if (room != null) {
@@ -111,6 +124,16 @@ export async function POST(request) {
       if (action === 'dd-send') return json(await doodle.sendDrawing(session.id, id, body.strokes));
       if (action === 'dd-guess') return json(await doodle.guess(session.id, id, String(body.guess || '').slice(0, 60)));
       if (action === 'dd-giveup') return json(await doodle.giveUp(session.id, id));
+      return json({ error: 'unknown move' }, 400);
+    } catch (err) { return fail(err); }
+  }
+  if (typeof action === 'string' && action.startsWith('party-')) {
+    try {
+      const code = typeof body.code === 'string' ? body.code.toUpperCase() : null;
+      if (action === 'party-new') return json(await party.open(session.id, session.name, code));
+      if (!party.okCode(code)) return json({ error: 'codes are four letters. check the TV?' }, 400);
+      if (action === 'party-set') return json(await party.setGame(code, session.id, String(body.game || '')));
+      if (action === 'party-token') return json(await party.rtToken(code, session.id, session.name, body.tv === true));
       return json({ error: 'unknown move' }, 400);
     } catch (err) { return fail(err); }
   }

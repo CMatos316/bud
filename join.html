@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+/* no zooming on phones (see /js/nozoom.js) */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@supports (-webkit-touch-callout: none) { input, textarea, select { font-size: max(16px, 1em) !important; } }
+</style>
+<script src="/js/nozoom.js"></script>
+<title>Join the party · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="Type the four letters on the TV to play along from your phone.">
+<meta name="theme-color" content="#BFD9FF">
+<meta name="robots" content="noindex">
+<style>
+/* Party night, the phone's way in: type the four letters on the TV. After that this page is the waiting room,
+   and it goes wherever the TV goes (see /js/party-kit.js). */
+:root { --ink: #1D1C2B; --muted: #5E5D75; --card: rgba(255,255,255,.9); --line: rgba(29,28,43,.12); --shadow: rgba(46,40,90,.25); --bad: #C0303B;
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: linear-gradient(180deg, #BFD9FF, #FBE3EF) fixed; color: var(--ink); font-family: var(--font); -webkit-tap-highlight-color: transparent;
+  display: grid; place-items: center; min-height: 100dvh; padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); }
+.panel { width: min(420px, 100%); background: var(--card); border-radius: 28px; padding: 26px 22px; box-shadow: 0 30px 60px -34px var(--shadow); text-align: center; display: grid; gap: 14px; }
+.panel img.logo { width: 54px; height: 54px; margin: 0 auto; }
+h1 { margin: 0; font-size: 30px; line-height: 1.05; }
+p { margin: 0; color: var(--muted); font-size: 17px; line-height: 1.4; }
+input#code { width: 100%; font: 700 44px var(--font) !important; letter-spacing: .32em; text-indent: .32em; text-align: center; text-transform: uppercase; color: var(--ink); background: #fff; border: 2px solid var(--line); border-radius: 18px; padding: 10px 4px; outline: none; }
+input#code:focus { border-color: var(--ink); }
+input#code::placeholder { color: rgba(29,28,43,.18); }
+.btn { font: 600 19px var(--font); border-radius: 999px; padding: 14px 24px; border: 0; background: var(--ink); color: #fff; cursor: pointer; width: 100%; }
+.btn:disabled { opacity: .45; }
+.msg { color: var(--bad); font-weight: 600; min-height: 1.4em; }
+.code { display: flex; gap: 6px; justify-content: center; }
+.code span { display: grid; place-items: center; width: 40px; height: 48px; border-radius: 12px; background: var(--ink); color: #fff; font-size: 27px; font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.chips span { background: rgba(29,28,43,.07); border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 15px; }
+.chips span.me { background: var(--ink); color: #fff; }
+.label { font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.wait { display: inline-flex; gap: 6px; justify-content: center; }
+.wait i { width: 10px; height: 10px; border-radius: 50%; background: var(--ink); opacity: .25; animation: wait 1.2s infinite; }
+.wait i:nth-child(2) { animation-delay: .2s; } .wait i:nth-child(3) { animation-delay: .4s; }
+@keyframes wait { 30% { opacity: 1; transform: translateY(-4px); } 60% { opacity: .25; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .wait i { animation: none; opacity: .5; } }
+</style>
+</head>
+<body>
+<main class="panel" id="enter" hidden>
+  <img class="logo" src="/img/favicon.svg" alt="">
+  <h1>Join the party</h1>
+  <p>Type the four letters on the TV.</p>
+  <form id="form">
+    <input id="code" name="code" inputmode="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="4" placeholder="····" aria-label="The four letters on the TV">
+    <p class="msg" id="msg" role="alert"></p>
+    <button class="btn" id="go" type="submit" disabled>Join</button>
+  </form>
+</main>
+<main class="panel" id="lobby" hidden>
+  <img class="logo" src="/img/favicon.svg" alt="">
+  <h1 id="inTitle">You’re in!</h1>
+  <p id="inText"></p>
+  <div class="wait" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="code" id="codeShow"></div>
+  <div>
+    <p class="label" id="hereLabel">Here so far</p>
+    <div class="chips" id="here" style="margin-top: 6px"></div>
+  </div>
+</main>
+<main class="panel" id="gate" hidden>
+  <img class="logo" src="/img/favicon.svg" alt="">
+  <h1 id="gateTitle"></h1><p id="gateText"></p><div id="gateRow"></div>
+</main>
+
+<script type="module">
+import { partyCode, cleanCode, okCode, pageFor, placeOf, lookUp, follow, keepAwake } from '/js/party-kit.js';
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const show = (id) => { for (const k of ['enter', 'lobby', 'gate']) $(k).hidden = k !== id; };
+
+function gate(title, text, label, fn) {
+  show('gate'); $('gateTitle').textContent = title; $('gateText').textContent = text;
+  const row = $('gateRow'); row.textContent = '';
+  if (label) { const b = el('button', 'btn', label); b.type = 'button'; b.addEventListener('click', fn); row.append(b); }
+}
+function ask(message = '', code = '') {
+  show('enter'); $('msg').textContent = message; $('code').value = code; $('go').disabled = !okCode(code);
+  if (!matchMedia('(pointer: coarse)').matches) $('code').focus();
+}
+function renderLobby(p) {
+  show('lobby');
+  $('inText').textContent = p.mine ? 'Pick a game on the TV and your phone will follow.' : `Watch the TV. ${p.hostName} is picking a game.`;
+  const code = $('codeShow');
+  if (!code.childNodes.length) for (const ch of p.code) code.append(el('span', null, ch));
+  const box = $('here'); box.textContent = '';
+  $('hereLabel').textContent = `Here so far (${p.members.length})`;
+  for (const m of p.members) box.append(el('span', m.id === p.me ? 'me' : null, m.id === p.me ? 'You' : m.name));
+}
+async function join(code) {
+  $('go').disabled = true; $('msg').textContent = '';
+  let p;
+  try { p = await lookUp(code, false); }
+  catch (e) {
+    if (e.status === 401) return gate('Sign in to join', 'Party night is for members of the server. Sign in with Discord and you’ll land right back here.', 'Sign in with Discord', () => { location.href = `/api/auth/login?next=${encodeURIComponent(`/join?c=${code}`)}`; });
+    if (e.status === 403) return gate('Members only', 'This is for members of The Buddie System server.');
+    return ask(e.message, code);
+  }
+  if (partyCode() !== code) history.replaceState(null, '', `/join?c=${code}`);
+  if (placeOf(p) !== 'lobby') { location.replace(pageFor(p, false)); return; }
+  renderLobby(p);
+  keepAwake();
+  follow(code, 'lobby', (now) => { if (now) renderLobby(now); else ask('That party’s over. Got a new code?'); });
+}
+$('code').addEventListener('input', () => { const c = cleanCode($('code').value); $('code').value = c; $('go').disabled = c.length !== 4; $('msg').textContent = ''; });
+$('form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const c = cleanCode($('code').value);
+  if (!okCode(c)) { $('msg').textContent = c.length === 4 ? 'That doesn’t look like a code. Check the TV?' : ''; return; }
+  join(c);
+});
+const start = partyCode();
+if (start) join(start); else ask();
+</script>
+</body>
+</html>

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Party night · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="Put the island on a TV. Everyone joins from their phone with a four-letter code and plays together.">
+<meta name="theme-color" content="#BFD9FF">
+<meta name="robots" content="noindex">
+<style>
+/* Party night, the TV's page: a laptop plugged into a TV shows this. A code to join on the left, the games on
+   the right. Everything is sized off the screen so it reads from a couch. Phones go to /join. */
+:root {
+  --ink: #1D1C2B; --muted: #5E5D75; --card: rgba(255,255,255,.9); --line: rgba(29,28,43,.1); --shadow: rgba(46,40,90,.28);
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --u: clamp(10px, min(1.05vw, 1.72vh), 26px);   /* one unit: everything scales with the screen, and fits it */
+}
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: linear-gradient(180deg, #BFD9FF, #FBE3EF) fixed; color: var(--ink); font-family: var(--font); font-size: calc(var(--u) * 1.5); -webkit-tap-highlight-color: transparent; }
+.wrap { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 9fr); gap: calc(var(--u) * 2.4); padding: calc(var(--u) * 2.2) calc(var(--u) * 2.8); align-items: start; }
+.brand { display: flex; align-items: center; gap: calc(var(--u) * .7); font-weight: 600; font-size: calc(var(--u) * 1.5); color: inherit; text-decoration: none; margin-bottom: calc(var(--u) * 1.4); }
+.brand img { width: calc(var(--u) * 2.4); height: calc(var(--u) * 2.4); }
+h1 { margin: 0 0 calc(var(--u) * .5); font-size: calc(var(--u) * 3.6); line-height: 1.02; letter-spacing: -.01em; text-wrap: balance; }
+.lede { margin: 0 0 calc(var(--u) * 1.4); color: var(--muted); font-size: calc(var(--u) * 1.6); line-height: 1.3; max-width: 22em; }
+.join { background: #fff; border-radius: calc(var(--u) * 2); padding: calc(var(--u) * 1.6); box-shadow: 0 30px 60px -34px var(--shadow); display: grid; grid-template-columns: 1fr auto; gap: calc(var(--u) * 1.2) calc(var(--u) * 1.4); align-items: end; }
+.join .go { grid-column: 1 / -1; }
+.join .qr { text-align: center; }
+.join .qr svg { width: calc(var(--u) * 9.5); height: calc(var(--u) * 9.5); display: block; }
+.join .qr p { margin: calc(var(--u) * .2) 0 0; font-size: calc(var(--u) * 1.05); font-weight: 600; color: var(--muted); }
+.join .how { margin: 0; color: var(--muted); font-weight: 600; font-size: calc(var(--u) * 1.5); }
+.join .url { margin: 0; font-weight: 700; font-size: calc(var(--u) * 2.5); line-height: 1.1; white-space: nowrap; }
+.code { display: flex; gap: calc(var(--u) * .7); }
+.code span { display: grid; place-items: center; width: calc(var(--u) * 4.3); height: calc(var(--u) * 5.1); border-radius: calc(var(--u) * 1); background: var(--ink); color: #fff; font-size: calc(var(--u) * 3.3); font-weight: 700; }
+.here { margin-top: calc(var(--u) * 1.4); }
+.here .label, .games .label { font-size: calc(var(--u) * 1.15); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 0 0 calc(var(--u) * .6); }
+.chips { display: flex; flex-wrap: wrap; gap: calc(var(--u) * .5); }
+.chips span { background: var(--card); border-radius: 999px; padding: calc(var(--u) * .3) calc(var(--u) * .9); font-weight: 600; font-size: calc(var(--u) * 1.4); animation: pop .35s cubic-bezier(.3,1.6,.5,1); }
+.chips .none { background: none; padding-left: 0; color: var(--muted); font-weight: 500; animation: none; }
+@keyframes pop { from { transform: scale(.5); opacity: 0; } }
+.games { padding-top: calc(var(--u) * 4.2); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 16.5), 1fr)); gap: calc(var(--u) * 1.1); }
+.game { appearance: none; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; background: var(--card); border-radius: calc(var(--u) * 1.6); padding: calc(var(--u) * 1.3); display: grid; gap: calc(var(--u) * .45); align-content: start; box-shadow: 0 22px 44px -32px var(--shadow); transition: transform .15s, box-shadow .15s; position: relative; }
+.game:hover:not(:disabled), .game:focus-visible { transform: translateY(-4px); box-shadow: 0 30px 50px -30px var(--shadow); outline: none; }
+.game:focus-visible { outline: 4px solid var(--ink); }
+.game:disabled { cursor: default; opacity: .62; }
+.game .top { display: flex; align-items: center; gap: calc(var(--u) * .8); }
+.game .ic { width: calc(var(--u) * 3.6); height: calc(var(--u) * 3.6); border-radius: calc(var(--u) * 1); display: grid; place-items: center; font-size: calc(var(--u) * 2.1); flex: none; }
+.game h2 { margin: 0; font-size: calc(var(--u) * 2.1); line-height: 1.05; }
+.game .n { justify-self: start; font-size: calc(var(--u) * 1.05); font-weight: 700; background: rgba(29,28,43,.08); border-radius: 999px; padding: calc(var(--u) * .15) calc(var(--u) * .7); white-space: nowrap; }
+.game p { margin: 0; font-size: calc(var(--u) * 1.35); line-height: 1.3; color: var(--muted); }
+.game .phone { color: var(--ink); font-weight: 600; }
+.game .key { position: absolute; right: calc(var(--u) * 1); bottom: calc(var(--u) * .9); font-size: calc(var(--u) * 1); font-weight: 700; color: var(--muted); border: 2px solid var(--line); border-radius: calc(var(--u) * .4); padding: 0 calc(var(--u) * .45); }
+.game .setup { justify-self: start; font-size: calc(var(--u) * 1.05); font-weight: 700; background: #FFE08A; color: #4A3B00; border-radius: 999px; padding: calc(var(--u) * .15) calc(var(--u) * .7); }
+.note { margin: calc(var(--u) * 1.2) 0 0; color: var(--muted); font-size: calc(var(--u) * 1.25); line-height: 1.35; max-width: 44em; }
+.msg { color: #C0303B; font-weight: 600; }
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; text-align: center; }
+.gate .panel { background: var(--card); border-radius: 26px; padding: 28px; max-width: 520px; box-shadow: 0 30px 60px -34px var(--shadow); }
+.gate h1 { font-size: 32px; } .gate p { font-size: 18px; color: var(--muted); line-height: 1.4; margin: 8px 0 18px; }
+.btn { font: 600 18px var(--font); border-radius: 999px; padding: 12px 24px; border: 0; background: var(--ink); color: #fff; cursor: pointer; }
+@media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } .games { padding-top: 0; } :root { --u: 11px; } }
+@media (prefers-reduced-motion: reduce) { .chips span, .game { animation: none; transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap" hidden>
+  <section>
+    <a class="brand" href="/world"><img src="/img/favicon.svg" alt=""><span>the buddie system</span></a>
+    <h1>Party night</h1>
+    <p class="lede">This screen is the TV. Everyone plays from their own phone.</p>
+    <div class="join">
+      <div class="go">
+        <p class="how">On your phone, go to</p>
+        <p class="url" id="url"></p>
+      </div>
+      <div>
+        <p class="how" style="margin-bottom: calc(var(--u) * .5)">and type this code</p>
+        <div class="code" id="code"></div>
+      </div>
+      <div class="qr" id="qr"></div>
+    </div>
+    <div class="here">
+      <p class="label" id="hereLabel">Here so far</p>
+      <div class="chips" id="here" aria-live="polite"></div>
+    </div>
+  </section>
+  <section class="games">
+    <p class="label">Pick a game</p>
+    <div class="grid" id="grid"></div>
+    <p class="note" id="note" hidden></p>
+    <p class="note msg" id="msg" role="alert"></p>
+  </section>
+</div>
+<div class="gate" id="gate" hidden><div class="panel"><h1 id="gateTitle"></h1><p id="gateText"></p><div id="gateRow"></div></div></div>
+
+<script type="module">
+import { partyCode, pageFor, lookUp, qrSvg, joinUrl, keepAwake } from '/js/party-kit.js';
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const GAMES = [
+  { id: 'race', name: 'Island Race', icon: '🏁', tint: '#FFE3D6', n: '2 to 6', pitch: 'Roll, hop round the island and grab items. First bud back to the campfire wins.', phone: 'Phones roll the dice and use items.' },
+  { id: 'prank', name: 'Prankster', icon: '😈', tint: '#E6DDFF', n: '4 to 12', pitch: 'Someone in this room is a Prankster. Talk it out and vote them off the island.', phone: 'Phones hold your secret role and your vote.' },
+  { id: 'bumper', name: 'Bumper Buds', icon: '💥', tint: '#D6ECFF', n: '2 to 12', live: true, pitch: 'Bump everyone else off the island while it shrinks. Last bud standing.', phone: 'Phones are a thumbstick and a dash button.' },
+  { id: 'tug', name: 'Tug of War', icon: '🪢', tint: '#DDF3DF', n: '2 to 12', live: true, pitch: 'Two teams, one rope, one very muddy puddle in the middle.', phone: 'Phones are one big button. Tap fast.' },
+  { id: 'freeze', name: 'Freeze', icon: '🦀', tint: '#FFF0C2', n: '2 to 12', live: true, pitch: 'Run while the crab naps. Freeze when it looks, or a wave takes you back.', phone: 'Shake your phone to run. Hold still to freeze.' },
+];
+let party = null, busy = false;
+
+async function post(body) {
+  const res = await fetch('/api/game', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw Object.assign(new Error(data.error || 'something went wrong'), { status: res.status });
+  return data;
+}
+function gate(title, text, label, fn) {
+  $('wrap').hidden = true; $('gate').hidden = false;
+  $('gateTitle').textContent = title; $('gateText').textContent = text;
+  const row = $('gateRow'); row.textContent = '';
+  if (label) { const b = el('button', 'btn', label); b.type = 'button'; b.addEventListener('click', fn); row.append(b); }
+}
+function renderHere() {
+  const box = $('here'), list = party.members || [];
+  $('hereLabel').textContent = list.length ? `Here so far (${list.length})` : 'Here so far';
+  const have = new Set([...box.children].map((c) => c.dataset.id));
+  if (!list.length) { box.textContent = ''; box.append(el('span', 'none', 'Nobody yet. Grab your phones!')); return; }
+  box.querySelector('.none')?.remove();
+  for (const m of list) if (!have.has(m.id)) { const c = el('span', null, m.name); c.dataset.id = m.id; box.append(c); }
+  for (const c of [...box.children]) if (!list.some((m) => m.id === c.dataset.id)) c.remove();
+}
+function renderGames() {
+  const grid = $('grid'); grid.textContent = '';
+  GAMES.forEach((g, i) => {
+    const off = g.live && !party.live;
+    const b = el('button', 'game'); b.type = 'button'; b.disabled = off || busy; b.dataset.game = g.id;
+    const top = el('div', 'top'), ic = el('span', 'ic', g.icon); ic.style.background = g.tint; ic.setAttribute('aria-hidden', 'true');
+    top.append(ic, el('h2', null, g.name));
+    b.append(top, el('p', null, g.pitch), el('p', 'phone', g.phone), el('span', 'n', `${g.n} players`));
+    if (off) b.querySelector('.n').replaceWith(el('span', 'setup', 'Needs setup first'));
+    else { const k = el('span', 'key', String(i + 1)); k.setAttribute('aria-hidden', 'true'); b.append(k); }
+    b.addEventListener('click', () => pick(g.id));
+    grid.append(b);
+  });
+  const note = $('note');
+  note.hidden = party.live;
+  note.textContent = 'Bumper Buds, Tug of War and Freeze need the live database switched on once (two values in Vercel). Island Race and Prankster are ready now.';
+}
+async function pick(game) {
+  if (busy) return;
+  busy = true; $('msg').textContent = ''; renderGames();
+  try { location.href = pageFor(await post({ action: 'party-set', code: party.code, game }), true); }
+  catch (e) { $('msg').textContent = e.message; busy = false; renderGames(); }
+}
+addEventListener('keydown', (e) => {
+  if (!party || e.metaKey || e.ctrlKey || e.altKey) return;
+  const g = GAMES[Number(e.key) - 1];
+  if (g && !(g.live && !party.live)) pick(g.id);
+});
+async function refresh() {
+  setTimeout(refresh, 3000);
+  if (document.hidden || busy) return;
+  try { const p = await lookUp(party.code, true); party = { ...party, members: p.members, live: p.live }; renderHere(); } catch (e) {}
+}
+
+(async () => {
+  let prev = partyCode();
+  try { prev = prev || localStorage.getItem('bud_party'); } catch (e) {}
+  try {
+    party = await post({ action: 'party-new', code: prev });
+    // back here from a game (or a reload mid-game): bring the phones back to the lobby too
+    if (party.game !== 'lobby') party = await post({ action: 'party-set', code: party.code, game: 'lobby' });
+  } catch (e) {
+    if (e.status === 401) return gate('Sign in on the TV', 'Party night is for members of the server. Sign in with Discord on this computer and you’ll land right back here.', 'Sign in with Discord', () => { location.href = `/api/auth/login?next=${encodeURIComponent('/tv')}`; });
+    if (e.status === 403) return gate('Members only', 'This is for members of The Buddie System server.');
+    return gate('Couldn’t start the party', e.message, 'Try again', () => location.reload());
+  }
+  try { localStorage.setItem('bud_party', party.code); } catch (e) {}
+  if (partyCode() !== party.code) history.replaceState(null, '', `/tv?code=${party.code}`);
+  $('qr').append(qrSvg(joinUrl(party.code)), el('p', null, 'or scan this'));
+  $('url').textContent = `${location.host}/join`;
+  const code = $('code'); code.setAttribute('aria-label', `The code is ${party.code.split('').join(' ')}`);
+  for (const ch of party.code) code.append(el('span', null, ch));
+  renderHere(); renderGames();
+  $('wrap').hidden = false;
+  keepAwake();
+  setTimeout(refresh, 3000);
+})();
+</script>
+</body>
+</html>

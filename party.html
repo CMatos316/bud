@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+/* no zooming on phones (see /js/nozoom.js) */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+</style>
+<script src="/js/nozoom.js"></script>
+<title>Party games · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="Bumper Buds, Tug of War and Freeze: the island on a TV, and every phone a controller.">
+<meta name="theme-color" content="#BFD9FF">
+<meta name="robots" content="noindex">
+<style>
+/* Bumper Buds, Tug of War and Freeze (party night, /tv). One page, two jobs:
+   on the TV (?tv=1) it runs the game and draws it (js/party-tv.js);
+   on a phone it's a controller (js/party-pad.js). They meet in a live room (js/party-rt.js). */
+:root {
+  --ink: #1D1C2B; --muted: #5E5D75; --card: rgba(255,255,255,.92); --line: rgba(29,28,43,.1); --shadow: rgba(46,40,90,.3); --bad: #C0303B;
+  --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --u: clamp(10px, min(1.05vw, 1.75vh), 26px);   /* the TV's unit: everything on it scales with the screen */
+  --me: #9A98B5;                                   /* a phone's own color, set from the game */
+}
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; color: var(--ink); font-family: var(--font); -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+button { font-family: var(--font); }
+
+/* ---------- the TV ---------- */
+#scene3d, #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#scene { pointer-events: none; }   /* the flat layer on top: Tug of War, and confetti over the 3D games */
+.top { position: fixed; top: calc(var(--u) * 1); left: calc(var(--u) * 1.4); right: calc(var(--u) * 1.4); display: flex; align-items: center; gap: calc(var(--u) * .6); z-index: 3; font-size: calc(var(--u) * 1.3); }
+.brand { display: flex; align-items: center; gap: calc(var(--u) * .6); font-weight: 700; font-size: calc(var(--u) * 1.7); color: var(--ink); background: rgba(255,255,255,.88); border-radius: 999px; padding: calc(var(--u) * .35) calc(var(--u) * 1.1) calc(var(--u) * .35) calc(var(--u) * .45); }
+.brand img { width: calc(var(--u) * 2.1); height: calc(var(--u) * 2.1); }
+.top .round { font-weight: 700; font-size: calc(var(--u) * 1.4); background: rgba(255,255,255,.88); border-radius: 999px; padding: calc(var(--u) * .4) calc(var(--u) * 1); }
+.top .round:empty { display: none; }
+.spacer { flex: 1; }
+.top .joinchip { font-size: calc(var(--u) * 1.15); padding: calc(var(--u) * .4) calc(var(--u) * 1); }
+.top .joinchip b { font-size: calc(var(--u) * 1.35); }
+.pill { background: rgba(255,255,255,.88); color: var(--ink); border: 0; border-radius: 999px; padding: calc(var(--u) * .45) calc(var(--u) * 1); font: 600 calc(var(--u) * 1.15) var(--font); cursor: pointer; white-space: nowrap; }
+.icon-btn { border: 0; background: rgba(255,255,255,.88); color: var(--ink); width: calc(var(--u) * 2.7); height: calc(var(--u) * 2.7); border-radius: 999px; display: grid; place-items: center; cursor: pointer; padding: 0; flex: none; }
+.icon-btn svg { width: 50%; height: 50%; }
+.score { position: fixed; left: calc(var(--u) * 1.4); top: calc(var(--u) * 5); display: grid; gap: calc(var(--u) * .4); z-index: 2; justify-items: start; }
+.score .chip { display: flex; align-items: center; gap: calc(var(--u) * .5); background: rgba(255,255,255,.9); border-radius: 999px; padding: calc(var(--u) * .25) calc(var(--u) * .9) calc(var(--u) * .25) calc(var(--u) * .35); font-size: calc(var(--u) * 1.25); box-shadow: 0 8px 16px -12px var(--shadow); transition: opacity .3s; max-width: calc(var(--u) * 24); }
+.score .chip i { width: calc(var(--u) * 1.3); height: calc(var(--u) * 1.3); border-radius: 50%; flex: none; }
+.score .chip b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score .chip small { font-weight: 700; color: var(--muted); font-size: calc(var(--u) * 1.15); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score .chip.out { opacity: .4; }
+.score .chip.team small { font-weight: 500; }
+.light { position: fixed; left: 50%; top: calc(var(--u) * 5); transform: translateX(-50%); z-index: 2; font-weight: 700; font-size: calc(var(--u) * 3.4); color: #fff; padding: calc(var(--u) * .3) calc(var(--u) * 2.2); border-radius: 999px; letter-spacing: .04em; box-shadow: 0 16px 30px -18px var(--shadow); }
+.light.green { background: #2E9E62; } .light.red { background: #E8394B; }
+body.looking::after { content: ""; position: fixed; inset: 0; box-shadow: inset 0 0 0 calc(var(--u) * .9) #E8394B; pointer-events: none; z-index: 2; }
+.banner { position: fixed; left: 50%; top: 38%; transform: translate(-50%, -50%) scale(.6); opacity: 0; pointer-events: none; text-align: center; z-index: 4; transition: opacity .2s, transform .35s cubic-bezier(.3,1.6,.5,1); color: #fff; width: 92%; }
+.banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.banner .big { font-weight: 700; font-size: calc(var(--u) * 6); line-height: 1.05; -webkit-text-stroke: calc(var(--u) * .22) var(--ink); paint-order: stroke fill; text-shadow: 0 calc(var(--u) * .5) 0 var(--ink); text-wrap: balance; }
+.banner.count .big { font-size: calc(var(--u) * 14); }
+.banner.go .big { font-size: calc(var(--u) * 11); color: #FFE08A; }
+.banner .sub { margin-top: calc(var(--u) * .8); font-weight: 600; font-size: calc(var(--u) * 2); color: var(--ink); background: rgba(255,255,255,.9); display: inline-block; border-radius: 999px; padding: calc(var(--u) * .3) calc(var(--u) * 1.4); }
+.tvpanel { position: fixed; left: calc(var(--u) * 1.4); bottom: calc(var(--u) * 1.4); width: calc(var(--u) * 34); max-width: calc(100% - var(--u) * 2.8); background: var(--card); border-radius: calc(var(--u) * 1.8); padding: calc(var(--u) * 1.5); box-shadow: 0 30px 60px -34px var(--shadow); z-index: 3; display: grid; gap: calc(var(--u) * .8); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.tvpanel h2 { margin: 0; font-size: calc(var(--u) * 2.6); line-height: 1.05; text-wrap: balance; }
+.tvpanel p { margin: 0; font-size: calc(var(--u) * 1.35); line-height: 1.35; color: var(--muted); }
+.tvpanel p.phones { color: var(--ink); font-weight: 600; }
+.tvpanel .joincard { box-shadow: none; background: none; padding: 0; gap: calc(var(--u) * 1); }
+.tvpanel .joincard svg { width: calc(var(--u) * 8.5); height: calc(var(--u) * 8.5); }
+.tvpanel .joincard .jc-how { font-size: calc(var(--u) * 1.1); }
+.tvpanel .joincard .jc-url { font-size: calc(var(--u) * 1.6); }
+.tvpanel .joincard .jc-code span { width: calc(var(--u) * 2.8); height: calc(var(--u) * 3.3); font-size: calc(var(--u) * 2); border-radius: calc(var(--u) * .7); }
+.tvpanel .places { margin: 0; padding-left: 1.3em; font-size: calc(var(--u) * 1.4); line-height: 1.5; }
+.tvpanel .row { display: flex; }
+.btn { font: 600 calc(var(--u) * 1.5) var(--font); border-radius: 999px; padding: calc(var(--u) * .7) calc(var(--u) * 1.8); border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+.btn.primary { background: var(--ink); color: #fff; border-color: transparent; flex: 1; font-size: calc(var(--u) * 1.8); }
+.btn:disabled { opacity: .45; cursor: default; }
+.tabs { display: flex; gap: calc(var(--u) * .4); background: rgba(29,28,43,.07); border-radius: 999px; padding: calc(var(--u) * .3); }
+.tab { flex: 1; border: 0; background: none; color: var(--ink); border-radius: 999px; padding: calc(var(--u) * .45) calc(var(--u) * .4); font: 600 calc(var(--u) * 1.15) var(--font); cursor: pointer; white-space: nowrap; }
+.tab.on { background: #fff; box-shadow: 0 4px 10px -6px var(--shadow); }
+.offline { position: fixed; left: 50%; bottom: calc(var(--u) * 1.4); transform: translateX(-50%); z-index: 6; background: var(--ink); color: #fff; border-radius: 999px; padding: calc(var(--u) * .5) calc(var(--u) * 1.4); font-weight: 600; font-size: calc(var(--u) * 1.3); }
+.oops { position: fixed; left: 50%; top: calc(var(--u) * 5); transform: translateX(-50%); z-index: 7; background: #fff; color: var(--bad); border: 2px solid var(--bad); border-radius: calc(var(--u) * 1); padding: calc(var(--u) * .7) calc(var(--u) * 1.2); font-weight: 600; font-size: max(15px, calc(var(--u) * 1.2)); max-width: min(90%, 720px); text-align: center; -webkit-user-select: text; user-select: text; }
+
+/* ---------- a phone ---------- */
+#pad { position: fixed; inset: 0; display: grid; grid-template-rows: auto auto 1fr; background: linear-gradient(180deg, color-mix(in srgb, var(--me) 26%, #fff), color-mix(in srgb, var(--me) 12%, #fff)); padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); gap: 8px; touch-action: none; }
+.padtop { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,.85); border-radius: 18px; padding: 6px 12px 6px 8px; min-height: 56px; }
+.padtop canvas { width: 44px; height: 44px; flex: none; }
+.padtop .who { display: grid; min-width: 0; flex: 1; }
+.padtop b { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.padtop small { font-size: 13px; color: var(--muted); font-weight: 600; }
+.padtop i { width: 22px; height: 22px; border-radius: 50%; flex: none; border: 3px solid #fff; box-shadow: 0 0 0 1px var(--line); }
+.padsay { display: grid; gap: 6px; text-align: center; padding: 0 4px; }
+.padsay p { margin: 0; }
+.padsay .line { font-size: 19px; font-weight: 700; line-height: 1.2; min-height: 1.2em; text-wrap: balance; }
+.padsay .note { font-size: 14.5px; color: var(--muted); font-weight: 500; line-height: 1.3; }
+.padsay .note:empty { display: none; }
+.padsay .start { font: 700 19px var(--font); border: 0; border-radius: 999px; padding: 13px 20px; background: var(--ink); color: #fff; touch-action: manipulation; }
+.padsay .start:disabled { opacity: .45; }
+.padmain { position: relative; min-height: 0; }
+.ctl { position: absolute; inset: 0; border-radius: 26px; overflow: hidden; }
+.veil { position: absolute; inset: 0; z-index: 3; border-radius: 26px; background: rgba(255,255,255,.97); display: grid; place-items: center; text-align: center; padding: 24px; font-size: 23px; font-weight: 700; line-height: 1.25; text-wrap: balance; }
+.flash { position: absolute; left: 12px; right: 12px; top: 12px; z-index: 4; background: #1D6FA8; color: #fff; border-radius: 16px; padding: 12px 14px; font-weight: 700; font-size: 17px; text-align: center; opacity: 0; transform: translateY(-8px); transition: opacity .2s, transform .2s; pointer-events: none; }
+.flash.on { opacity: 1; transform: none; }
+.padoff { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5; background: var(--ink); color: #fff; border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 14px; white-space: nowrap; }
+/* Bumper Buds: steer on the left, dash on the right */
+.bumper { display: grid; grid-template-columns: 62fr 38fr; gap: 8px; }
+.stick { position: relative; background: rgba(255,255,255,.6); border-radius: 26px; touch-action: none; }
+.stick > span { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--muted); pointer-events: none; }
+.stick .base { position: absolute; left: 50%; top: 50%; width: 148px; height: 148px; margin: -74px 0 0 -74px; border-radius: 50%; background: rgba(29,28,43,.08); border: 3px solid rgba(29,28,43,.12); pointer-events: none; display: grid; place-items: center; }
+.stick .base.on { background: rgba(29,28,43,.12); }
+.stick .knob { width: 66px; height: 66px; border-radius: 50%; background: var(--me); box-shadow: 0 8px 16px -8px rgba(0,0,0,.5), inset 0 -6px 0 rgba(0,0,0,.14); }
+.dash { border: 0; border-radius: 26px; background: var(--me); color: #fff; font-weight: 700; font-size: 26px; letter-spacing: .06em; touch-action: none; position: relative; overflow: hidden; box-shadow: inset 0 -10px 0 rgba(0,0,0,.16); text-shadow: 0 2px 0 rgba(0,0,0,.2); }
+.dash:active { transform: translateY(3px); box-shadow: inset 0 -5px 0 rgba(0,0,0,.16); }
+.dash.cool::after { content: ""; position: absolute; inset: 0; background: rgba(255,255,255,.55); transform-origin: bottom; animation: cool 1.7s linear forwards; }
+@keyframes cool { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+/* Tug of War: the whole thing is the button */
+.tugbtn { border: 0; background: var(--me); color: #fff; display: grid; place-content: center; gap: 6px; touch-action: none; box-shadow: inset 0 -14px 0 rgba(0,0,0,.16); text-shadow: 0 3px 0 rgba(0,0,0,.2); width: 100%; height: 100%; }
+.tugbtn b { font-size: clamp(48px, 16vw, 110px); line-height: 1; letter-spacing: .03em; }
+.tugbtn small { font-size: 17px; font-weight: 600; opacity: .9; }
+.tugbtn.hit { transform: scale(.975); box-shadow: inset 0 -6px 0 rgba(0,0,0,.16); }
+/* Freeze: green to run, red to stop */
+.freeze { background: rgba(255,255,255,.6); display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center; padding: 20px; transition: background .12s; }
+.freeze b { font-size: clamp(46px, 15vw, 104px); line-height: 1; }
+.freeze small { font-size: 16px; font-weight: 600; color: var(--muted); max-width: 16em; }
+.freeze.green { background: #2E9E62; color: #fff; } .freeze.red { background: #E8394B; color: #fff; }
+.freeze.green small, .freeze.red small { color: rgba(255,255,255,.9); }
+.freeze .btn { font-size: 17px; padding: 14px 22px; touch-action: none; }
+.freeze .btn.ghost { background: rgba(255,255,255,.9); margin-top: 10px; }
+.freeze .btn.hit { transform: scale(.96); }
+
+/* ---------- when something's in the way ---------- */
+.gate { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; background: linear-gradient(180deg, #BFD9FF, #FBE3EF); z-index: 9; }
+.gate .panel { background: var(--card); border-radius: 26px; padding: 26px 22px; max-width: 460px; box-shadow: 0 30px 60px -34px var(--shadow); display: grid; gap: 12px; -webkit-user-select: text; user-select: text; }
+.gate h1 { margin: 0; font-size: 28px; line-height: 1.1; } .gate p { margin: 0; font-size: 17px; color: var(--muted); line-height: 1.4; }
+.gate .btn { font-size: 18px; padding: 13px 22px; background: var(--ink); color: #fff; border: 0; }
+.gate .row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) { .banner, .flash { transition: none; } }
+</style>
+</head>
+<body>
+<div id="tv" hidden>
+  <canvas id="scene3d" aria-label="The game"></canvas>
+  <canvas id="scene" aria-hidden="true"></canvas>
+  <header class="top">
+    <span class="brand"><img src="/img/favicon.svg" alt=""><span id="gameName"></span></span>
+    <span class="round" id="round"></span>
+    <span class="spacer"></span>
+    <button class="pill" id="otherBtn" type="button">Other games</button>
+    <button class="icon-btn" id="soundBtn" type="button"></button>
+  </header>
+  <div class="score" id="score" aria-live="polite"></div>
+  <div class="light" id="light" hidden></div>
+  <div class="banner" id="banner" aria-live="assertive"></div>
+  <section class="tvpanel" id="tvPanel" hidden></section>
+  <div class="offline" id="offline" hidden>Reconnecting…</div>
+</div>
+<div id="pad" hidden>
+  <header class="padtop">
+    <canvas id="meBud" width="44" height="44" aria-hidden="true"></canvas>
+    <div class="who"><b id="meName"></b><small id="padGame"></small></div>
+    <i id="meDot" aria-hidden="true"></i>
+  </header>
+  <div class="padsay">
+    <p class="line" id="padLine" aria-live="polite"></p>
+    <p class="note" id="padNote"></p>
+    <button class="start" id="padStart" type="button" hidden></button>
+  </div>
+  <main class="padmain">
+    <div id="padMain"></div>
+    <div class="veil" id="padVeil" hidden></div>
+    <div class="flash" id="padFlash" role="status"></div>
+    <div class="padoff" id="padOffline" hidden>Reconnecting…</div>
+  </main>
+</div>
+<div class="oops" id="oops" hidden role="alert"></div>
+<div class="gate" id="gate" hidden><div class="panel"><h1 id="gateTitle"></h1><p id="gateText"></p><div class="row" id="gateRow"></div></div></div>
+
+<script src="/js/sound.js"></script>
+<script type="module">
+import { params, partyCode, pageFor, placeOf, lookUp, follow, keepAwake, backToPicker } from '/js/party-kit.js';
+import { connect } from '/js/party-rt.js';
+const $ = (id) => document.getElementById(id);
+const CODE = partyCode(), TV = params.get('tv') === '1';
+
+function gate(title, text, buttons = []) {
+  $('tv').hidden = true; $('pad').hidden = true; $('gate').hidden = false;
+  $('gateTitle').textContent = title; $('gateText').textContent = text;
+  const row = $('gateRow'); row.textContent = '';
+  for (const [label, fn] of buttons) { const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = label; b.addEventListener('click', fn); row.append(b); }
+}
+const toPicker = ['Other games', () => backToPicker(CODE)];
+// the live database said no to something after we were in: say so once, in words someone can pass on
+let told = false;
+function oops(e) {
+  console.error(e);
+  if (told) return; told = true;
+  const o = $('oops'); o.hidden = false;
+  o.textContent = TV ? `The live database refused a message (${e?.code || e?.message || 'unknown'}). If this is the first try, check that the rules were published.` : 'Lost touch with the game. Try reloading the page.';
+  setTimeout(() => { o.hidden = true; told = false; }, 12000);
+}
+
+(async () => {
+  if (!CODE) { location.replace(TV ? '/tv' : '/join'); return; }
+  let party;
+  try { party = await lookUp(CODE, TV); }
+  catch (e) {
+    if (e.status === 401) return gate(TV ? 'Sign in on the TV' : 'Sign in to play', 'Party night is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', () => { location.href = `/api/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`; }]]);
+    if (e.status === 403) return gate('Members only', 'This is for members of The Buddie System server.');
+    if (e.status === 404) return gate('That party’s over', 'The code isn’t good anymore.', [[TV ? 'Start a new party' : 'Type a new code', () => { location.href = TV ? '/tv' : '/join'; }]]);
+    return gate('Couldn’t get in', e.message, [['Try again', () => location.reload()]]);
+  }
+  if (TV && !party.mine) return gate('This isn’t your party', `${party.hostName} started this one, so their screen is the TV.`, [['Join as a player', () => { location.href = `/join?c=${CODE}`; }]]);
+  if (!party.live) return gate('Not set up yet', 'Bumper Buds, Tug of War and Freeze need the live database switched on first. Island Race and Prankster work now.', TV ? [toPicker] : []);
+  if (!TV && placeOf(party) !== 'party') { location.replace(pageFor(party, false)); return; }
+  let room;
+  try {
+    // the TV opened this page some other way than the picker: bring the phones along
+    if (TV && party.game !== 'party') await fetch('/api/game', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'party-set', code: CODE, game: ['bumper', 'tug', 'freeze'].includes(params.get('g')) ? params.get('g') : 'bumper' }) });
+    room = await connect(CODE, TV);
+  } catch (e) {
+    console.error(e);
+    return gate('Couldn’t reach the game', TV ? `${e.message}. If this is the first try, go over the setup steps: the database, its rules, Authentication switched on, and the two values in Vercel.` : `${e.message}.`, [['Try again', () => location.reload()], ...(TV ? [toPicker] : [])]);
+  }
+  room.onError(oops);
+  try {
+    if (TV) {
+      // the 3D picture needs these two (only the TV loads them; phones stay light)
+      for (const src of ['/js/vendor/three.r128.min.js', '/js/vendor/delaunator-5.0.1.min.js']) await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => no(new Error('couldn’t load the 3D picture')); document.head.append(sc); });
+      $('tv').hidden = false; const { runTv } = await import('/js/party-tv.js'); window.__tv = await runTv(room, CODE, params.get('g') || party.pick);
+    } else { $('pad').hidden = false; const { runPad } = await import('/js/party-pad.js'); 
+      // the TV says over the live room when it's leaving, so asking "where's the party?" can be rare here
+      const f = follow(CODE, 'party', null, 15000);
+      window.__pad = await runPad(room, { onAway: () => { f.check(); setTimeout(f.check, 1500); } }); keepAwake();
+    }
+  } catch (e) { console.error(e); gate('Something broke', e.message, [['Try again', () => location.reload()]]); }
+})();
+</script>
+</body>
+</html>

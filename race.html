@@ -73,8 +73,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 .banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 .gate { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; z-index: 5; }
 .gate .panel { position: static; transform: none; max-width: 420px; }
+/* on a TV (party night, /tv): nobody plays from this screen, so the words get big enough to read from a couch */
+body.tv .top, body.tv .racers, body.tv .panel, body.tv .log { zoom: 1.5; }
+body.tv .log { display: grid; }
+body.tv .panel { left: 16px; transform: none; width: min(430px, calc(100% - 32px)); }   /* in the corner, so the island keeps the screen */
+body.tv .panel .joincard { box-shadow: none; padding: 4px 0; background: none; }
 @media (orientation: landscape) and (max-height: 520px) {
-  .panel { left: auto; right: max(10px, env(safe-area-inset-right)); transform: none; width: min(320px, 42vw); top: 96px; bottom: auto; max-height: calc(100% - 106px); overflow-y: auto; }
+  body:not(.tv) .panel { left: auto; right: max(10px, env(safe-area-inset-right)); transform: none; width: min(320px, 42vw); top: 96px; bottom: auto; max-height: calc(100% - 106px); overflow-y: auto; }
 }
 </style>
 </head>
@@ -97,9 +102,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; col
 <script src="/js/vendor/delaunator-5.0.1.min.js"></script>
 <script type="module">
 import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
+import { partyCode, follow, keepAwake, joinCard, joinChip, backToPicker } from '/js/party-kit.js';
 const APP_ID = '1563361979316445264';
 const params = new URLSearchParams(location.search);
 const IN_DISCORD = params.has('frame_id') && params.has('instance_id');
+// Party night (/tv): with a code, this phone follows the TV from game to game. With tv=1 this screen IS the TV:
+// it watches the race without being in it, and everyone plays from their phone.
+const CODE = IN_DISCORD ? null : partyCode(), TV = !IN_DISCORD && params.get('tv') === '1';
 const S = window.BudSound || { play() {}, bindToggle() {}, muted: true };
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -665,9 +674,10 @@ function bitsTick(dt) {
 let focus = null;
 const cam = { x: 0, z: 1.5, d: 26 };
 function placeCamera(dt) {
-  const panelH = $('panel').hidden ? 0 : $('panel').getBoundingClientRect().height;
-  const side = $('panel').getBoundingClientRect().left > innerWidth * 0.4;
-  const fit = (innerWidth < innerHeight ? IR - 0.4 : IR + 1) / Math.tan(Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect))) * 0.95;
+  const rect = $('panel').getBoundingClientRect();
+  const panelH = $('panel').hidden ? 0 : rect.height;
+  const side = rect.left > innerWidth * 0.4, corner = TV && !$('panel').hidden;   // on a TV the panel sits bottom left
+  const fit = (innerWidth < innerHeight ? IR - 0.4 : IR + 1) / Math.tan(Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect))) * (corner ? 1.1 : 0.95);
   const goal = focus ? { x: focus.x * 0.55, z: focus.z * 0.55 + 1, d: fit * 0.82 } : { x: 0, z: 1.2, d: fit };
   const k = 1 - Math.pow(0.03, dt);
   cam.x += (goal.x - cam.x) * k; cam.z += (goal.z - cam.z) * k; cam.d += (goal.d - cam.d) * k;
@@ -675,7 +685,7 @@ function placeCamera(dt) {
   camera.position.set(cam.x, Math.sin(pitch) * cam.d, cam.z + Math.cos(pitch) * cam.d);
   camera.lookAt(cam.x, 0, cam.z);
   // nudge the picture so the island sits above the panel (or left of it, held sideways)
-  const shiftY = side ? 0 : panelH * 0.45, shiftX = side ? -$('panel').getBoundingClientRect().width * 0.5 : 0;
+  const shiftY = side || corner ? 0 : panelH * 0.45, shiftX = side ? -rect.width * 0.5 : corner ? rect.width * 0.5 : 0;
   camera.setViewOffset(innerWidth, innerHeight, -shiftX, shiftY, innerWidth, innerHeight);
 }
 function resize() {
@@ -742,13 +752,15 @@ function renderPanel() {
       const kind = Object.entries(view.given || {}).sort((a, b) => b[1] - a[1])[0];
       if (kind) p.append(el('p', null, `💝 Kindest bud: ${kind[0] === me ? 'you' : nameOf(kind[0])}, with ${kind[1]} heart${kind[1] > 1 ? 's' : ''} given from the love tree`));
     } else {
-      p.append(el('h2', null, 'Island Race'), el('p', null, 'Roll, hop round the island and grab items. Feed the koi for a ride or a wish, and share hearts from the love tree. First bud back to the campfire wins! Everyone on the call can race (2 to 6).'));
+      p.append(el('h2', null, 'Island Race'), el('p', null, `Roll, hop round the island and grab items. Feed the koi for a ride or a wish, and share hearts from the love tree. First bud back to the campfire wins! Everyone ${view.tv ? 'in the room' : 'on the call'} can race (2 to 6).`));
+      if (TV && CODE) p.append(joinCard(CODE));
     }
     const lob = el('div', 'lobby');
-    for (const pl of view.players) lob.append(el('span', pl.here ? null : 'away', (pl.id === me ? 'You' : pl.name) + (pl.id === view.host ? ' ⭐' : '')));
-    p.append(el('div', 'label', 'On the call'), lob);
+    for (const pl of view.players) lob.append(el('span', pl.here ? null : 'away', (pl.id === me ? 'You' : pl.name) + (pl.id === view.host && !TV ? ' ⭐' : '')));
+    if (!view.players.length) lob.append(el('span', 'away', 'Nobody yet. Grab your phones!'));
+    p.append(el('div', 'label', view.tv ? 'In the room' : 'On the call'), lob);
     const here = view.players.filter((x) => x.here).length;
-    if (view.host === me) btn(done ? 'Race again' : here < 2 ? 'Waiting for one more…' : `Start the race (${Math.min(here, 6)})`, start, 'primary big').disabled = busy || here < 2;
+    if (TV || view.host === me) btn(done ? 'Race again' : here < 2 ? 'Waiting for one more…' : `Start the race (${Math.min(here, 6)})`, start, 'primary big').disabled = busy || here < 2;
     else p.append(el('p', null, `Waiting for ${nameOf(view.host)} to start${done ? ' another race' : ''}…`));
   } else if (view.phase === 'play' || playing) {
     const pend = !playing && view.phase === 'play' ? view.pending : null;
@@ -756,10 +768,11 @@ function renderPanel() {
     if (pend && pend.who === me) renderChoice(p, pend);
     else if (pend) {
       p.append(el('h2', null, pend.kind === 'koi' ? `${nameOf(pend.who)} is at the koi pond 🐟` : `${nameOf(pend.who)} is at the love tree 💗`));
-      p.append(el('p', null, pend.kind === 'koi' ? 'Deciding whether to feed the koi…' : 'Choosing who gets the heart…'));
+      p.append(el('p', null, (pend.kind === 'koi' ? 'Deciding whether to feed the koi…' : 'Choosing who gets the heart…') + (TV ? ' (on their phone)' : '')));
     } else if (!mine) {
-      p.append(el('h2', null, playing ? (view.last?.by === me ? 'Hop hop hop…' : `${nameOf(view.last?.by)} is moving…`) : `${nameOf(view.turn)}’s turn`));
-      p.append(el('p', null, view.turn && !playing ? `${nameOf(view.turn)} is rolling…` : 'Watch out for banana peels!'));
+      const by = view.last?.by;
+      p.append(el('h2', null, playing ? (!by ? 'Here we go…' : by === me ? 'Hop hop hop…' : `${nameOf(by)} is moving…`) : `${nameOf(view.turn)}’s turn${TV ? ' 🎲' : ''}`));
+      p.append(el('p', null, view.turn && !playing ? (TV ? `${nameOf(view.turn)}, roll on your phone!` : `${nameOf(view.turn)} is rolling…`) : 'Watch out for banana peels!'));
     } else {
       p.append(el('h2', null, 'Your turn! 🎲'));
       if (view.myItems.length) {
@@ -841,7 +854,7 @@ async function rollNow() {
 async function poll() {
   setTimeout(poll, 900);
   if (document.hidden || busy) return;
-  try { takeView(await api('GET', `/api/game?rc=${encodeURIComponent(room)}${board ? '' : '&full=1'}`)); } catch (e) {}
+  try { takeView(await api('GET', `/api/game?rc=${encodeURIComponent(room)}${TV ? '&watch=1' : ''}${board ? '' : '&full=1'}`)); } catch (e) {}
 }
 
 /* ---------- loop ---------- */
@@ -881,10 +894,30 @@ async function startInDiscord() {
 async function startFromLink() {
   room = params.get('room');
   if (room && !/^[A-Za-z0-9_-]{6,80}$/.test(room)) room = null;
+  if (TV) {
+    // the TV: look, don't join
+    if (!room) throw Object.assign(new Error('Start this one from the party page.'), { status: 400 });
+    return api('GET', `/api/game?rc=${encodeURIComponent(room)}&watch=1&full=1`);
+  }
   const v = await api('POST', '/api/game', room ? { action: 'rc-join', room } : { action: 'rc-new' });
   room = v.id;
   if (params.get('room') !== room) history.replaceState(null, '', `/race?room=${room}`);
   return v;
+}
+function partyNight() {
+  if (TV) {
+    document.body.classList.add('tv');
+    if (CODE) {
+      const games = $('gamesBtn'); games.hidden = false; games.textContent = 'Other games';
+      games.addEventListener('click', () => backToPicker(CODE));
+      games.before(joinChip(CODE));
+    }
+    keepAwake();
+  } else if (CODE) {
+    // a phone at the party: stay awake for your turn, and go where the TV goes
+    keepAwake();
+    follow(CODE, `race:${room}`);
+  }
 }
 (async () => {
   S.bindToggle($('soundBtn')); if (!window.BudSound) $('soundBtn').hidden = true;
@@ -894,12 +927,13 @@ async function startFromLink() {
     if (IN_DISCORD) { await startInDiscord(); v = await api('POST', '/api/game', { action: 'rc-join', room }); }
     else v = await startFromLink();
     me = v.me;
+    partyNight();
     takeView(v);
     setTimeout(poll, 900);
   } catch (e) {
     if (e.status === 401 && !IN_DISCORD) {
       const next = encodeURIComponent(location.pathname + location.search);
-      return gate('Sign in to race', 'Island Race is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', () => { location.href = `/api/auth/login?next=${next}`; }, true]]);
+      return gate(TV ? 'Sign in on the TV' : 'Sign in to race', 'Island Race is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', () => { location.href = `/api/auth/login?next=${next}`; }, true]]);
     }
     if (e.status === 403) return gate('Members only', 'This game is for members of The Buddie System server.', []);
     gate('Couldn’t start the race', IN_DISCORD ? 'Something went wrong connecting to Discord. Try closing and reopening the Activity.' : e.message, IN_DISCORD ? [] : [['Try again', () => location.reload(), true]]);

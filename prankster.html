@@ -56,7 +56,7 @@ body.night { --ink: #EDECF6; --muted: #B7B5D4; --card: rgba(34, 34, 66, 0.82); -
 .timer.low i { background: var(--bad); }
 
 .stage { position: relative; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 0; }
-.crowd { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 22px 4px; align-content: start; padding: 4px 2px 10px; }
+.crowd { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 22px 4px; align-content: start; padding: 4px 2px 22px; }
 .pl { position: relative; display: grid; justify-items: center; border: 0; background: none; color: inherit; font: inherit; padding: 4px 2px; border-radius: 16px; cursor: default; transition: transform .2s, opacity .4s; }
 .pl canvas { width: 66px; height: 66px; display: block; }
 .pl .name { margin-top: 2px; font-size: 12.5px; font-weight: 600; background: var(--card); border: 1px solid var(--line); padding: 1px 8px; border-radius: 999px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -115,6 +115,21 @@ body.night { --ink: #EDECF6; --muted: #B7B5D4; --card: rgba(34, 34, 66, 0.82); -
   .rolecard .big { font-size: 40px; } .rolecard { padding: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .pl, .pl .sign { transition: none; } .host img.talk { animation: none; } }
+/* on a TV (party night, /tv): this screen tells the story and nobody plays from it, so everything is bigger */
+body.tv .app { zoom: 1.45; max-width: 1100px; height: calc(100vh / 1.45); }
+body.tv .stage { display: grid; align-content: center; }
+body.tv .crowd { grid-template-columns: repeat(auto-fit, minmax(130px, 160px)); justify-content: center; gap: 30px 6px; }
+body.tv .pl canvas { width: 112px; height: 112px; }
+body.tv .pl .name { font-size: 15px; max-width: 140px; padding: 2px 10px; }
+body.tv .pl .tag, body.tv .pl .sign { font-size: 13px; }
+body.tv .pl .tag.role { bottom: -20px; }
+body.tv .panel.two { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 28px; align-items: start; }
+body.tv .panel.two .roles { margin: 0; }
+body.tv .pl { cursor: default; }
+body.tv .panel .joincard { box-shadow: none; background: none; padding: 0; margin-top: 4px; }
+body.tv .bar .hint { font-size: 16px; font-weight: 600; color: var(--ink); }
+.joinchip { margin-left: auto; }
+.joinchip + .day { margin-left: 0; }
 </style>
 </head>
 <body>
@@ -141,10 +156,14 @@ body.night { --ink: #EDECF6; --muted: #B7B5D4; --card: rgba(34, 34, 66, 0.82); -
 <script src="/js/sound.js"></script>
 <script type="module">
 import { drawEyeStyle } from '/js/bud-core.js';
+import { partyCode, follow, keepAwake, joinCard, joinChip, backToPicker } from '/js/party-kit.js';
 
 const APP_ID = '1563361979316445264';
 const params = new URLSearchParams(location.search);
 const IN_DISCORD = params.has('frame_id') && params.has('instance_id');
+// Party night (/tv): with a code, this phone follows the TV from game to game. With tv=1 this screen IS the TV:
+// it tells the story to the room and only ever knows what everyone may know. Roles stay on the phones.
+const CODE = IN_DISCORD ? null : partyCode(), TV = !IN_DISCORD && params.get('tv') === '1';
 const S = window.BudSound || { play() {}, bindToggle() {}, onChange() {}, muted: true };
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -232,7 +251,8 @@ function myAction() {
   // what tapping a bud does right now, or null
   const v = view;
   if (v.phase !== 'play' || !v.alive) return null;
-  if (v.stage === 'night' && ['prankster', 'snoop', 'guardian'].includes(v.role)) return 'night';
+  // (in a room with a TV, islanders tap a bud at night too: it does nothing, but nobody can tell who has a job)
+  if (v.stage === 'night' && (['prankster', 'snoop', 'guardian'].includes(v.role) || (v.tv && v.role === 'islander'))) return 'night';
   if (v.stage === 'vote') return 'vote';
   return null;
 }
@@ -243,6 +263,7 @@ function canTarget(id) {
     if (v.role === 'prankster') return !(v.team || []).includes(id);
     if (v.role === 'snoop') return id !== me;
     if (v.role === 'guardian') return id !== v.cantGuard;
+    if (v.role === 'islander') return id !== me;
   }
   return a === 'vote';
 }
@@ -328,7 +349,7 @@ function rolesList(n) {
   add('😈', 'Pranksters', 'Secretly pick someone to prank each night. Blend in during the day. (1 Prankster for 4 to 5 players, 2 for 6 to 8, 3 for 9 or more.)');
   add('🔍', 'Snoop', 'Each night, peek at one bud to find out if they’re a Prankster. (5 or more players.)');
   add('🛡️', 'Guardian', 'Each night, protect one bud from pranks. (6 or more players.)');
-  add('🌴', 'Islanders', 'Talk it out on the call and vote the Pranksters off the island.');
+  add('🌴', 'Islanders', `Talk it out ${view.tv ? 'in the room' : 'on the call'} and vote the Pranksters off the island.`);
   return ul;
 }
 function renderLobby(panel, bar, changed) {
@@ -336,11 +357,13 @@ function renderLobby(panel, bar, changed) {
   hostSays('Prankster', need ? `waiting for ${need} more ${need === 1 ? 'player' : 'players'}…` : `${here} players! ready when you are`);
   if (changed || !panel.firstChild) {
     panel.textContent = '';
-    const p = el('div', 'panel');
-    p.append(el('h2', null, 'Someone here is a Prankster…'));
-    p.append(el('p', null, 'Everyone gets a secret role. At night the Pranksters prank someone (they become a ghost). In the day, talk it out on the call and vote. The island wins by catching every Prankster; the Pranksters win if they outnumber everyone else. 4 to 12 players.'));
+    const p = el('div', 'panel' + (TV ? ' two' : '')), intro = TV ? el('div') : p;
+    intro.append(el('h2', null, 'Someone here is a Prankster…'));
+    intro.append(el('p', null, `Everyone gets a secret role${view.tv ? ' on their phone' : ''}. At night the Pranksters prank someone (they become a ghost). In the day, talk it out ${view.tv ? 'in the room' : 'on the call'} and vote. The island wins by catching every Prankster; the Pranksters win if they outnumber everyone else. 4 to 12 players.`));
+    if (TV && CODE) intro.append(joinCard(CODE, { small: true }));
+    if (TV) p.append(intro);
     p.append(rolesList());
-    if (!IN_DISCORD) {
+    if (!IN_DISCORD && !CODE && !TV) {
       const url = `${location.origin}/prankster?room=${room}`;
       const inv = el('p', null, `Invite link: ${url}`); p.append(inv);
     }
@@ -364,7 +387,34 @@ function eventLine(e) {
   if (e.kind === 'skipped') return 'the island decided to skip. nobody leaves today.';
   return '';
 }
+const listOf = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a.at(-1)}`);
+// The TV's telling of it, for the whole room.
+function renderTvPlay(panel, bar, changed) {
+  const v = view, aliveN = v.players.filter((p) => p.alive).length;
+  if (v.stage === 'roles') {
+    hostSays('shh… check your phone', 'your secret role is on your phone. don’t show anyone! night falls in a moment');
+    if (changed || !panel.firstChild) {
+      panel.textContent = '';
+      const c = v.counts || {}, parts = [c.prankster === 1 ? 'one Prankster' : `${c.prankster} Pranksters`];
+      if (c.snoop) parts.push('a Snoop'); if (c.guardian) parts.push('a Guardian');
+      const p = el('div', 'panel rolecard');
+      p.append(el('div', 'big', '🤫'), el('h2', null, 'The roles are out'), el('p', null, `Among the ${c.players} of you: ${listOf(parts)}. Everyone else is an Islander.`));
+      panel.append(p);
+    }
+  } else if (v.stage === 'night') {
+    hostSays(`night ${v.day} falls… 🌙`, 'eyes on your own phone! everyone taps a bud tonight, so nobody can tell who’s up to something.');
+    bar.append(el('p', 'hint', `Taps in: ${v.nightIn || 0} of ${aliveN}`));
+  } else if (v.stage === 'morning') hostSays('good morning, island! ☀️', eventLine(v.events.at(-1)));
+  else if (v.stage === 'day') {
+    hostSays('talk it out! 🗣️', 'who’s acting suspicious? when you’ve heard enough, say you’re ready on your phone.');
+    bar.append(el('p', 'hint', `Ready to vote: ${(v.ready || []).length} of ${aliveN}`));
+  } else if (v.stage === 'vote') {
+    hostSays('time to vote! 🗳️', 'on your phone, tap the bud you think is a Prankster.');
+    bar.append(el('p', 'hint', `Votes in: ${(v.voted || []).filter((id) => alive(id)).length} of ${aliveN}`));
+  } else if (v.stage === 'verdict') hostSays('the signs are up!', eventLine(v.events.at(-1)));
+}
 function renderPlay(panel, bar, changed) {
+  if (TV) return renderTvPlay(panel, bar, changed);
   const v = view, info = v.roleInfo;
   // your role, always one tap away
   const roleBtn = el('button', 'pill mine-role', v.role ? `${ROLE_ICON[v.role]} you’re ${v.role === 'islander' ? 'an' : 'a'} ${ROLE_NAME[v.role]}${v.alive ? '' : ' (ghost)'}` : 'watching'); roleBtn.type = 'button';
@@ -377,12 +427,13 @@ function renderPlay(panel, bar, changed) {
   }
   const r = el('div', 'row'); r.append(roleBtn);
   if (v.stage === 'night') {
-    if (!v.alive) { hostSays('night falls…', 'you’re a ghost 👻 watch quietly, no hints on the call!'); }
+    if (!v.alive) { hostSays('night falls…', v.tv ? 'you’re a ghost 👻 watch quietly, no hints!' : 'you’re a ghost 👻 watch quietly, no hints on the call!'); }
     else if (v.role === 'prankster') {
       const picks = v.teamPicks || {}, others = Object.entries(picks).filter(([id]) => id !== me).map(([id, t]) => `${nameOf(id)} → ${nameOf(t)}`);
       hostSays('night falls… 😈', v.myPick ? `you picked ${nameOf(v.myPick)}.${others.length ? ` (${others.join(', ')})` : ''}` : 'Pranksters, tap the bud you want to prank. Agree with your team!');
     } else if (v.role === 'snoop') hostSays('night falls… 🔍', v.myPick ? `you’re peeking at ${nameOf(v.myPick)}. you’ll find out in the morning.` : 'Snoop, tap a bud to peek at their role.');
     else if (v.role === 'guardian') hostSays('night falls… 🛡️', v.myPick ? `you’re protecting ${v.myPick === me ? 'yourself' : nameOf(v.myPick)} tonight.` : 'Guardian, tap a bud to protect tonight.');
+    else if (v.tv) hostSays('night falls… 💤', v.myPick ? `you tapped ${nameOf(v.myPick)}. nothing happens, but nobody could tell. now wait for morning.` : 'you’re asleep, but tap any bud anyway. it does nothing; it just keeps everyone guessing who has a job.');
     else hostSays('night falls… 💤', 'islanders are asleep. close your eyes (not really) and wait for morning.');
   } else if (v.stage === 'morning') {
     hostSays('good morning, island! ☀️', eventLine(v.events.at(-1)));
@@ -390,7 +441,7 @@ function renderPlay(panel, bar, changed) {
     for (const s of peeks) bar.append(el('p', 'hint', `🔍 Your peek: ${nameOf(s.who)} ${s.prankster ? 'IS a Prankster! 😈' : 'is not a Prankster.'}`));
   } else if (v.stage === 'day') {
     const readyN = (v.ready || []).length, aliveN = v.players.filter((p) => p.alive).length;
-    hostSays('talk it out! 🗣️', v.alive ? 'who’s acting suspicious? discuss on the call, then get ready to vote.' : 'you’re a ghost 👻 listen, but no hints!');
+    hostSays('talk it out! 🗣️', v.alive ? `who’s acting suspicious? discuss ${v.tv ? 'out loud' : 'on the call'}, then get ready to vote.` : 'you’re a ghost 👻 listen, but no hints!');
     if (v.alive) {
       const ready = el('button', 'btn' + (v.myReady ? '' : ' primary'), v.myReady ? `ready ✓ (${readyN}/${aliveN})` : `Ready to vote (${readyN}/${aliveN})`); ready.type = 'button';
       ready.disabled = v.myReady || busy;
@@ -492,11 +543,11 @@ async function poll(delay) {
     if (polling) return;
     polling = true;
     try {
-      const v = await api('GET', `/api/game?pk=${encodeURIComponent(room)}`);
+      const v = await api('GET', `/api/game?pk=${encodeURIComponent(room)}${TV ? '&watch=1' : ''}`);
       if (!busy) { view = v; render(); }
       ensureBuds(v.players.map((p) => p.id));
     } catch (e) {
-      if (e.status === 404) return gate('This game ended', 'Start a new one?', [['New game', () => { location.href = '/prankster'; }, true]]);
+      if (e.status === 404) return gate('This game ended', CODE ? 'Pick another on the TV.' : 'Start a new one?', CODE ? [] : [['New game', () => { location.href = '/prankster'; }, true]]);
     } finally { polling = false; }
     poll(view && view.phase === 'lobby' ? 1500 : view && view.phase === 'done' ? 2500 : 900);
   }, delay);
@@ -526,10 +577,30 @@ async function startInDiscord() {
 async function startFromLink() {
   room = params.get('room');
   if (room && !/^[A-Za-z0-9_-]{6,80}$/.test(room)) room = null;
+  if (TV) {
+    // the TV: look, don't join
+    if (!room) throw Object.assign(new Error('Start this one from the party page.'), { status: 400 });
+    return api('GET', `/api/game?pk=${encodeURIComponent(room)}&watch=1`);
+  }
   const v = await api('POST', '/api/game', room ? { action: 'pk-join', room } : { action: 'pk-new' });
   room = v.id;
   if (params.get('room') !== room) history.replaceState(null, '', `/prankster?room=${room}`);
   return v;
+}
+function partyNight() {
+  if (TV) {
+    document.body.classList.add('tv');
+    if (CODE) {
+      const games = $('gamesBtn'); games.hidden = false; games.textContent = 'Other games';
+      games.addEventListener('click', () => backToPicker(CODE));
+      $('dayLabel').before(joinChip(CODE));
+    }
+    keepAwake();
+  } else if (CODE) {
+    // a phone at the party: stay awake, and go where the TV goes
+    keepAwake();
+    follow(CODE, `prank:${room}`);
+  }
 }
 
 (async () => {
@@ -539,6 +610,7 @@ async function startFromLink() {
     if (IN_DISCORD) { await startInDiscord(); view = await api('POST', '/api/game', { action: 'pk-join', room }); }
     else view = await startFromLink();
     me = view.me;
+    partyNight();
     render();
     ensureBuds(view.players.map((p) => p.id));
     poll(900);
@@ -546,7 +618,7 @@ async function startFromLink() {
   } catch (e) {
     if (e.status === 401 && !IN_DISCORD) {
       const next = encodeURIComponent(location.pathname + location.search);
-      return gate('Sign in to play', 'Prankster is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', () => { location.href = `/api/auth/login?next=${next}`; }, true]]);
+      return gate(TV ? 'Sign in on the TV' : 'Sign in to play', 'Prankster is for members of the server. Sign in with Discord and you’ll land right back here.', [['Sign in with Discord', () => { location.href = `/api/auth/login?next=${next}`; }, true]]);
     }
     if (e.status === 403) return gate('Members only', 'This game is for members of The Buddie System server.', []);
     gate('Couldn’t start the game', IN_DISCORD ? 'Something went wrong connecting to Discord. Try closing and reopening the Activity.' : e.message, IN_DISCORD ? [] : [['Try again', () => location.reload(), true]]);

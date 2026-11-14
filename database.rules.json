@@ -1,0 +1,28 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "party": {
+      "$room": {
+        ".read": "auth != null && auth.token.room === $room",
+        ".write": "auth != null && auth.token.room === $room && auth.token.host === true",
+        "players": {
+          "$uid": {
+            ".write": "auth != null && auth.token.room === $room && auth.uid === $uid",
+            ".validate": "newData.hasChildren(['n', 'at'])",
+            "n": { ".validate": "newData.isString() && newData.val() === auth.token.nm" },
+            "at": { ".validate": "newData.isNumber() && newData.val() <= now" },
+            "go": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+        "in": {
+          "$uid": {
+            ".write": "auth != null && auth.token.room === $room && auth.uid === $uid",
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          }
+        }
+      }
+    }
+  }
+}
