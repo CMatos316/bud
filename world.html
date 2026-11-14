@@ -97,6 +97,39 @@ body {
 .who a { color: var(--muted); text-decoration: none; font-size: 12.5px; }
 .who a:hover, .who a:focus-visible { color: var(--ink); text-decoration: underline; }
 .pill:focus-visible, .card button:focus-visible, .composer button:focus-visible, .composer textarea:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* the lists that open in the card: every bud on the island, and every game you have going */
+.card.wide { width: min(372px, calc(100% - 24px)); }
+.card h3.sec { margin: 6px 0 0; font-size: 12.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.list .rowbtn, .list li.g {
+  width: 100%; box-sizing: border-box; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  text-align: left; padding: 6px 8px; border-radius: 12px; border: 0; background: transparent; color: inherit; font: inherit;
+}
+.list .rowbtn { appearance: none; cursor: pointer; }
+.list .rowbtn:hover { background: rgba(127,127,160,.14); }
+.list .nm { font-weight: 600; font-size: 15px; line-height: 1.25; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list .sub { display: block; font-weight: 400; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list .tags { display: flex; gap: 5px; align-items: center; }
+.list li.g .btn { padding: 6px 13px; font-size: 13px; }
+.list li.none { padding: 6px 8px; color: var(--muted); font-size: 13.5px; line-height: 1.4; }
+.chip { font-size: 11.5px; font-weight: 600; line-height: 1; padding: 4px 7px; border-radius: 999px; background: #FFE98A; color: #2B2A33; white-space: nowrap; }
+.chip.you { background: var(--me); color: var(--me-ink); }
+.chip.heart { background: none; color: #E2557A; padding: 0 1px; font-size: 15px; }
+.search { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--chip-line); background: rgba(127,127,160,.1); color: inherit; font: 400 15px var(--font-display); }
+.search:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.back { appearance: none; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; padding: 0; cursor: pointer; justify-self: start; }
+.back:hover { color: var(--tag-ink); text-decoration: underline; }
+.friends-row .btn { padding: 4px 12px 4px 5px; gap: 7px; font-size: 13.5px; display: inline-flex; align-items: center; }
+.friends-row .por { width: 26px; height: 23px; }
+.camctl { position: fixed; z-index: 4; right: max(14px, env(safe-area-inset-right, 0px)); top: calc(66px + env(safe-area-inset-top, 0px)); display: grid; gap: 6px; }
+.camctl button {
+  width: 40px; height: 40px; padding: 0; border-radius: 14px; display: grid; place-items: center; cursor: pointer;
+  background: var(--chip); border: 1px solid var(--chip-line); color: var(--ink);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.camctl button svg { width: 18px; height: 18px; }
+.camctl button:disabled { opacity: .38; cursor: default; }
+.camctl button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .badge { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #E2557A; color: #fff; font-size: 11.5px; font-weight: 600; display: inline-grid; place-items: center; }
 
 .title {
@@ -378,11 +411,25 @@ body { transition: background 2s linear; }
 .center h2 { margin: 0; font-size: 26px; font-weight: 600; }
 .center p { margin: 0; color: var(--muted); max-width: 36ch; line-height: 1.45; }
 
+/* The top bar on smaller screens: icons without their words, then tighter, with the counts tucked onto the
+   corners of their buttons, so that every button fits even when News, Games and Notes all have something. */
+@media (max-width: 1100px) {
+  .pill .label { display: none; }
+}
 @media (max-width: 560px) {
   .who span, .who a { display: none; }
   .who { padding-right: 4px; }
-  .pill .label { display: none; }
   .brand span:last-child { display: none; }
+  .topbar { left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); gap: 6px; }
+  .right { gap: 5px; }
+  .pill, .pill.icon-only { position: relative; padding: 8px 9px; }
+  .pill .badge { position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; font-size: 11px; }
+  .pill .newdot { position: absolute; top: -1px; right: -1px; margin: 0; }
+  .camctl { right: max(10px, env(safe-area-inset-right, 0px)); }
+}
+@media (max-width: 380px) {
+  .who { display: none; }
+  .right { gap: 4px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .bubble.pop, .card, .composer { animation: none; }
@@ -398,10 +445,6 @@ body { transition: background 2s linear; }
   <a class="brand" href="/"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7C48 7 58 17 58 33c0 14-4 24-26 24S6 47 6 33C6 17 16 7 32 7z" class="mark-body"/><ellipse cx="21" cy="19" rx="7" ry="4" fill="#fff" opacity=".5" transform="rotate(-25 21 19)"/><ellipse cx="25" cy="34" rx="3.8" ry="5.2" class="mark-eye"/><ellipse cx="39" cy="34" rx="3.8" ry="5.2" class="mark-eye"/></svg><span>the buddie system</span></a>
   <div class="right">
     <button class="pill icon-only" id="soundBtn" type="button"></button>
-    <button class="pill" id="findMe" type="button" hidden>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-      <span class="label">Find my bud</span>
-    </button>
     <button class="pill" id="newsBtn" type="button" hidden aria-label="The Island Times">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 5h12v14H6a2 2 0 0 1-2-2V8"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M8 9h6M8 12.5h6M8 16h4"/></svg>
       <span class="label">News</span><span class="newdot" id="newsDot" hidden></span>
@@ -409,6 +452,14 @@ body { transition: background 2s linear; }
     <button class="pill" id="photoBtn" type="button" hidden aria-label="Photo booth">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
       <span class="label">Photo</span>
+    </button>
+    <button class="pill" id="budsPill" type="button" hidden aria-label="Buds on the island">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M9 6c3.6 0 5.6 2 5.6 5.6 0 3.1-1 5.4-5.6 5.4s-5.6-2.3-5.6-5.4C3.4 8 5.4 6 9 6z"/><path d="M17 9.5c2.4.2 3.6 1.6 3.6 4 0 2.2-.8 3.5-3.6 3.5"/><circle cx="7.3" cy="11.2" r=".9" fill="currentColor" stroke="none"/><circle cx="10.7" cy="11.2" r=".9" fill="currentColor" stroke="none"/></svg>
+      <span class="label">Buds</span>
+    </button>
+    <button class="pill" id="gamesPill" type="button" hidden aria-label="Games">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4.5"/><circle cx="9" cy="9" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1.1" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="1.1" fill="currentColor" stroke="none"/></svg>
+      <span class="label">Games</span><span class="badge" id="gamesCount" hidden></span>
     </button>
     <button class="pill" id="notesPill" type="button" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v11l-5 5H4z"/><path d="M15 20v-5h5"/></svg>
@@ -422,8 +473,14 @@ body { transition: background 2s linear; }
   </div>
 </header>
 
+<div class="camctl" id="camCtl" role="group" aria-label="Camera">
+  <button type="button" id="camIn" aria-label="Zoom in" title="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button type="button" id="camOut" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+  <button type="button" id="camAll" aria-label="See the whole island" title="See the whole island"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><ellipse cx="12" cy="12.5" rx="4.5" ry="2.6"/></svg></button>
+  <button type="button" id="findMe" aria-label="Find my bud" title="Find my bud" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 4c5 0 8 3 8 8.2 0 4.5-1.5 7.8-8 7.8s-8-3.3-8-7.8C4 7 7 4 12 4z"/><ellipse cx="9.3" cy="11.6" rx="1" ry="1.6" fill="currentColor" stroke="none"/><ellipse cx="14.7" cy="11.6" rx="1" ry="1.6" fill="currentColor" stroke="none"/></svg></button>
+</div>
 <div class="title" id="title"><h1 id="titleText">Bud island</h1><p id="titleSub">Everyone&rsquo;s buds live here.</p></div>
-<div class="hint" id="hint">Drag to look around &middot; scroll to zoom &middot; tap a bud to say hi</div>
+<div class="hint" id="hint">Drag to look around &middot; scroll to zoom in anywhere &middot; tap a bud to say hi</div>
 <div class="card" id="card" hidden role="dialog" aria-labelledby="cardName">
   <h2 id="cardName"></h2><button type="button" class="x" id="cardClose" aria-label="Close">&times;</button>
   <p id="cardSub"></p>
@@ -1021,7 +1078,7 @@ function tapHome(u) {
   const bud = buds.find((b) => b.data.id === u.id);
   u.bounce = 1; S.play('pop', { gain: 0.6, rate: 0.9 });
   if (!bud) return;
-  cam.follow = bud; cam.followUntil = T + 5; camGoal.dist = Math.max(9, R * 0.6);
+  focusOn(bud);
   bud.syv -= 0.1; bud.happyUntil = T + 1.2; bud.lookCameraUntil = T + 2.5;
   if (bud.state === 'act') endActivity(bud, 1.6);
   say(bud, bud.data.isMe ? pick(['that’s my place!', 'home sweet home!', 'we live there!']) : pick(['that’s my house!', 'you found my place!', 'come visit anytime!']), 1800);
@@ -2236,21 +2293,114 @@ function puff(x, z, k = 1) {
   }
 }
 
-/* ---------------- camera: drag to orbit, scroll or pinch to zoom ---------------- */
+/* ---------------- camera ---------------- */
+// Drag to look around. Pinch or scroll to zoom: it zooms toward where your fingers or pointer are, all the way in
+// to one bud. Two fingers (or a right-drag, or the arrow keys) slide across the island, and a double tap on the
+// ground flies in there. The camera only moves by itself to show you a bud you asked about, and it never pulls
+// back on its own: where you leave it is where it stays.
 const cam = { yaw: 0.6, pitch: 0.55, dist: 30, target: new THREE.Vector3(0, 0.8, 0), lastInput: -99, follow: null, followUntil: 0 };
 const camGoal = { target: new THREE.Vector3(0, 0.8, 0), dist: 30 };
+// the half-angle of the narrower side of the screen, and how far back the camera sits for this many meters of
+// island to span that side (a bud is about 1.9 across)
+const viewHalf = () => Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
+const distFor = (span) => span / 2 / Math.tan(viewHalf());
+const minDist = () => (game ? R * 0.7 : distFor(3.2));   // as close as it gets: one bud fills most of the screen
+const focusDist = () => distFor(7);                       // a close look at one bud and a little of what's round it
+// How far from the middle the camera may look. From far away it looks at the middle, so the whole island sits in
+// view; the closer in you are, the further out it can go, up to the shore.
+const roam = (dist) => R * 0.97 * clamp((fitDist() - dist) / (fitDist() * 0.7), 0, 1);
+function keepInside() {
+  const lim = game ? 0 : roam(camGoal.dist), r = Math.hypot(camGoal.target.x, camGoal.target.z);
+  if (r > lim) { const k = lim / (r || 1); camGoal.target.x *= k; camGoal.target.z *= k; }
+}
+function stopFollowing() { if (cam.follow) { cam.follow = null; camGoal.target.y = 0.8; } }
+// Glide to a bud (or a spot) and stay with it. It comes closer if it has to, and never backs away.
+function focusOn(thing, secs = Infinity, dist = focusDist()) {
+  cam.follow = thing; cam.followUntil = T + secs; cam.lastInput = T;
+  camGoal.dist = Math.min(camGoal.dist, Math.max(minDist(), dist));
+}
+// is the camera held on something you're in the middle of (a card, a note, a photo)?
+const pinned = () => !!cam.follow && (cam.follow === cardBud || cam.follow === composing || !!photo);
+const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), groundHit = new THREE.Vector3(), probe = new THREE.PerspectiveCamera();
+// The spot on the ground under a point on the screen (null if that's sky, or well off the island).
+// settled: as the picture will be once the camera has finished gliding to where it's heading. Zooming and
+// sliding work from that, so a run of quick scroll steps all pull toward the same spot.
+// h: measure at this height above the ground instead.
+function groundAt(x, y, settled = false, h = 0) {
+  GROUND.constant = -h;
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  if (settled) {
+    const cp = Math.cos(cam.pitch), t = camGoal.target, d = camGoal.dist;
+    probe.projectionMatrix.copy(camera.projectionMatrix); probe.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+    probe.position.set(t.x + Math.sin(cam.yaw) * cp * d, t.y + Math.sin(cam.pitch) * d, t.z + Math.cos(cam.yaw) * cp * d);
+    probe.lookAt(t); probe.updateMatrixWorld();
+  }
+  ray.setFromCamera(ndc, settled ? probe : camera);
+  if (!ray.ray.intersectPlane(GROUND, groundHit)) return null;
+  return Math.hypot(groundHit.x, groundHit.z) < R * 1.6 ? { x: groundHit.x, z: groundHit.z } : null;
+}
+// Zoom by a factor (under 1 comes closer). Given a point on the screen, the ground there stays put under it.
+// now: straight away, for pinching (the wheel and the buttons glide).
+function zoomBy(f, x, y, now) {
+  const d0 = camGoal.dist, d1 = clamp(d0 * f, minDist(), maxDist());
+  if (!game && x != null && d1 !== d0 && !pinned()) {
+    stopFollowing();
+    // (measured at the height the camera looks at: closing in on that point moves the camera straight along the
+    // line from your pointer into the island, so everything on that line stays exactly where it was on screen)
+    const p = groundAt(x, y, true, camGoal.target.y);
+    if (p) {
+      const k = d1 / d0;
+      camGoal.target.x = p.x + (camGoal.target.x - p.x) * k; camGoal.target.z = p.z + (camGoal.target.z - p.z) * k;
+    }
+  }
+  camGoal.dist = d1;
+  if (!cam.follow) keepInside();
+  if (now) { cam.dist = d1; if (!cam.follow) cam.target.copy(camGoal.target); }
+  cam.lastInput = T;
+}
+// slide the view across the island by this much
+function slide(dx, dz, now) {
+  if (game || framing()) return;
+  stopFollowing();
+  camGoal.target.x += dx; camGoal.target.z += dz; keepInside();
+  if (now) { cam.target.x = camGoal.target.x; cam.target.z = camGoal.target.z; }
+  cam.lastInput = T;
+}
+// ...so that the ground under one point on the screen ends up under another (dragging the island along)
+function slideOnScreen(x0, y0, x1, y1) {
+  if (game) return;
+  stopFollowing();
+  const a = groundAt(x0, y0, true), b = groundAt(x1, y1, true);
+  if (!a || !b) return;
+  const dx = a.x - b.x, dz = a.z - b.z, m = Math.hypot(dx, dz), cap = cam.dist * 0.4;
+  slide(m > cap ? dx * cap / m : dx, m > cap ? dz * cap / m : dz, true);
+}
+// fly in to a spot on the ground
+function flyTo(p) {
+  stopFollowing();
+  camGoal.dist = camGoal.dist > distFor(16) ? distFor(11) : Math.max(minDist(), camGoal.dist * 0.55);
+  camGoal.target.set(p.x, 0.8, p.z); keepInside();
+  cam.lastInput = T;
+}
+function wholeIsland() {
+  stopFollowing();
+  camGoal.target.set(0, 0.8, 0); camGoal.dist = fitDist();
+  cam.lastInput = T - 5;   // and it goes back to turning slowly in a moment
+}
+const camCtl = document.getElementById('camCtl'), camIn = document.getElementById('camIn'), camOut = document.getElementById('camOut');
 function placeCamera(dt) {
   if (cam.follow && T < cam.followUntil) {
     camGoal.target.set(cam.follow.x, cam.follow.y * 0.5 + 0.9, cam.follow.z);
   } else if (cam.follow) {
-    cam.follow = null; camGoal.target.set(0, 0.8, 0); camGoal.dist = Math.max(camGoal.dist, fitDist() * 0.9);
+    stopFollowing(); keepInside();   // let go, and stay right here
   }
   const k = 1 - Math.pow(0.04, dt);
   cam.target.lerp(camGoal.target, k);
   cam.dist += (camGoal.dist - cam.dist) * k;
   if (camGoal.pitch != null) cam.pitch += (camGoal.pitch - cam.pitch) * k;
   if (camGoal.yaw != null) cam.yaw += angleTo(cam.yaw, camGoal.yaw) * k;
-  if (T - cam.lastInput > 6 && !cam.follow && !game) cam.yaw += dt * 0.035 * RM;
+  // left alone with the whole island in view, it turns slowly. Zoomed in on something, it keeps still.
+  if (T - cam.lastInput > 6 && !cam.follow && !game && camGoal.dist > fitDist() * 0.75) cam.yaw += dt * 0.035 * RM;
   const cp = Math.cos(cam.pitch);
   camera.position.set(
     cam.target.x + Math.sin(cam.yaw) * cp * cam.dist,
@@ -2264,18 +2414,26 @@ function placeCamera(dt) {
   cam.shift = (cam.shift || 0) + (want - (cam.shift || 0)) * (1 - Math.pow(0.02, dt));
   if (Math.abs(cam.shift) > 0.5) camera.setViewOffset(innerWidth, innerHeight, 0, cam.shift, innerWidth, innerHeight);
   else if (camera.view && camera.view.enabled) camera.clearViewOffset();
+  // the camera buttons: out of the way during a game or a photo, and greyed out at either end of the zoom
+  const away = !!game || !!photo, atMin = camGoal.dist <= minDist() * 1.01, atMax = camGoal.dist >= maxDist() * 0.99;
+  if (camCtl.hidden !== away) camCtl.hidden = away;
+  if (camIn.disabled !== atMin) camIn.disabled = atMin;
+  if (camOut.disabled !== atMax) camOut.disabled = atMax;
 }
 
 const pointers = new Map();
-let drag = null, pinch = null;
+let drag = null, pinch = null, lastTap = null;
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
-    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), dist: camGoal.dist }; drag = null;
-  } else {
-    drag = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch, moved: false };
+    pinch = { d: Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; drag = null;
+  } else if (pointers.size === 1) {
+    // a plain drag looks around; a right-drag, a middle-drag or shift and drag slides across the island
+    const sliding = e.pointerType === 'mouse' && (e.button === 2 || e.button === 1 || e.shiftKey);
+    drag = { x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY, yaw: cam.yaw, pitch: cam.pitch, moved: false, sliding };
   }
   cam.lastInput = T;
 });
@@ -2285,31 +2443,74 @@ canvas.addEventListener('pointermove', (e) => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   cam.lastInput = T;
   if (pinch && pointers.size === 2) {
+    // two fingers: spread or squeeze to zoom at the spot between them, and drag them to slide the island along
     const [a, b] = [...pointers.values()];
-    camGoal.dist = clamp(pinch.dist * pinch.d / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), R * 0.7, maxDist());
+    const d = Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
+    if (framing()) return;
+    // (zoom first, about where the fingers were, then slide to where they are now: from far away the camera can't
+    // slide at all, so the other way round the first nudge of a pinch would be lost)
+    zoomBy(pinch.d / d, pinch.x, pinch.y, true);
+    if (!pinned()) slideOnScreen(pinch.x, pinch.y, x, y);
+    pinch.d = d; pinch.x = x; pinch.y = y; hideHint();
     return;
   }
   if (!drag || framing()) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   if (Math.hypot(dx, dy) > 4) { drag.moved = true; canvas.classList.add('dragging'); hideHint(); }
+  if (drag.sliding) {
+    if (drag.moved) slideOnScreen(drag.px, drag.py, e.clientX, e.clientY);
+    drag.px = e.clientX; drag.py = e.clientY;
+    return;
+  }
   cam.yaw = drag.yaw - dx * 0.006;
   cam.pitch = clamp(drag.pitch + dy * 0.004, 0.18, 1.25);
 });
 function endPointer(e) {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinch = null;
-  if (drag && !drag.moved && pointers.size === 0) clickAt(e.clientX, e.clientY);
+  if (drag && !drag.moved && !drag.sliding && pointers.size === 0 && e.type === 'pointerup') tapAt(e.clientX, e.clientY);
   if (pointers.size === 0) drag = null;
   canvas.classList.remove('dragging');
+}
+function tapAt(x, y) {
+  const now = performance.now(), twice = lastTap && now - lastTap.t < 330 && Math.hypot(x - lastTap.x, y - lastTap.y) < 32;
+  lastTap = { t: now, x, y };
+  const hit = clickAt(x, y);
+  // a double tap on open ground flies in to that spot
+  if (twice && !hit && !game && !photo && !composing) {
+    const p = groundAt(x, y);
+    if (p && Math.hypot(p.x, p.z) < R) { flyTo(p); hideHint(); lastTap = null; }
+  }
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   if (framing()) return;
-  camGoal.dist = clamp(camGoal.dist * Math.exp(e.deltaY * 0.0012), R * 0.7, maxDist());
-  cam.lastInput = T; hideHint();
+  // (a pinch on a trackpad arrives as a wheel with ctrl held, in small steps; some mice count in lines)
+  const dy = (e.deltaMode === 1 ? e.deltaY * 32 : e.deltaY) * (e.ctrlKey ? 5 : 1);
+  zoomBy(Math.exp(clamp(dy, -240, 240) * 0.0016), e.clientX, e.clientY);
+  hideHint();
 }, { passive: false });
+// the camera buttons, and the same from the keyboard: arrows slide, + and - zoom, 0 shows the whole island
+camIn.addEventListener('click', () => { zoomBy(0.6); hideHint(); });
+camOut.addEventListener('click', () => { zoomBy(1 / 0.6); hideHint(); });
+document.getElementById('camAll').addEventListener('click', () => { wholeIsland(); hideHint(); });
+addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || game || photo || composing) return;
+  const t = e.target;
+  if (t && t.closest && t.closest('input, textarea, select, [contenteditable], .card, .paper-wrap, .booth')) return;
+  const step = cam.dist * 0.14, fx = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);   // (fx, fz): from what you're looking at, toward you
+  if (e.key === 'ArrowUp') slide(-fx * step, -fz * step);
+  else if (e.key === 'ArrowDown') slide(fx * step, fz * step);
+  else if (e.key === 'ArrowLeft') slide(-fz * step, fx * step);
+  else if (e.key === 'ArrowRight') slide(fz * step, -fx * step);
+  else if (e.key === '+' || e.key === '=') zoomBy(0.75);
+  else if (e.key === '-' || e.key === '_') zoomBy(1 / 0.75);
+  else if (e.key === '0') wholeIsland();
+  else return;
+  e.preventDefault(); hideHint();
+});
 
 /* ---------------- the friendship tree: a heart for every friendship on the island ---------------- */
 // It stands near the campfire and grows as the server makes friends. Your friends' hearts glow; hearts
@@ -2390,7 +2591,7 @@ function openTreeCard(f) {
   cardBody.textContent = ''; sub.textContent = '';
   const budLink = (id) => {
     const b = budById(id), btn = el('button', 'btn', b ? nameOf(b) : 'a bud'); btn.type = 'button';
-    btn.addEventListener('click', () => { if (!b) return; cam.follow = b; cam.followUntil = T + 6; openCard(b); });
+    btn.addEventListener('click', () => { if (!b) return; focusOn(b); openCard(b); });
     return btn;
   };
   if (f) {
@@ -2477,33 +2678,36 @@ function noteEl(text, color, small = false) {
 }
 
 function clickAt(x, y) {
-  if (game) { gameTap(x, y); return; }
+  if (game) { gameTap(x, y); return true; }
   const bud = budAt(x, y);
-  if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return; }
-  if (!bud && !composing) { const h = homeAt(x, y); if (h) { tapHome(h); return; } }
-  if (!bud && !composing) { const t = treeAt(x, y); if (t) { openTreeCard(t.heart); return; } }
-  if (!bud && !composing) { const w = pondAt(x, y); if (w) { tapPond(w); return; } }
-  if (!bud) { if (!composing) closeCard(); return; }
-  if (composing) return;
+  if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return true; }
+  if (!bud && !composing) { const h = homeAt(x, y); if (h) { tapHome(h); return true; } }
+  if (!bud && !composing) { const t = treeAt(x, y); if (t) { openTreeCard(t.heart); return true; } }
+  if (!bud && !composing) { const w = pondAt(x, y); if (w) { tapPond(w); return true; } }
+  if (!bud) { if (!composing) closeCard(); return false; }
+  if (composing) return true;
+  cameFrom = null;
   bud.syv -= 0.12; bud.happyUntil = T + 1.1; bud.lookCameraUntil = T + 2.5;
   S.play('squish', { gain: 1 });
   const wasNapping = bud.state === 'act' && bud.act && bud.act.kind === 'nap';
   if (bud.state === 'act') endActivity(bud, 1.6);
   if (bud.state === 'walk') { bud.state = 'idle'; bud.timer = 1.6; }
-  if (wasNapping) { say(bud, pick(['huh?! oh, hi!', 'five more minutes…', '*yawn* hi']), 1600); openCard(bud); return; }
+  if (wasNapping) { say(bud, pick(['huh?! oh, hi!', 'five more minutes…', '*yawn* hi']), 1600); openCard(bud); return true; }
   const notes = bud.data.isMe ? inbox.length : 0;
   say(bud, bud.data.isMe ? (notes ? pick(['look, notes!', 'someone wrote to us!']) : pick(['that’s me!', 'hi, it’s me!', 'hehe, hi']))
     : bud.data.friend ? pick(['hi friend!', 'oh hey, it’s you!']) : pick(POKED), 1500);
   openCard(bud);
+  return true;
 }
 
 function openCard(bud) {
   if (cardBud && cardBud !== bud) releaseCardBud();
-  cardBud = bud;
+  cardBud = bud; cardList = null; card.classList.remove('wide');
   // it stays with you while you read its card
   if (bud.state === 'act') endActivity(bud);
   if (bud.state === 'walk' && !bud.rush) { bud.state = 'idle'; bud.target = null; }
   bud.cardHeld = true; bud.held = true; bud.lookCameraUntil = Infinity;
+  if (!photo && !game) focusOn(bud, Infinity, distFor(9));   // the camera comes over, and stays while you read
   const nick = bud.data.nickname, tn = bud.data.trueName;
   document.getElementById('cardName').textContent = nick || tn;
   const owner = bud.data.isMe ? 'Your bud' : bud.data.ownerName ? `${bud.data.ownerName}’s bud` : 'Someone’s bud';
@@ -2524,12 +2728,20 @@ function releaseCardBud() {
   b.cardHeld = false;
   if (!b.pose && composing !== b) { b.held = false; b.lookCameraUntil = T + 1; b.timer = rand(1.5, 3); }
 }
-function closeCard() { releaseCardBud(); card.hidden = true; cardBud = null; }
+function closeCard() {
+  if (cardBud && cam.follow === cardBud && cam.followUntil === Infinity) cam.followUntil = T;   // the camera lets go, and stays where it is
+  releaseCardBud(); card.hidden = true; cardBud = null; cardList = null; cameFrom = null; card.classList.remove('wide');
+}
 
 function renderCardBody() {
   const bud = cardBud;
   cardBody.textContent = '';
   if (!bud) return;
+  if (cameFrom) {   // opened from a list: a way back to it
+    const from = cameFrom, back = el('button', 'back', from === 'games' ? '‹ Games' : '‹ All buds'); back.type = 'button';
+    back.addEventListener('click', () => openListCard(from));
+    cardBody.append(back);
+  }
   const d = bud.data;
   if (d.isMe) {
     if (!hasProfile) {
@@ -2768,7 +2980,7 @@ function openComposer(bud, draft = '') {
   composer.hidden = false;
   // the bud waits patiently, facing you, while you write
   bud.held = true; bud.state = 'idle'; bud.target = null; bud.lookCameraUntil = T + 9999; bud.happyUntil = T + 1;
-  cam.follow = bud; cam.followUntil = T + 9999; camGoal.dist = Math.max(8, R * 0.7); cam.lastInput = T;
+  focusOn(bud, 9999);
   setTimeout(() => noteText.focus(), 60);
 }
 function closeComposer() {
@@ -2967,8 +3179,7 @@ function welcomeBack(mine, lastVisit) {
     if (sr > WALK_R) { spot.x *= WALK_R / sr; spot.z *= WALK_R / sr; }
     if (obstacles.some((o) => Math.hypot(o.x - spot.x, o.z - spot.z) < o.r + 1.2)) spot = freeSpot(1.6, spot, 2.5);
     Object.assign(mine, { state: 'walk', target: spot, rush: true, greetOnArrive: null });
-    cam.follow = mine; cam.followUntil = T + 9; camGoal.dist = Math.max(9, R * 0.8);
-    cam.lastInput = T;
+    focusOn(mine, 9, distFor(12));   // close enough to see it and its neighbors; it stays there afterwards
     mine.onArrive = () => {
       // 3. it says hi, the way you'd expect after however long you've been gone
       mine.lookCameraUntil = T + 6; mine.happyUntil = T + 2.4; mine.syv -= 0.18; mine.timer = 4; mine.held = false;
@@ -3013,7 +3224,7 @@ function showMyNotes() {
   const mine = myBud();
   if (!mine || photo) return;
   closeComposer();
-  cam.follow = mine; cam.followUntil = T + 6; camGoal.dist = Math.max(9, R * 0.8);
+  focusOn(mine);
   mine.lookCameraUntil = T + 3; mine.happyUntil = T + 1; mine.syv -= 0.1;
   if (mine.state === 'walk') { mine.state = 'idle'; mine.timer = 3; }
   openCard(mine);
@@ -3111,6 +3322,7 @@ function lineUp() {
   // Nobody gets shooed away: whoever wanders past during the countdown ends up in the photo.
   photo.zone = { f };
   photo.focus = { x: cx, y: 0, z: cz };
+  photo.savedView = { x: camGoal.target.x, z: camGoal.target.z, dist: camGoal.dist };
   cam.follow = photo.focus; cam.followUntil = Infinity;
   camGoal.dist = dist; camGoal.pitch = 0.22; camGoal.yaw = yaw;
   photo.readyBy = performance.now() + 6000;   // real time, so a slow device doesn't keep everyone waiting
@@ -3270,7 +3482,8 @@ function exitPhoto() {
     b.pose = null; b.held = false; b.lookCameraUntil = T + 1; b.timer = rand(1, 3);
     if (b.state === 'walk') { b.state = 'idle'; b.target = null; }
   }
-  cam.followUntil = T; camGoal.pitch = null; camGoal.yaw = null;
+  cam.follow = null; camGoal.pitch = null; camGoal.yaw = null;
+  if (photo.savedView) { camGoal.target.set(photo.savedView.x, 0.8, photo.savedView.z); camGoal.dist = photo.savedView.dist; }
   cam.pitch = Math.max(cam.pitch, 0.3);
   if (photo.savedPitch != null) camGoal.pitch = photo.savedPitch;
   setTimeout(() => { if (!photo) camGoal.pitch = null; }, 1500);
@@ -3341,7 +3554,7 @@ async function enterGame(id) {
     game.group.add(m); game.tiles.set(t, m);
   }
   for (const b of buds) { b.gameHidden = true; b.root.visible = false; }
-  game.savedPitch = cam.pitch;
+  game.savedPitch = cam.pitch; game.savedView = { x: camGoal.target.x, z: camGoal.target.z, dist: camGoal.dist };
   cam.follow = null; camGoal.target.set(0, 0.8, 0); camGoal.pitch = 1.22; camGoal.yaw = Math.round(cam.yaw / (Math.PI / 2)) * (Math.PI / 2);
   if (params.get('game') !== id) history.replaceState(null, '', `${location.pathname}?game=${encodeURIComponent(id)}`);
   gameBar.hidden = false;
@@ -3376,10 +3589,14 @@ function exitGame() {
   const g = myGames.find((x) => x.id === game.id);
   if (g) { g.status = game.v.status; g.myTurn = myTurn() || settingUp(); }
   myGames = myGames.filter((x) => x.status === 'setup' || x.status === 'playing');
-  camGoal.pitch = game.savedPitch; camGoal.yaw = null; camGoal.dist = fitDist();
+  updateGamesPill();
+  camGoal.pitch = game.savedPitch; camGoal.yaw = null;
+  const view = game.savedView;
   setTimeout(() => { if (!game && !photo) camGoal.pitch = null; }, 1500);
   gameBar.hidden = true;
   game = null;
+  if (view) { camGoal.target.set(view.x, 0.8, view.z); camGoal.dist = view.dist; } else camGoal.dist = fitDist();
+  keepInside();
   history.replaceState(null, '', location.pathname);
   canvas.classList.remove('over-bud');
 }
@@ -3754,6 +3971,7 @@ async function rematch() {
 async function startGameWith(them) {
   const res = await api('POST', '/api/game', { action: 'create', opponent: them });
   if (!myGames.some((g) => g.id === res.id)) myGames.push({ id: res.id, them, myTurn: true, status: 'setup' });
+  updateGamesPill();
   if (game) exitGame();
   await enterGame(res.id);
 }
@@ -3897,7 +4115,153 @@ gameSeg.addEventListener('click', (e) => {
 });
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && game && !game.busy) exitGame(); });
 
+/* ---------------- lists: every bud on the island, and every game you have going ---------------- */
+// Both open in the card, from the Buds and Games buttons in the top bar. Tap a bud in a list and the camera goes
+// to it and opens its card, which has a way back to the list.
+let cardList = null;    // 'buds' | 'games' while the card is showing a list instead of a bud
+let cameFrom = null;    // the list a bud's card was opened from
+let budsTab = 'all', budsQuery = '';
+const gamesPill = document.getElementById('gamesPill'), budsPill = document.getElementById('budsPill');
+const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
+const waitingOnMe = () => [...myGames, ...myDoodles, ...myPults].filter((g) => g.myTurn);
+function openListCard(kind) {
+  if (photo || game) return;
+  closeComposer(); closeCard();
+  cardList = kind; card.classList.add('wide');
+  if (kind === 'buds') renderBudsList(); else renderGamesPanel();
+  card.hidden = false; card.scrollTop = 0; hideHint();
+  if (kind === 'games') refreshGames();   // whose turn it is may have changed since the island loaded
+}
+function goToBud(b, from = null) {
+  closeCard(); cameFrom = from;
+  focusOn(b);
+  b.syv -= 0.12; b.happyUntil = T + 1.1; b.lookCameraUntil = T + 2.5;
+  if (b.state === 'act') endActivity(b, 1.6);
+  if (b.state === 'walk') { b.state = 'idle'; b.timer = 1.6; }
+  say(b, b.data.isMe ? 'over here!' : pick(HELLOS), 1500);
+  S.play('squish', { gain: 0.8 });
+  openCard(b);
+}
+
+// everyone: you first, then your friends, then the rest, each by name
+function budRows() {
+  const q = budsQuery.trim().toLowerCase();
+  const rank = (b) => (b.data.isMe ? 0 : b.data.friend ? 1 : 2);
+  return buds.filter((b) => (budsTab === 'all' || b.data.friend) && (!q || nameOf(b).toLowerCase().includes(q) || (b.data.ownerName || '').toLowerCase().includes(q)))
+    .sort((a, b) => rank(a) - rank(b) || byName(a, b));
+}
+function renderBudsList() {
+  const friends = buds.filter((b) => b.data.friend).length;
+  document.getElementById('cardName').textContent = 'Buds on the island';
+  document.getElementById('cardSub').textContent = `${buds.length} ${buds.length === 1 ? 'lives' : 'live'} here` + (myBud() ? ` · ${friends ? `${friends} ${friends === 1 ? 'is your friend' : 'are your friends'}` : 'no friends yet'}` : '');
+  cardBody.textContent = '';
+  const seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Which buds');
+  for (const [id, label] of [['all', `Everyone (${buds.length})`], ['friends', `Friends (${friends})`]]) {
+    const b = el('button', null, label); b.type = 'button'; b.setAttribute('aria-pressed', String(budsTab === id));
+    b.addEventListener('click', () => { if (budsTab === id) return; budsTab = id; S.play('click'); renderBudsList(); seg.isConnected || cardBody.querySelector(`.seg button[aria-pressed="true"]`)?.focus(); });
+    seg.append(b);
+  }
+  cardBody.append(seg);
+  const ul = el('ul', 'list');
+  const turn = new Set(waitingOnMe().map((g) => g.them)), noted = new Set(inbox.map((n) => n.from));
+  const fill = () => {
+    ul.textContent = '';
+    const rows = budRows();
+    if (!rows.length) ul.append(el('li', 'none', budsQuery.trim() ? 'No bud or person by that name.' : 'No friends yet. Tap a bud and stick a note on it to ask.'));
+    for (const b of rows) {
+      const d = b.data, li = el('li'), btn = el('button', 'rowbtn'); btn.type = 'button';
+      const text = el('span', 'nm', nameOf(b));
+      text.append(el('span', 'sub', (d.isMe ? 'Your bud' : d.ownerName ? `${d.ownerName}’s bud` : 'Someone’s bud') + (d.hobbyLabel ? ` · loves ${d.hobbyLabel}` : '')));
+      const tags = el('span', 'tags');
+      if (turn.has(d.id)) tags.append(el('span', 'chip', 'your turn'));
+      if (noted.has(d.id)) tags.append(el('span', 'chip', 'left a note'));
+      if (d.isMe) tags.append(el('span', 'chip you', 'you'));
+      else if (d.friend) { const h = el('span', 'chip heart', '♥'); h.setAttribute('role', 'img'); h.setAttribute('aria-label', 'your friend'); tags.append(h); }
+      btn.append(portrait(d.id), text, tags);
+      btn.addEventListener('click', () => goToBud(b, 'buds'));
+      li.append(btn); ul.append(li);
+    }
+  };
+  if (buds.length > 8) {
+    const input = el('input', 'search'); input.type = 'search'; input.placeholder = 'Find a bud or its person'; input.value = budsQuery;
+    input.setAttribute('aria-label', 'Find a bud or its person'); input.autocomplete = 'off';
+    input.addEventListener('input', () => { budsQuery = input.value; fill(); });
+    cardBody.append(input);
+  }
+  cardBody.append(ul);
+  fill();
+}
+
+// every game you have going, the ones waiting on you first
+function gameRows() {
+  const rows = [];
+  for (const g of myGames) rows.push({ them: g.them, name: 'Peekaboo', myTurn: g.myTurn, label: g.myTurn ? (g.status === 'setup' ? 'Hide your buds' : 'Your turn') : 'Open', go: () => { closeCard(); enterGame(g.id); } });
+  for (const g of myPults) rows.push({ them: g.them, name: 'Bud-a-pult', myTurn: g.myTurn, label: g.myTurn ? (g.stage === 'build' ? 'Build your fort' : 'Your turn') : 'Open', href: `/catapult?id=${g.id}` });
+  for (const g of myDoodles) rows.push({ them: g.them, name: 'Doodle Duel', myTurn: g.myTurn, label: g.myTurn ? (g.stage === 'guess' ? 'Guess it' : 'Your turn') : 'Open', href: `/doodle?id=${g.id}`, more: g.streak ? `streak ${g.streak}` : '' });
+  return rows;
+}
+function renderGamesPanel() {
+  const rows = gameRows(), mine = rows.filter((r) => r.myTurn), theirs = rows.filter((r) => !r.myTurn);
+  document.getElementById('cardName').textContent = 'Games';
+  document.getElementById('cardSub').textContent = rows.length ? `${mine.length ? `${mine.length} waiting on you` : 'Nothing waiting on you'} · ${rows.length} going` : 'No games going right now.';
+  cardBody.textContent = '';
+  const section = (title, list) => {
+    if (!list.length) return;
+    cardBody.append(el('h3', 'sec', title));
+    const ul = el('ul', 'list');
+    for (const r of list) {
+      const other = budById(r.them), who = other ? other.data.ownerName || nameOf(other) : 'a friend';
+      const li = el('li', 'g'), text = el('span', 'nm', r.name);
+      text.append(el('span', 'sub', `with ${who}${r.more ? ` · ${r.more}` : ''}`));
+      const open = el(r.href ? 'a' : 'button', 'btn' + (r.myTurn ? ' primary' : ''), r.label);
+      if (r.href) open.href = r.href; else { open.type = 'button'; open.addEventListener('click', r.go); }
+      li.append(portrait(r.them), text, open); ul.append(li);
+    }
+    cardBody.append(ul);
+  };
+  section('Your turn', mine);
+  section('Waiting on them', theirs);
+  cardBody.append(el('h3', 'sec', 'Start a new game'));
+  const friends = buds.filter((b) => b.data.friend).sort(byName);
+  if (!friends.length) cardBody.append(el('p', 'muted', 'Games are played with friends. Tap a bud and stick a note on it to make one.'));
+  else {
+    cardBody.append(el('p', 'muted', 'Pick a friend. Peekaboo, Bud-a-pult and Doodle Duel are on their bud’s card.'));
+    const row = el('div', 'row friends-row');
+    for (const f of friends) {
+      const b = el('button', 'btn'); b.type = 'button';
+      b.append(portrait(f.data.id), el('span', null, f.data.ownerName || nameOf(f)));
+      b.addEventListener('click', () => goToBud(f, 'games'));
+      row.append(b);
+    }
+    cardBody.append(row);
+  }
+  cardBody.append(el('p', 'muted', 'On a Discord call? Island Race, Prankster and Question Showdown are in bud’s Activity: the rocket button in the call.'));
+}
+function updateGamesPill() {
+  const n = waitingOnMe().length, c = document.getElementById('gamesCount');
+  gamesPill.hidden = !myBud();
+  c.hidden = !n; c.textContent = n;
+  gamesPill.setAttribute('aria-label', n ? `Games: ${n} waiting on you` : 'Games');
+}
+let gamesAt = Date.now();
+async function refreshGames() {
+  if (!myBud()) return;
+  try {
+    const v = await api('GET', '/api/game?mine=1');
+    myGames = v.games || []; myDoodles = v.doodles || []; myPults = v.catapults || []; gamesAt = Date.now();
+  } catch (e) { return; }
+  updateGamesPill();
+  if (cardList === 'games') renderGamesPanel();
+  else if (cardBud && !cardList) renderCardBody();
+}
+gamesPill.addEventListener('click', () => (cardList === 'games' ? closeCard() : openListCard('games')));
+budsPill.addEventListener('click', () => (cardList === 'buds' ? closeCard() : openListCard('buds')));
+// back on this page after playing a turn somewhere else: check whose turn it is now
+addEventListener('pageshow', (e) => { if (e.persisted) refreshGames(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - gamesAt > 30000) refreshGames(); });
+
 const hint = document.getElementById('hint');
+if (matchMedia('(pointer: coarse)').matches) hint.textContent = 'Drag to look around · pinch to zoom · tap a bud to say hi';
 function hideHint() { hint.classList.add('gone'); }
 setTimeout(hideHint, 9000);
 
@@ -4079,6 +4443,7 @@ function resize() {
   camera.fov = innerWidth < innerHeight ? 50 : 38;
   camera.updateProjectionMatrix();
   if (game) camGoal.dist = gameDist();
+  else { camGoal.dist = clamp(camGoal.dist, minDist(), maxDist()); if (!cam.follow) keepInside(); }
 }
 // how far back the camera sits to see the whole island, wide or narrow screen
 function fitDist() {
@@ -4160,6 +4525,7 @@ function showCenter(title, text, linkText, href = '/') {
   buildFriendTree(world.friendships || [], world.me.lastVisit, world.me.id);
   const mine = buds.find((b) => b.data.isMe);
   if (mine) document.getElementById('findMe').hidden = false;
+  budsPill.hidden = !buds.length; updateGamesPill();
   if (buds.length) document.getElementById('photoBtn').hidden = false;
 
   // the notes already stuck on everyone: yours on your own bud are the ones you can read
@@ -4201,7 +4567,7 @@ function showCenter(title, text, linkText, href = '/') {
   const OPEN_BUD = /^\d{5,25}$/.test(params.get('bud') || '') ? buds.find((b) => b.data.id === params.get('bud')) : null;
   if (OPEN_BUD && !GAME_ID) {
     history.replaceState(null, '', location.pathname);
-    setTimeout(() => { cam.follow = OPEN_BUD; cam.followUntil = T + 5; camGoal.dist = Math.max(9, R * 0.85); OPEN_BUD.syv -= 0.12; say(OPEN_BUD, pick(HELLOS), 1500); openCard(OPEN_BUD); }, 1500);
+    setTimeout(() => { focusOn(OPEN_BUD); OPEN_BUD.syv -= 0.12; say(OPEN_BUD, pick(HELLOS), 1500); openCard(OPEN_BUD); }, 1500);
   }
   setTimeout(() => document.getElementById('title').classList.add('fade'), DROP ? 9000 : 6000);
   requestAnimationFrame(frame);
@@ -4215,10 +4581,9 @@ S.ambient(true);
 document.getElementById('findMe').addEventListener('click', () => {
   const mine = buds.find((b) => b.data.isMe);
   if (!mine) return;
-  cam.follow = mine; cam.followUntil = T + 6;
-  camGoal.dist = Math.max(9, R * 0.9);
+  focusOn(mine, 6);
   mine.lookCameraUntil = T + 3; mine.happyUntil = T + 1; mine.syv -= 0.1;
-  say(mine, 'over here!', 1600);
+  say(mine, 'over here!', 1600); hideHint();
 });
 </script>
 </body>

@@ -1,4 +1,5 @@
-// Peekaboo games (lib/peekaboo.js). GET ?id= one game (your view of it) or your games;
+// Peekaboo games (lib/peekaboo.js). GET ?id= one game (your view of it) or your games; GET ?mine=1 every game you
+// have going, of every kind, and whose turn it is (the island's Games list);
 // POST { action: 'create' | 'hide' | 'shoot' | 'resign', ... }
 // Question Showdown rooms (lib/showdown.js) share this function: GET ?room= checks in (?buds=a,b,c for
 // drawing them); POST { action: 'sd-new' | 'sd-join' | 'sd-start' | 'sd-pick', room, choice }
@@ -41,6 +42,13 @@ export async function GET(request) {
   const session = readSession(request);
   if (!session) return json({ error: 'sign in first' }, 401);
   const url = new URL(request.url), id = url.searchParams.get('id'), room = url.searchParams.get('room');
+  if (url.searchParams.get('mine') != null) {
+    // the same three lists the island loads with, so its Games list can check again without reloading
+    try {
+      const [peek, doodles, catapults] = await Promise.all([myGames(session.id), doodle.myDoodles(session.id).catch(() => []), bpg.myGames(session.id).catch(() => [])]);
+      return json({ games: peek.filter((g) => g.status === 'setup' || g.status === 'playing').map(({ id, them, myTurn, status }) => ({ id, them, myTurn, status })), doodles, catapults });
+    } catch (err) { return fail(err); }
+  }
   const dd = url.searchParams.get('doodle');
   if (dd != null) {
     if (!/^[A-Za-z0-9]{10,40}$/.test(dd)) return json({ error: 'which game?' }, 400);
