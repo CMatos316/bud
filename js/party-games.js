@@ -12,7 +12,7 @@ export const COLORS = ['#FF7A59', '#4FB3FF', '#7C6CFF', '#3BB273', '#FF7EB6', '#
 export const MIN_PLAYERS = 2, MAX_PLAYERS = 12;
 export const COUNT_S = 3.2, ROUND_S = 4;
 export const GAME_INFO = {
-  bumper: { name: 'Bumper Buds', how: 'Bump everyone else off the island. It shrinks! Three rounds: a point for every bud you outlast, and one more for winning.', pad: 'Steer with your thumb. Dash to hit hard.' },
+  bumper: { name: 'Bumper Buds', how: 'Bump everyone else off the island. It shrinks! Three rounds: a point for every bud you outlast, and one more for winning.', pad: 'Hold it sideways. Steer with your left thumb, dash with your right.' },
   tug: { name: 'Tug of War', how: 'Two teams, one rope. Drag the other side into the mud. Best of three.', pad: 'Tap as fast as you can.' },
   freeze: { name: 'Freeze', how: 'Run while the crab naps. Freeze when it looks, or a wave washes you back to the last sandcastle and leaves you dizzy. First to the campfire wins.', pad: 'Shake your phone to run. Hold still to freeze.' },
 };

@@ -17,7 +17,7 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 <style>
 /* Bumper Buds, Tug of War and Freeze (party night, /tv). One page, two jobs:
    on the TV (?tv=1) it runs the game and draws it (js/party-tv.js);
-   on a phone it's a controller (js/party-pad.js). They meet in a live room (js/party-rt.js). */
+   on a phone it's a controller, held sideways (js/party-pad.js). They meet in a live room (js/party-rt.js). */
 :root {
   --ink: #1D1C2B; --muted: #5E5D75; --card: rgba(255,255,255,.92); --line: rgba(29,28,43,.1); --shadow: rgba(46,40,90,.3); --bad: #C0303B;
   --font: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
@@ -79,21 +79,29 @@ body.looking::after { content: ""; position: fixed; inset: 0; box-shadow: inset 
 .offline { position: fixed; left: 50%; bottom: calc(var(--u) * 1.4); transform: translateX(-50%); z-index: 6; background: var(--ink); color: #fff; border-radius: 999px; padding: calc(var(--u) * .5) calc(var(--u) * 1.4); font-weight: 600; font-size: calc(var(--u) * 1.3); }
 .oops { position: fixed; left: 50%; top: calc(var(--u) * 5); transform: translateX(-50%); z-index: 7; background: #fff; color: var(--bad); border: 2px solid var(--bad); border-radius: calc(var(--u) * 1); padding: calc(var(--u) * .7) calc(var(--u) * 1.2); font-weight: 600; font-size: max(15px, calc(var(--u) * 1.2)); max-width: min(90%, 720px); text-align: center; -webkit-user-select: text; user-select: text; }
 
-/* ---------- a phone ---------- */
-#pad { position: fixed; inset: 0; display: grid; grid-template-rows: auto auto 1fr; background: linear-gradient(180deg, color-mix(in srgb, var(--me) 26%, #fff), color-mix(in srgb, var(--me) 12%, #fff)); padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); gap: 8px; touch-action: none; }
-.padtop { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,.85); border-radius: 18px; padding: 6px 12px 6px 8px; min-height: 56px; }
-.padtop canvas { width: 44px; height: 44px; flex: none; }
-.padtop .who { display: grid; min-width: 0; flex: 1; }
-.padtop b { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.padtop small { font-size: 13px; color: var(--muted); font-weight: 600; }
-.padtop i { width: 22px; height: 22px; border-radius: 50%; flex: none; border: 3px solid #fff; box-shadow: 0 0 0 1px var(--line); }
-.padsay { display: grid; gap: 6px; text-align: center; padding: 0 4px; }
+/* ---------- a phone ----------
+   The controller is laid out wide, for two thumbs. A phone standing upright gets the whole thing drawn turned a
+   quarter (.turned, set in js/party-pad.js), so it reads right once you turn the phone, rotation lock or not.
+   .other is the same the other way up, for people who turn their phone the other way. */
+#pad { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; background: linear-gradient(180deg, color-mix(in srgb, var(--me) 26%, #fff), color-mix(in srgb, var(--me) 12%, #fff)); padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); gap: 8px; touch-action: none; }
+#pad.turned { inset: auto; top: 0; left: var(--pw); width: var(--ph); height: var(--pw); transform-origin: 0 0; transform: rotate(90deg); padding: 8px max(10px, env(safe-area-inset-bottom)) 10px max(10px, env(safe-area-inset-top)); }
+#pad.turned.other { top: var(--ph); left: 0; transform: rotate(-90deg); padding: 8px max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); }
+.padtop { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; background: rgba(255,255,255,.85); border-radius: 18px; padding: 5px 10px 5px 8px; min-height: 52px; }
+.padtop canvas { width: 40px; height: 40px; flex: none; }
+.padtop .who { display: grid; min-width: 0; max-width: 9em; }
+.padtop b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.padtop small { font-size: 12.5px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.padtop i { width: 20px; height: 20px; border-radius: 50%; flex: none; border: 3px solid #fff; box-shadow: 0 0 0 1px var(--line); }
+.padsay { flex: 1 1 150px; min-width: 0; display: grid; gap: 1px; text-align: center; padding: 0 4px; }
 .padsay p { margin: 0; }
-.padsay .line { font-size: 19px; font-weight: 700; line-height: 1.2; min-height: 1.2em; text-wrap: balance; }
-.padsay .note { font-size: 14.5px; color: var(--muted); font-weight: 500; line-height: 1.3; }
+.padsay .line { font-size: 17px; font-weight: 700; line-height: 1.2; text-wrap: balance; }
+.padsay .line:empty { display: none; }
+.padsay .note { font-size: 13px; color: var(--muted); font-weight: 500; line-height: 1.25; }
 .padsay .note:empty { display: none; }
-.padsay .start { font: 700 19px var(--font); border: 0; border-radius: 999px; padding: 13px 20px; background: var(--ink); color: #fff; touch-action: manipulation; }
-.padsay .start:disabled { opacity: .45; }
+.padtop .start { font: 700 16px var(--font); border: 0; border-radius: 999px; padding: 10px 16px; background: var(--ink); color: #fff; touch-action: manipulation; white-space: nowrap; flex: none; }
+.padtop .start:disabled { opacity: .45; }
+.padtop .turn { display: inline-flex; align-items: center; gap: 5px; font: 600 13px var(--font); border: 1px solid var(--line); border-radius: 999px; padding: 7px 10px; background: #fff; color: var(--ink); touch-action: manipulation; flex: none; }
+.padtop .turn svg { width: 15px; height: 15px; }
 .padmain { position: relative; min-height: 0; }
 .ctl { position: absolute; inset: 0; border-radius: 26px; overflow: hidden; }
 .veil { position: absolute; inset: 0; z-index: 3; border-radius: 26px; background: rgba(255,255,255,.97); display: grid; place-items: center; text-align: center; padding: 24px; font-size: 23px; font-weight: 700; line-height: 1.25; text-wrap: balance; }
@@ -113,17 +121,18 @@ body.looking::after { content: ""; position: fixed; inset: 0; box-shadow: inset 
 @keyframes cool { from { transform: scaleY(1); } to { transform: scaleY(0); } }
 /* Tug of War: the whole thing is the button */
 .tugbtn { border: 0; background: var(--me); color: #fff; display: grid; place-content: center; gap: 6px; touch-action: none; box-shadow: inset 0 -14px 0 rgba(0,0,0,.16); text-shadow: 0 3px 0 rgba(0,0,0,.2); width: 100%; height: 100%; }
-.tugbtn b { font-size: clamp(48px, 16vw, 110px); line-height: 1; letter-spacing: .03em; }
+.tugbtn b { font-size: clamp(44px, 22vmin, 110px); line-height: 1; letter-spacing: .03em; }
 .tugbtn small { font-size: 17px; font-weight: 600; opacity: .9; }
 .tugbtn.hit { transform: scale(.975); box-shadow: inset 0 -6px 0 rgba(0,0,0,.16); }
 /* Freeze: green to run, red to stop */
-.freeze { background: rgba(255,255,255,.6); display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center; padding: 20px; transition: background .12s; }
-.freeze b { font-size: clamp(46px, 15vw, 104px); line-height: 1; }
+.freeze { background: rgba(255,255,255,.6); display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center; padding: 14px 20px; transition: background .12s; }
+.freeze b { font-size: clamp(40px, 18vmin, 96px); line-height: 1; }
+.freeze .row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 4px; }
 .freeze small { font-size: 16px; font-weight: 600; color: var(--muted); max-width: 16em; }
 .freeze.green { background: #2E9E62; color: #fff; } .freeze.red { background: #E8394B; color: #fff; }
 .freeze.green small, .freeze.red small { color: rgba(255,255,255,.9); }
 .freeze .btn { font-size: 17px; padding: 14px 22px; touch-action: none; }
-.freeze .btn.ghost { background: rgba(255,255,255,.9); margin-top: 10px; }
+.freeze .btn.ghost { background: rgba(255,255,255,.9); }
 .freeze .btn.hit { transform: scale(.96); }
 
 /* ---------- when something's in the way ---------- */
@@ -156,13 +165,14 @@ body.looking::after { content: ""; position: fixed; inset: 0; box-shadow: inset 
   <header class="padtop">
     <canvas id="meBud" width="44" height="44" aria-hidden="true"></canvas>
     <div class="who"><b id="meName"></b><small id="padGame"></small></div>
+    <div class="padsay">
+      <p class="line" id="padLine" aria-live="polite"></p>
+      <p class="note" id="padNote"></p>
+    </div>
+    <button class="start" id="padStart" type="button" hidden></button>
+    <button class="turn" id="padTurn" type="button" hidden title="Upside down? Flip it over"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2"/><path d="M20 4v4h-4"/><path d="M20 15a8 8 0 0 1-14 3l-2-2"/><path d="M4 20v-4h4"/></svg>Flip</button>
     <i id="meDot" aria-hidden="true"></i>
   </header>
-  <div class="padsay">
-    <p class="line" id="padLine" aria-live="polite"></p>
-    <p class="note" id="padNote"></p>
-    <button class="start" id="padStart" type="button" hidden></button>
-  </div>
   <main class="padmain">
     <div id="padMain"></div>
     <div class="veil" id="padVeil" hidden></div>

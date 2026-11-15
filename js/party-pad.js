@@ -1,5 +1,5 @@
-// The phone's side of Bumper Buds, Tug of War and Freeze: a controller. It sends what your thumbs (or your
-// shaking) are doing, and shows what the TV says about you. The TV runs the game (js/party-tv.js).
+// The phone's side of Bumper Buds, Tug of War and Freeze: a controller, held sideways. It sends what your thumbs
+// (or your shaking) are doing, and shows what the TV says about you. The TV runs the game (js/party-tv.js).
 // What gets sent is one short string, the newest replacing the last. Dashes, taps and steps go as running counts,
 // so a message that never arrives loses nothing.
 import { GAME_INFO, COLORS, MIN_PLAYERS, BUMPER } from '/js/party-games.js';
@@ -18,6 +18,27 @@ export async function runPad(room, { onAway } = {}) {
   let meta = null, st = null, sid = null, go = 0, away = null;
   // the controls: these only ever count up, whatever game is on
   const ctl = { x: 0, y: 0, dash: 0, taps: 0, steps: 0 };
+
+  /* ---------- held sideways ---------- */
+  // A controller wants two thumbs, so it's laid out wide. A phone standing upright (and most are locked that way)
+  // gets the whole thing drawn turned a quarter: turn the phone and it reads right. Nothing can tell which way
+  // someone turned a locked phone, so there's a Flip button for the other way (remembered on that phone).
+  // turn: 0 the page is already wide, 1 drawn for a phone with its top to the left, 2 top to the right.
+  const pad = $('pad'), isPhone = matchMedia('(pointer: coarse)').matches;
+  let turn = 0, other = false;
+  try { other = localStorage.getItem('bud_pad_flip') === '1'; } catch (e) {}
+  function layout() {
+    const w = innerWidth, h = innerHeight;
+    turn = isPhone && h > w ? (other ? 2 : 1) : 0;
+    pad.style.setProperty('--pw', `${w}px`); pad.style.setProperty('--ph', `${h}px`);
+    pad.classList.toggle('turned', turn > 0); pad.classList.toggle('other', turn === 2);
+    $('padTurn').hidden = turn === 0;
+  }
+  addEventListener('resize', layout); layout();
+  $('padTurn').addEventListener('click', () => { other = !other; try { localStorage.setItem('bud_pad_flip', other ? '1' : '0'); } catch (e) {} layout(); });
+  // a spot on the glass, in the controller's own frame (the way the player sees it)
+  const local = (x, y) => (turn === 1 ? [y, innerWidth - x] : turn === 2 ? [innerHeight - y, x] : [x, y]);
+  const localBox = (elm) => { const r = elm.getBoundingClientRect(), a = local(r.left, r.top), b = local(r.right, r.bottom); return { left: Math.min(a[0], b[0]), top: Math.min(a[1], b[1]), right: Math.max(a[0], b[0]), bottom: Math.max(a[1], b[1]) }; };
 
   /* ---------- being here ---------- */
   const announce = () => room.set(`players/${me}`, { n: room.name, at: room.stamp(), go });
@@ -54,7 +75,7 @@ export async function runPad(room, { onAway } = {}) {
 
   const mine = () => st?.who?.[me] || null;
   const nameOf = (id) => (id === me ? 'You' : st?.who?.[id]?.n || 'someone');
-  function flash(text) { const f = $('padFlash'); f.textContent = text; f.classList.add('on'); clearTimeout(flash.t); flash.t = setTimeout(() => f.classList.remove('on'), 1800); }
+  function flash(text, ms = 1800) { const f = $('padFlash'); f.textContent = text; f.classList.add('on'); clearTimeout(flash.t); flash.t = setTimeout(() => f.classList.remove('on'), ms); }
 
   // the line of words at the top, and whether the controller is live or covered
   function words() {
@@ -124,7 +145,8 @@ export async function runPad(room, { onAway } = {}) {
       const tap = el('button', 'btn ghost', 'Tap here to run instead'); tap.type = 'button'; tap.id = 'frzTap';
       tap.addEventListener('pointerdown', (e) => { e.preventDefault(); ctl.steps += 1.5; send(); tap.classList.add('hit'); setTimeout(() => tap.classList.remove('hit'), 80); });
       turnOn.addEventListener('click', askMotion);
-      f.append(word, hint, turnOn, tap); main.append(f);
+      const row = el('div', 'row'); row.append(turnOn, tap);
+      f.append(word, hint, row); main.append(f);
       startMotion();
     } else {
       const wrap = el('div', 'ctl bumper'), stick = el('div', 'stick'), base = el('div', 'base'), knob = el('div', 'knob'), dash = el('button', 'dash', 'DASH');
@@ -132,12 +154,13 @@ export async function runPad(room, { onAway } = {}) {
       wrap.append(stick, dash); main.append(wrap);
       let pid = null, ox = 0, oy = 0; const R = 58;
       const place = (x, y) => { knob.style.transform = `translate(${x * R}px, ${y * R}px)`; };
+      // (everything here is in the controller's own frame, so it works the same when it's drawn turned)
       stick.addEventListener('pointerdown', (e) => {
         if (pid != null) return; pid = e.pointerId; stick.setPointerCapture(pid); e.preventDefault();
-        const r = stick.getBoundingClientRect(); ox = clamp(e.clientX, r.left + R + 8, r.right - R - 8); oy = clamp(e.clientY, r.top + R + 8, r.bottom - R - 8);
+        const r = localBox(stick), [px, py] = local(e.clientX, e.clientY); ox = clamp(px, r.left + R + 8, r.right - R - 8); oy = clamp(py, r.top + R + 8, r.bottom - R - 8);
         base.style.left = `${ox - r.left}px`; base.style.top = `${oy - r.top}px`; base.classList.add('on'); move(e);
       });
-      const move = (e) => { if (e.pointerId !== pid) return; let x = (e.clientX - ox) / R, y = (e.clientY - oy) / R; const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; } ctl.x = x; ctl.y = y; place(x, y); send(); };
+      const move = (e) => { if (e.pointerId !== pid) return; const [px, py] = local(e.clientX, e.clientY); let x = (px - ox) / R, y = (py - oy) / R; const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; } ctl.x = x; ctl.y = y; place(x, y); send(); };
       const up = (e) => { if (e.pointerId !== pid) return; pid = null; ctl.x = 0; ctl.y = 0; place(0, 0); base.classList.remove('on'); send(true); };
       stick.addEventListener('pointermove', move); stick.addEventListener('pointerup', up); stick.addEventListener('pointercancel', up);
       dash.addEventListener('pointerdown', (e) => { e.preventDefault(); doDash(dash); });
@@ -198,5 +221,9 @@ export async function runPad(room, { onAway } = {}) {
   drawBud($('meBud'), null, { size: 44 });
   fetch(`/api/game?room=${encodeURIComponent(room.room)}&buds=${me}`, { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.json()).then((d) => { if (d.buds?.[me]) drawBud($('meBud'), d.buds[me], { size: 44 }); }).catch(() => {});
   render();
-  return { ctl, send, get st() { return st; }, get meta() { return meta; } };
+  // the first time on this phone, say so (after that it's obvious)
+  let told = false;
+  try { told = localStorage.getItem('bud_pad_told') === '1'; localStorage.setItem('bud_pad_told', '1'); } catch (e) {}
+  if (turn && !told) flash('Turn your phone sideways, like a game controller.', 4500);
+  return { ctl, send, get st() { return st; }, get meta() { return meta; }, get turn() { return turn; } };
 }
