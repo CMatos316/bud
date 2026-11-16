@@ -1,8 +1,8 @@
-// The phone's side of Bumper Buds, Tug of War and Freeze: a controller, held sideways. It sends what your thumbs
+// The phone's side of the live party games (Bumper Buds, Tug of War, Freeze, Island Grand Prix): a controller, held sideways. It sends what your thumbs
 // (or your shaking) are doing, and shows what the TV says about you. The TV runs the game (js/party-tv.js).
 // What gets sent is one short string, the newest replacing the last. Dashes, taps and steps go as running counts,
 // so a message that never arrives loses nothing.
-import { GAME_INFO, COLORS, MIN_PLAYERS, BUMPER } from '/js/party-games.js';
+import { GAME_INFO, COLORS, MIN_PLAYERS, BUMPER, KART_ITEMS } from '/js/party-games.js';
 import { drawBud } from '/js/bud-flat.js';
 
 const $ = (id) => document.getElementById(id);
@@ -17,7 +17,7 @@ export async function runPad(room, { onAway } = {}) {
   const me = room.uid;
   let meta = null, st = null, sid = null, go = 0, away = null;
   // the controls: these only ever count up, whatever game is on
-  const ctl = { x: 0, y: 0, dash: 0, taps: 0, steps: 0 };
+  const ctl = { x: 0, y: 0, dash: 0, taps: 0, steps: 0, drift: 0, uses: 0 };
 
   /* ---------- held sideways ---------- */
   // A controller wants two thumbs, so it's laid out wide. A phone standing upright (and most are locked that way)
@@ -49,7 +49,10 @@ export async function runPad(room, { onAway } = {}) {
 
   /* ---------- sending the controls ---------- */
   let lastSent = '', lastAt = 0, timer = null;
-  const wire = () => { const k = meta?.game; return k === 'tug' ? String(ctl.taps) : k === 'freeze' ? String(Math.floor(ctl.steps)) : `${Math.round(ctl.x * 100)},${Math.round(ctl.y * 100)},${ctl.dash}`; };
+  const wire = () => {
+    const k = meta?.game, xy = `${Math.round(ctl.x * 100)},${Math.round(ctl.y * 100)}`;
+    return k === 'tug' ? String(ctl.taps) : k === 'freeze' ? String(Math.floor(ctl.steps)) : k === 'kart' ? `${xy},${ctl.drift},${ctl.uses}` : `${xy},${ctl.dash}`;
+  };
   function send(now = false) {
     const due = 70 - (performance.now() - lastAt);
     if (!now && due > 0) { if (!timer) timer = setTimeout(() => { timer = null; send(true); }, due); return; }
@@ -65,11 +68,12 @@ export async function runPad(room, { onAway } = {}) {
     if (m && m.away && m.away !== away) { away = m.away; if (onAway) onAway(); }   // the TV is off to another game
     render();
   });
-  let hits = 0, wasOut = false;
+  let hits = 0, wasOut = false, kartHits = 0;
   room.watch('state', (s) => {
     st = s;
     if (s && s.g === 'freeze') { const h = s.hit?.[me] || 0; if (h > hits) buzz([60, 40, 120]); hits = h; } else hits = 0;
     if (s && s.g === 'bumper') { const out = !!s.out?.[me]; if (out && !wasOut) buzz(200); wasOut = out; }
+    if (s && s.g === 'kart') { const h = s.hits?.[me] || 0; if (h > kartHits) buzz([50, 30, 90]); kartHits = h; } else kartHits = 0;
     render();
   });
 
@@ -83,7 +87,7 @@ export async function runPad(room, { onAway } = {}) {
     if (!meta || !st || st.sid !== meta.sid || st.g !== k) return { line: 'Waiting for the TV…', veil: 'Waiting for the TV…' };
     const n = Object.keys(st.who || {}).length;
     if (!w) return { line: 'Getting you in…', veil: n >= 12 ? 'This game is full. Watch the TV!' : 'Getting you in…' };
-    if (ph === 'lobby') return { line: k === 'bumper' ? 'You’re on the TV. Drive around!' : k === 'tug' ? 'You’re on the TV. Tap to hop!' : 'You’re on the TV. Shake to wiggle!' };
+    if (ph === 'lobby') return { line: k === 'kart' ? 'You’re on the track. Take it for a spin!' : k === 'bumper' ? 'You’re on the TV. Drive around!' : k === 'tug' ? 'You’re on the TV. Tap to hop!' : 'You’re on the TV. Shake to wiggle!' };
     if (!w.in) return { line: 'You’re in the next one.', veil: 'A game’s on. You’re in the next one. Watch the TV!' };
     if (k === 'bumper') {
       if (ph === 'count') return { line: `Round ${st.round} of ${st.rounds}. Get ready…` };
@@ -97,6 +101,13 @@ export async function runPad(room, { onAway } = {}) {
       if (ph === 'play') return { line: `${t.name}: pull to the ${t.side}!` };
       if (ph === 'round') return { line: '', veil: st.last === w.team ? 'Your team took the round!' : 'Into the mud! Shake it off…' };
       if (ph === 'done') return { line: st.champ === w.team ? 'Your team won! 🏆' : `${TEAMS[st.champ]?.name || 'They'} won.`, veil: st.champ === w.team ? 'Your team won! 🏆' : `${TEAMS[st.champ]?.name || 'They'} won. Rematch?` };
+    }
+    if (k === 'kart') {
+      const ord = (n) => ORD[(n || 1) - 1], fin = st.fin?.[me];
+      if (ph === 'count') return { line: 'Three laps. Get ready…', note: 'Point where you want to go. Hold Drift round corners.' };
+      if (ph === 'play' && fin) return { line: `You finished ${ord(fin)}! 🏁`, veil: `You finished ${ord(fin)}! 🏁 Your bud is taking a lap of honour.` };
+      if (ph === 'play') return st.wrong?.[me] ? { line: 'Wrong way! Turn around ↩️' } : { line: `${ord(st.place?.[me])} · Lap ${st.lap?.[me] || 1} of ${st.laps}` };
+      if (ph === 'done') { const w = (st.order || [])[0], at = (st.order || []).indexOf(me); return { line: w === me ? 'You won! 🏆' : `${nameOf(w)} won.${at > 0 ? ` You came ${ord(at + 1)}.` : ''}`, note: 'Drive around while you wait.' }; }
     }
     if (k === 'freeze') {
       if (ph === 'count') return { line: 'Get ready…' };
@@ -121,8 +132,9 @@ export async function runPad(room, { onAway } = {}) {
     // the host's phone can start the game, so nobody has to get up
     const hostBtn = $('padStart'), idle = st && (st.phase === 'lobby' || st.phase === 'done') && st.sid === meta?.sid;
     hostBtn.hidden = !(meta && meta.host === me && idle);
-    if (!hostBtn.hidden) { const n = Object.keys(st.who || {}).length; hostBtn.disabled = n < MIN_PLAYERS; hostBtn.textContent = n < MIN_PLAYERS ? 'Waiting for one more…' : st.phase === 'done' ? `Play again (${n})` : `Start the game (${n})`; }
+    if (!hostBtn.hidden) { const n = Object.values(st.who || {}).filter((w) => !w.cpu).length, least = k === 'kart' ? 1 : MIN_PLAYERS; hostBtn.disabled = n < least; hostBtn.textContent = n < least ? 'Waiting for one more…' : st.phase === 'done' ? `Play again (${n})` : `Start the game (${n})`; }
     if (built !== k) { built = k; build(k); }
+    if (k === 'kart') kartItem();
     if (k === 'freeze') {
       const red = st?.phase === 'play' && st.light === 'red', on = st?.phase === 'play' && !st.winner;
       const f = $('frz'); f.classList.toggle('red', red); f.classList.toggle('green', on && !red);
@@ -148,10 +160,29 @@ export async function runPad(room, { onAway } = {}) {
       const row = el('div', 'row'); row.append(turnOn, tap);
       f.append(word, hint, row); main.append(f);
       startMotion();
+    } else if (k === 'kart') {
+      // stick on the left; on the right, the item (top) and Drift (hold it, bottom)
+      const wrap = el('div', 'ctl kartpad'), side = el('div', 'kside');
+      const item = el('button', 'kbtn item'); item.type = 'button'; item.id = 'item'; item.append(el('b', null, ''), el('small', null, ''));
+      const drift = el('button', 'kbtn drift'); drift.type = 'button'; drift.id = 'drift'; drift.append(el('b', null, 'DRIFT'), el('small', null, 'hold on corners'));
+      side.append(item, drift); wrap.append(makeStick('point where to go'), side); main.append(wrap);
+      item.addEventListener('pointerdown', (e) => { e.preventDefault(); useItem(); });
+      const on = (e) => { e.preventDefault(); if (e.pointerId != null) try { drift.setPointerCapture(e.pointerId); } catch (x) {} setDrift(1); };
+      const off = () => setDrift(0);
+      drift.addEventListener('pointerdown', on); drift.addEventListener('pointerup', off); drift.addEventListener('pointercancel', off); drift.addEventListener('lostpointercapture', off);
+      kartItem();
     } else {
-      const wrap = el('div', 'ctl bumper'), stick = el('div', 'stick'), base = el('div', 'base'), knob = el('div', 'knob'), dash = el('button', 'dash', 'DASH');
-      stick.id = 'stick'; dash.id = 'dash'; dash.type = 'button'; base.append(knob); stick.append(base, el('span', null, 'steer'));
-      wrap.append(stick, dash); main.append(wrap);
+      const wrap = el('div', 'ctl bumper'), dash = el('button', 'dash', 'DASH');
+      dash.id = 'dash'; dash.type = 'button';
+      wrap.append(makeStick('steer'), dash); main.append(wrap);
+      dash.addEventListener('pointerdown', (e) => { e.preventDefault(); doDash(dash); });
+    }
+  }
+  // the thumbstick (Bumper Buds and the kart race): appears wherever the thumb lands
+  function makeStick(label) {
+    {
+      const stick = el('div', 'stick'), base = el('div', 'base'), knob = el('div', 'knob');
+      stick.id = 'stick'; base.append(knob); stick.append(base, el('span', null, label));
       let pid = null, ox = 0, oy = 0; const R = 58;
       const place = (x, y) => { knob.style.transform = `translate(${x * R}px, ${y * R}px)`; };
       // (everything here is in the controller's own frame, so it works the same when it's drawn turned)
@@ -163,8 +194,21 @@ export async function runPad(room, { onAway } = {}) {
       const move = (e) => { if (e.pointerId !== pid) return; const [px, py] = local(e.clientX, e.clientY); let x = (px - ox) / R, y = (py - oy) / R; const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; } ctl.x = x; ctl.y = y; place(x, y); send(); };
       const up = (e) => { if (e.pointerId !== pid) return; pid = null; ctl.x = 0; ctl.y = 0; place(0, 0); base.classList.remove('on'); send(true); };
       stick.addEventListener('pointermove', move); stick.addEventListener('pointerup', up); stick.addEventListener('pointercancel', up);
-      dash.addEventListener('pointerdown', (e) => { e.preventDefault(); doDash(dash); });
+      return stick;
     }
+  }
+  function setDrift(v) { if (ctl.drift === v) return; ctl.drift = v; $('drift')?.classList.toggle('on', !!v); if (v) buzz(12); send(true); }
+  function useItem() { const it = st?.item?.[me]; if (!it || it === 'roll') return; ctl.uses++; buzz(20); send(true); const b = $('item'); b?.classList.add('hit'); setTimeout(() => b?.classList.remove('hit'), 120); }
+  // the item button shows what you're holding (spinning while a gift bubble decides)
+  let rollTimer = null;
+  function kartItem() {
+    const b = $('item'); if (!b) return;
+    const it = st?.item?.[me] || '', [name, n] = it.split(':'), info = KART_ITEMS[name];
+    clearInterval(rollTimer); rollTimer = null;
+    b.classList.toggle('empty', !it); b.classList.toggle('rolling', it === 'roll');
+    if (it === 'roll') { const icons = ['☕', '🥥', '🍮', '🫧', '🐦']; let i = 0; b.querySelector('b').textContent = icons[0]; b.querySelector('small').textContent = 'what’s inside…'; rollTimer = setInterval(() => { b.querySelector('b').textContent = icons[++i % icons.length]; }, 90); }
+    else if (info) { b.querySelector('b').textContent = info.icon + (n ? `×${n}` : ''); b.querySelector('small').textContent = `Use the ${info.name.toLowerCase()}`; }
+    else { b.querySelector('b').textContent = '🎁'; b.querySelector('small').textContent = 'pop a gift bubble'; }
   }
   let dashReady = 0;
   function doDash(btn) {
@@ -210,10 +254,14 @@ export async function runPad(room, { onAway } = {}) {
   const steer = () => { ctl.x = (keys.has('ArrowRight') || keys.has('d') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('a') ? 1 : 0); ctl.y = (keys.has('ArrowDown') || keys.has('s') ? 1 : 0) - (keys.has('ArrowUp') || keys.has('w') ? 1 : 0); send(true); };
   addEventListener('keydown', (e) => {
     if (e.repeat || e.metaKey || e.ctrlKey) return;
-    if (e.key === ' ') { e.preventDefault(); const k = meta?.game; if (k === 'tug') pull($('pull')); else if (k === 'freeze') { ctl.steps += 1.5; send(); } else if ($('dash')) doDash($('dash')); return; }
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'd', 'w', 's'].includes(e.key)) { keys.add(e.key); if (meta?.game === 'bumper') steer(); }
+    if (e.key === ' ') { e.preventDefault(); const k = meta?.game; if (k === 'tug') pull($('pull')); else if (k === 'freeze') { ctl.steps += 1.5; send(); } else if (k === 'kart') useItem(); else if ($('dash')) doDash($('dash')); return; }
+    if (meta?.game === 'kart' && (e.key === 'Shift' || e.key === 'x')) { setDrift(1); return; }
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'd', 'w', 's'].includes(e.key)) { keys.add(e.key); if (meta?.game === 'bumper' || meta?.game === 'kart') steer(); }
   });
-  addEventListener('keyup', (e) => { if (keys.delete(e.key) && meta?.game === 'bumper') steer(); });
+  addEventListener('keyup', (e) => {
+    if (meta?.game === 'kart' && (e.key === 'Shift' || e.key === 'x')) { setDrift(0); return; }
+    if (keys.delete(e.key) && (meta?.game === 'bumper' || meta?.game === 'kart')) steer();
+  });
   addEventListener('contextmenu', (e) => e.preventDefault());
 
   /* ---------- you ---------- */

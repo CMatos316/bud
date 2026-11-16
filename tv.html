@@ -103,6 +103,7 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const GAMES = [
   { id: 'race', name: 'Island Race', icon: '🏁', tint: '#FFE3D6', n: '2 to 6', pitch: 'Roll, hop round the island and grab items. First bud back to the campfire wins.', phone: 'Phones roll the dice and use items.' },
   { id: 'prank', name: 'Prankster', icon: '😈', tint: '#E6DDFF', n: '4 to 12', pitch: 'Someone in this room is a Prankster. Talk it out and vote them off the island.', phone: 'Phones hold your secret role and your vote.' },
+  { id: 'kart', name: 'Island Grand Prix', icon: '🏎️', tint: '#FFE0EC', n: '1 to 12', live: true, pitch: 'Kart races round the island. Drift round corners for a boost, pop gift bubbles, stay out of the lagoon.', phone: 'Phones are a stick, a Drift button and an item button.' },
   { id: 'bumper', name: 'Bumper Buds', icon: '💥', tint: '#D6ECFF', n: '2 to 12', live: true, pitch: 'Bump everyone else off the island while it shrinks. Last bud standing.', phone: 'Phones are a thumbstick and a dash button.' },
   { id: 'tug', name: 'Tug of War', icon: '🪢', tint: '#DDF3DF', n: '2 to 12', live: true, pitch: 'Two teams, one rope, one very muddy puddle in the middle.', phone: 'Phones are one big button. Tap fast.' },
   { id: 'freeze', name: 'Freeze', icon: '🦀', tint: '#FFF0C2', n: '2 to 12', live: true, pitch: 'Run while the crab naps. Freeze when it looks, or a wave takes you back.', phone: 'Shake your phone to run. Hold still to freeze.' },
@@ -146,7 +147,7 @@ function renderGames() {
   });
   const note = $('note');
   note.hidden = party.live;
-  note.textContent = 'Bumper Buds, Tug of War and Freeze need the live database switched on once (two values in Vercel). Island Race and Prankster are ready now.';
+  note.textContent = 'Island Grand Prix, Bumper Buds, Tug of War and Freeze need the live database switched on once (two values in Vercel). Island Race and Prankster are ready now.';
 }
 async function pick(game) {
   if (busy) return;

@@ -1,4 +1,4 @@
-// The three live party games, as the TV plays them: Bumper Buds, Tug of War and Freeze.
+// The live party games, as the TV plays them: Bumper Buds, Tug of War, Freeze and Island Grand Prix.
 // Nothing in here draws or talks to the network. Each game is handed the latest thing every phone said, moves
 // time forward a step, and notes what happened (events). js/party-tv.js draws it, makes the noises and passes
 // the score on to the phones; js/party-pad.js is the phone's side. Because it's only numbers, it can be tested
@@ -14,6 +14,7 @@ export const COUNT_S = 3.2, ROUND_S = 4;
 export const GAME_INFO = {
   bumper: { name: 'Bumper Buds', how: 'Bump everyone else off the island. It shrinks! Three rounds: a point for every bud you outlast, and one more for winning.', pad: 'Hold it sideways. Steer with your left thumb, dash with your right.' },
   tug: { name: 'Tug of War', how: 'Two teams, one rope. Drag the other side into the mud. Best of three.', pad: 'Tap as fast as you can.' },
+  kart: { name: 'Island Grand Prix', how: 'Three laps round the island in karts. Drift round corners for a boost, pop gift bubbles for something silly, and stay out of the lagoon.', pad: 'Hold it sideways. Point where you want to go, hold Drift on corners, tap the item to use it.' },
   freeze: { name: 'Freeze', how: 'Run while the crab naps. Freeze when it looks, or a wave washes you back to the last sandcastle and leaves you dizzy. First to the campfire wins.', pad: 'Shake your phone to run. Hold still to freeze.' },
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -287,5 +288,387 @@ export class Freeze extends Game {
   }
 }
 
-export const makeGame = (kind, rand) => (kind === 'tug' ? new Tug(rand) : kind === 'freeze' ? new Freeze(rand) : new Bumper(rand));
-export const parseInput = (kind, s) => (kind === 'tug' ? Tug : kind === 'freeze' ? Freeze : Bumper).parse(s);
+/* ============================== Island Grand Prix ============================== */
+// Kart racing round a ring of land with a lagoon in the middle. Three laps. Everyone drives at full speed by
+// themselves: the phone's stick says which way to point (on the TV's screen, not "left and right" from the
+// kart's seat, so it reads the same however the kart is facing), Drift slides round corners and charges up a
+// boost, and gift bubbles on the track give out something silly to use. Off the road is slow sand; past the
+// sand is the lagoon, and a bud that ends up in it bobs back to the road on a floatie.
+// Buds from the island fill the grid (CPU drivers) when there aren't enough people, so one person can race.
+export const KART = {
+  LAPS: 3, HW: 4.4, SAND: 5, VMAX: 15.5, VSAND: 7, VBOOST: 23.5, ACC: 12, TURN: 2.7, DTURN: 3.6, R: 1.05,
+  CHARGE: [0.55, 1.25, 2.1], BOOST: [0.55, 0.95, 1.4], COFFEE: 1.3, PAD: 0.9, SPIN: 1.05, SINK: 0.55, FLOAT: 1.3,
+  ROLL: 1.1, RESPAWN: 2.5, NUT_V: 28, NUT_LIFE: 4.5, JELLY_LIFE: 30, SHIELD: 10, GULL: 1.5, WAIT: 15, FILL: 6, CAP: 360, END_S: 3,
+};
+export const KART_ITEMS = {
+  coffee: { name: 'Coffee', icon: '☕', what: 'a burst of speed' },
+  coffee3: { name: 'Triple coffee', icon: '☕', what: 'three bursts of speed' },
+  coconut: { name: 'Coconut', icon: '🥥', what: 'rolls ahead down the road and knocks over whoever it hits' },
+  jelly: { name: 'Jelly', icon: '🍮', what: 'dropped behind you; whoever drives into it spins out' },
+  bubble: { name: 'Bubble', icon: '🫧', what: 'a shield that pops instead of you' },
+  gull: { name: 'Seagull', icon: '🐦', what: 'flies to whoever is in front and pinches their item' },
+};
+// what a gift bubble gives, by where you are in the race: the front gets defensive things, the back gets help
+const ODDS = {
+  front: { jelly: 40, coconut: 30, bubble: 20, coffee: 10 },
+  middle: { coconut: 30, coffee: 25, jelly: 18, bubble: 10, gull: 10, coffee3: 7 },
+  back: { coffee3: 30, gull: 25, coffee: 20, coconut: 20, bubble: 5 },
+};
+// The road's middle line, round the island (x across the TV, z toward the viewer). The start is on the bottom
+// straight, heading right.
+const KART_PTS = [[-10, 23], [10, 23.5], [28, 21], [42, 12], [45, -3], [37, -14], [24, -12], [14, -2], [2, -1], [-6, -12], [-18, -22], [-36, -22], [-48, -11], [-48, 5], [-36, 18]];
+const CPU_NAMES = ['Pebble', 'Kelp', 'Mochi', 'Taro', 'Biscuit', 'Sprout', 'Noodle', 'Puddle'];
+
+// The road as evenly spaced points (every 0.8 or so), each with its direction (t) and its right-hand side (n).
+export function kartTrack(pts = KART_PTS.map(([x, z]) => [x * 1.2, z * 1.2])) {
+  const n = pts.length, dense = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    for (let k = 0; k < 40; k++) {
+      const t = k / 40, t2 = t * t, t3 = t2 * t, cr = (a, b, c, d) => 0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3);
+      dense.push([cr(p0[0], p1[0], p2[0], p3[0]), cr(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  const cum = [0];
+  for (let i = 1; i <= dense.length; i++) { const a = dense[i - 1], b = dense[i % dense.length]; cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  const L = cum[dense.length], N = Math.round(L / 0.8), step = L / N, P = [];
+  for (let i = 0, j = 0; i < N; i++) {
+    const s = i * step;
+    while (cum[j + 1] < s) j++;
+    const a = dense[j], b = dense[(j + 1) % dense.length], f = (s - cum[j]) / (cum[j + 1] - cum[j] || 1);
+    P.push({ x: a[0] + (b[0] - a[0]) * f, z: a[1] + (b[1] - a[1]) * f, s });
+  }
+  for (let i = 0; i < N; i++) {
+    const a = P[(i - 1 + N) % N], b = P[(i + 1) % N], dx = b.x - a.x, dz = b.z - a.z, m = Math.hypot(dx, dz) || 1;
+    Object.assign(P[i], { tx: dx / m, tz: dz / m, nx: -dz / m, nz: dx / m });
+  }
+  const T = { pts: P, N, L, step, HW: KART.HW, SAND: KART.SAND };
+  // the nearest point of the road: which sample, how far round (s), and how far to its right (lat)
+  T.locate = (x, z) => {
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < N; i++) { const p = P[i], d = (p.x - x) ** 2 + (p.z - z) ** 2; if (d < bd) { bd = d; best = i; } }
+    const p = P[best], dx = x - p.x, dz = z - p.z;
+    let s = p.s + dx * p.tx + dz * p.tz; s = ((s % L) + L) % L;
+    return { i: best, s, lat: dx * p.nx + dz * p.nz };
+  };
+  // a spot on the road, s of the way round and lat to the right
+  T.at = (s, lat = 0) => {
+    s = ((s % L) + L) % L;
+    const f = s / step, i = Math.floor(f) % N, k = f - Math.floor(f), a = P[i], b = P[(i + 1) % N];
+    const nx = a.nx + (b.nx - a.nx) * k, nz = a.nz + (b.nz - a.nz) * k;
+    return { x: a.x + (b.x - a.x) * k + nx * lat, z: a.z + (b.z - a.z) * k + nz * lat, tx: a.tx + (b.tx - a.tx) * k, tz: a.tz + (b.tz - a.tz) * k, nx, nz };
+  };
+  // how much the road turns over the next `ahead` metres (radians)
+  T.bend = (s, ahead) => { const a = T.at(s), b = T.at(s + ahead); return Math.abs(wrapA(Math.atan2(b.tz, b.tx) - Math.atan2(a.tz, a.tx))); };
+  // gift bubbles (two rows of four) and boost pads, as spots on the road
+  T.bubbles = [0.27, 0.7].flatMap((f) => [-2.7, -0.9, 0.9, 2.7].map((lat) => ({ s: f * L, lat })));
+  T.pads = [0.13, 0.5, 0.84].map((f) => ({ s: f * L, lat: 0 }));
+  return T;
+}
+const wrapA = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+const wrapS = (d, L) => { while (d > L / 2) d -= L; while (d < -L / 2) d += L; return d; };
+
+export class Kart extends Game {
+  // stick x, stick y (as on the phone held sideways: right and down), drift held (0 or 1), items used so far
+  static parse(s) { const [x, y, d, u] = String(s || '').split(','); return { x: clamp(num(x) / 100, -1, 1), y: clamp(num(y) / 100, -1, 1), d: num(d) ? 1 : 0, u: num(u) }; }
+  constructor(rand) {
+    super('kart', rand);
+    this.track = kartTrack(); this.karts = new Map(); this.cpus = []; this.pool = []; this.shots = []; this.order = [];
+    this.bubbles = this.track.bubbles.map((b) => ({ ...b, ...this.track.at(b.s, b.lat), wait: 0 }));
+    this.pads = this.track.pads;
+    this.firstDone = null; this.finalSaid = false; this.champs = null; this.raceT = 0; this.endAt = null;
+  }
+  // buds from the island who can drive when there aren't enough people: [{ id, name }]
+  setPool(list) { this.pool = list.slice(); }
+  canStart() { return (this.phase === 'lobby' || this.phase === 'done') && this.roster.length >= 1; }
+  racers() { return [...this.karts.values()]; }
+  grid(i) {
+    // two by two behind the line, staggered
+    const row = Math.floor(i / 2), col = i % 2, s = -3 - row * 3.4 - col * 1.6, lat = col ? 1.7 : -1.7, p = this.track.at(s, lat);
+    return { x: p.x, z: p.z, h: Math.atan2(p.tz, p.tx), dist: s };
+  }
+  newKart(id, i, cpu = null) {
+    const g = this.grid(i), old = this.karts.get(id);
+    const k = {
+      id, cpu: !!cpu, name: cpu ? cpu.name : null, c: cpu ? cpu.c : null, skill: cpu ? cpu.skill : 1, lane: cpu ? (this.rand() - 0.5) * 3 : 0,
+      x: g.x, z: g.z, h: g.h, v: 0, slide: 0, turn: 0, dist: g.dist, s: ((g.dist % this.track.L) + this.track.L) % this.track.L, lap: 0, fin: null, place: i + 1,
+      drift: 0, charge: 0, boostT: 0, spinT: 0, sinkT: 0, floatT: 0, shieldT: 0, hop: 0, padT: 0, wrongT: 0, hits: 0,
+      item: null, uses: 0, roll: 0, next: null, usedSeen: old ? old.usedSeen : null, prevD: 0, road: 0, surface: 'road', think: 0, want: 0, away: false,
+    };
+    this.karts.set(id, k);
+    return k;
+  }
+  onRoster() {
+    if (this.phase === 'lobby' || this.phase === 'done') {
+      // everyone here drives about while waiting
+      const ids = this.roster.map((p) => p.id);
+      for (const id of [...this.karts.keys()]) if (!ids.includes(id) && (this.phase === 'lobby' || !this.karts.get(id).cpu)) this.karts.delete(id);
+      ids.forEach((id, i) => { if (!this.karts.has(id)) this.newKart(id, i); });
+    } else {
+      // someone left mid-race: their bud drives itself home
+      for (const k of this.karts.values()) if (!k.cpu) k.away = !this.here(k.id);
+    }
+  }
+  begin() {
+    const humans = this.roster.map((p) => p.id), used = new Set(this.roster.map((p) => p.c));
+    const need = Math.max(0, KART.FILL - humans.length), pool = this.pool.filter((p) => !humans.includes(p.id.replace(/^cpu_/, '')));
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(this.rand() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    let names = CPU_NAMES.slice();
+    this.cpus = [];
+    for (let i = 0; i < need; i++) {
+      const from = pool[i] || { id: `cpu_${i}`, name: names.splice(Math.floor(this.rand() * names.length), 1)[0] };
+      let c = 0; while (used.has(c) && c < 11) c++; used.add(c);
+      this.cpus.push({ id: from.id.startsWith('cpu_') ? from.id : `cpu_${from.id}`, name: from.name, c, skill: 0.9 + this.rand() * 0.07 });
+    }
+    // the island's buds start at the front; the people come from behind
+    this.karts = new Map();
+    const order = [...this.cpus.map((c) => c.id), ...humans.sort(() => this.rand() - 0.5)];
+    order.forEach((id, i) => this.newKart(id, i, this.cpus.find((c) => c.id === id)));
+    this.shots = []; this.bubbles.forEach((b) => { b.wait = 0; });
+    this.firstDone = null; this.finalSaid = false; this.champs = null; this.raceT = 0; this.endAt = null; this.round = 1;
+    this.go('count');
+  }
+
+  step(dt, inputs = {}) {
+    this.t += dt;
+    const racing = this.phase === 'play';
+    if (racing) this.raceT += dt;
+    if (this.phase === 'count') { for (const k of this.karts.values()) this.seeUses(k, inputs[k.id]); if (this.t >= COUNT_S) this.go('play'); return; }
+    for (const b of this.bubbles) b.wait = Math.max(0, b.wait - dt);
+    for (const k of this.karts.values()) {
+      const human = !k.cpu && !k.away && !(k.fin != null && racing);
+      const inp = human ? inputs[k.id] || { x: 0, y: 0, d: 0, u: k.usedSeen ?? 0 } : kartBot(this, k);
+      this.drive(k, inp, dt);
+    }
+    this.collide();
+    this.moveShots(dt);
+    this.rank();
+    if (racing) this.checkEnd();
+  }
+  seeUses(k, inp) { if (inp && k.usedSeen == null) k.usedSeen = inp.u; }
+  drive(k, inp, dt) {
+    const T = this.track, K = KART;
+    // timers
+    k.boostT = Math.max(0, k.boostT - dt); k.shieldT = Math.max(0, k.shieldT - dt); k.hop = Math.max(0, k.hop - dt); k.padT = Math.max(0, k.padT - dt);
+    if (k.roll > 0) { k.roll -= dt; if (k.roll <= 0) { k.roll = 0; k.item = k.next; k.uses = k.next === 'coffee3' ? 3 : 1; this.emit('item', { id: k.id, item: k.item }); } }
+    // using an item: the phone counts presses, so a lost message loses nothing
+    if (k.usedSeen == null) k.usedSeen = inp.u;
+    else if (inp.u > k.usedSeen && !(k.sinkT > 0 || k.floatT > 0)) { k.usedSeen = inp.u; if (this.phase !== 'count') this.useItem(k); }   // (pressed while in the lagoon: it goes off once you're back)
+    // in the lagoon: sink, then float back to the road
+    if (k.sinkT > 0) {
+      k.sinkT -= dt;
+      if (k.sinkT <= 0) {
+        const p = T.pts[k.road], back = T.at(p.s, clamp(T.locate(k.x, k.z).lat * 0.3, -2, 2));
+        Object.assign(k, { x: back.x, z: back.z, h: Math.atan2(p.tz, p.tx), v: 0, slide: 0, floatT: K.FLOAT, drift: 0, charge: 0 });
+        this.emit('back', { id: k.id });
+      }
+      return;
+    }
+    if (k.floatT > 0) { k.floatT -= dt; this.track3(k); return; }
+    const spun = k.spinT > 0;
+    if (spun) k.spinT = Math.max(0, k.spinT - dt);
+    // steering: turn toward where the stick points
+    const mag = Math.hypot(inp.x, inp.y), want = Math.atan2(inp.y, inp.x), delta = mag > 0.25 ? wrapA(want - k.h) : 0;
+    k.want = delta;
+    const grip = clamp(0.35 + k.v / K.VMAX * 0.65, 0.35, 1);
+    let rate = mag > 0.25 ? clamp(delta * 6, -K.TURN, K.TURN) * grip * Math.min(1, mag / 0.6) : 0;
+    // drifting: press Drift while turning to slide; hold it round the corner to charge a boost; let go to use it
+    const pressed = inp.d && !k.prevD; k.prevD = inp.d;
+    if (pressed && !spun) { k.hop = 0.22; this.emit('hop', { id: k.id }); }
+    if (inp.d && !k.drift && !spun && k.v > 7 && Math.abs(delta) > 0.3 && k.hop > 0) { k.drift = Math.sign(delta); k.charge = 0; }
+    if (k.drift) {
+      if (!inp.d || spun || k.v < 4) {
+        const tier = K.CHARGE.filter((c) => k.charge >= c).length;
+        if (tier && !spun) { k.boostT = Math.max(k.boostT, K.BOOST[tier - 1]); this.emit('boost', { id: k.id, tier }); }
+        k.drift = 0; k.charge = 0;
+      } else {
+        const same = Math.sign(delta) === k.drift || Math.abs(delta) < 0.15;
+        rate = k.drift * (same ? clamp(Math.abs(delta) * 6, 1.5, K.DTURN) : 0.8) * grip;
+        k.charge += dt * (same ? 1 : 0.4);
+        k.slide += -k.drift * k.v * 0.5 * dt;          // the back swings out
+      }
+    }
+    if (spun) rate = 0;
+    k.turn = rate;
+    k.h = wrapA(k.h + rate * dt);
+    // where am I: road, sand or lagoon
+    const here = T.locate(k.x, k.z), off = Math.abs(here.lat);
+    k.surface = off <= T.HW ? 'road' : off <= T.HW + T.SAND ? 'sand' : 'water';
+    if (k.surface === 'road') k.road = here.i;
+    // speed: full on the road, slow on sand, more with a boost; people at the back get a tiny bit more
+    const behind = this.karts.size > 1 ? (k.place - 1) / (this.karts.size - 1) : 0;
+    let top = (k.surface === 'sand' ? K.VSAND : K.VMAX * (1 + 0.05 * behind)) * k.skill;
+    if (k.boostT > 0) top = K.VBOOST;
+    if (k.drift) top *= 0.97;
+    if (spun) top = 2;
+    // in a race the pedal is always down; waiting for one, you only go when you push the stick
+    if (this.phase !== 'play' && !k.cpu && !k.away && mag <= 0.25) top = 0;
+    if (k.v < top) k.v = Math.min(top, k.v + K.ACC * dt * (k.boostT > 0 ? 2.5 : 1));
+    else k.v += (top - k.v) * (1 - Math.exp(-(k.surface === 'sand' ? 3.5 : 2) * dt));
+    k.slide *= Math.exp(-(k.drift ? 2.2 : 6) * dt);
+    const fx = Math.cos(k.h), fz = Math.sin(k.h);
+    k.x += (fx * k.v - fz * k.slide) * dt; k.z += (fz * k.v + fx * k.slide) * dt;
+    if (k.surface === 'water') { k.sinkT = K.SINK; k.drift = 0; k.charge = 0; k.v *= 0.3; this.emit('fall', { id: k.id }); return; }
+    this.track3(k);
+    // boost pads
+    for (const p of this.pads) if (Math.abs(wrapS(k.s - p.s, T.L)) < 1.6 && Math.abs(here.lat - p.lat) < 1.9 && k.padT <= 0) { k.boostT = Math.max(k.boostT, K.PAD); k.padT = 1.2; this.emit('boost', { id: k.id, tier: 'pad' }); }
+    // gift bubbles
+    for (const b of this.bubbles) if (!b.wait && (b.x - k.x) ** 2 + (b.z - k.z) ** 2 < 1.7 ** 2) {
+      b.wait = K.RESPAWN; this.emit('bubble', { id: k.id, x: b.x, z: b.z });
+      if (!k.item && !k.roll) { k.roll = K.ROLL; k.next = this.pick(k); }
+    }
+    // going the wrong way
+    const p = T.pts[here.i];
+    k.wrongT = fx * p.tx + fz * p.tz < -0.35 && k.v > 3 && !spun ? k.wrongT + dt : 0;
+  }
+  // how far round the track, and laps
+  track3(k) {
+    const T = this.track, here = T.locate(k.x, k.z), ds = wrapS(here.s - k.s, T.L);
+    k.s = here.s;
+    if (Math.abs(ds) < 12) k.dist += ds;
+    if (this.phase !== 'play' || k.fin != null) return;
+    const lap = Math.floor(k.dist / T.L) + 1;
+    if (lap > k.lap) {
+      k.lap = lap;
+      if (lap > KART.LAPS) {
+        k.fin = this.raceT; k.lap = KART.LAPS; const place = this.racers().filter((o) => o.fin != null).length;
+        k.finPlace = place; this.emit('finish', { id: k.id, place });
+        if (place === 1) this.firstDone = this.raceT;
+      } else if (lap > 1) {
+        this.emit('lap', { id: k.id, lap });
+        if (lap === KART.LAPS && !this.finalSaid) { this.finalSaid = true; this.emit('final', { id: k.id }); }
+      }
+    }
+  }
+  pick(k) {
+    const n = this.karts.size, f = n > 1 ? (k.place - 1) / (n - 1) : 0;
+    const odds = k.place === 1 ? ODDS.front : f > 0.66 ? ODDS.back : f > 0.33 ? ODDS.middle : ODDS.front;
+    const total = Object.values(odds).reduce((a, b) => a + b, 0);
+    let r = this.rand() * total;
+    for (const [item, w] of Object.entries(odds)) { r -= w; if (r <= 0) return item; }
+    return 'coffee';
+  }
+  useItem(k) {
+    if (!k.item || k.roll || k.sinkT > 0 || k.floatT > 0) return false;
+    const T = this.track, item = k.item, K = KART;
+    if (item === 'coffee' || item === 'coffee3') { k.boostT = Math.max(k.boostT, K.COFFEE); this.emit('boost', { id: k.id, tier: 'coffee' }); }
+    else if (item === 'coconut') { const here = T.locate(k.x, k.z); this.shots.push({ kind: 'coconut', by: k.id, s: here.s + 2, lat: clamp(here.lat, -T.HW + 0.6, T.HW - 0.6), t: 0, x: k.x, z: k.z }); }
+    else if (item === 'jelly') this.shots.push({ kind: 'jelly', by: k.id, x: k.x - Math.cos(k.h) * 2.1, z: k.z - Math.sin(k.h) * 2.1, t: 0 });
+    else if (item === 'bubble') k.shieldT = K.SHIELD;
+    else if (item === 'gull') {
+      const ahead = this.order.filter((id) => id !== k.id && this.karts.get(id)?.fin == null);
+      const target = ahead[0] === k.id ? ahead[1] : ahead[0];
+      if (target) this.shots.push({ kind: 'gull', by: k.id, target, t: 0, x: k.x, z: k.z, fx: k.x, fz: k.z });
+    }
+    this.emit('use', { id: k.id, item });
+    k.uses -= 1; if (k.uses <= 0) { k.item = null; k.uses = 0; }
+    return true;
+  }
+  hit(k, why) {
+    if (k.sinkT > 0 || k.floatT > 0) return false;
+    if (k.shieldT > 0) { k.shieldT = 0; this.emit('pop', { id: k.id, why }); return false; }
+    k.spinT = KART.SPIN; k.v *= 0.3; k.drift = 0; k.charge = 0; k.slide = 0; k.hits++;
+    if (why === 'gull') { k.item = null; k.uses = 0; k.roll = 0; }
+    this.emit('spin', { id: k.id, why });
+    return true;
+  }
+  moveShots(dt) {
+    const T = this.track, K = KART;
+    for (const sh of this.shots) {
+      sh.t += dt;
+      if (sh.kind === 'coconut') {
+        sh.s += K.NUT_V * dt; const p = T.at(sh.s, sh.lat); sh.x = p.x; sh.z = p.z;
+        if (sh.t > K.NUT_LIFE) sh.gone = true;
+      } else if (sh.kind === 'jelly') { if (sh.t > K.JELLY_LIFE) sh.gone = true; }
+      else if (sh.kind === 'gull') {
+        const tk = this.karts.get(sh.target);
+        if (!tk) { sh.gone = true; continue; }
+        const f = Math.min(1, sh.t / K.GULL); sh.x = sh.fx + (tk.x - sh.fx) * f; sh.z = sh.fz + (tk.z - sh.fz) * f; sh.f = f;
+        if (f >= 1) { this.hit(tk, 'gull'); sh.gone = true; }
+        continue;
+      }
+      if (sh.gone) continue;
+      for (const k of this.karts.values()) {
+        if (k.id === sh.by && sh.t < 0.7) continue;
+        if ((k.x - sh.x) ** 2 + (k.z - sh.z) ** 2 < (sh.kind === 'coconut' ? 1.4 : 1.25) ** 2 && !(k.sinkT > 0 || k.floatT > 0)) { this.hit(k, sh.kind); sh.gone = true; break; }
+      }
+    }
+    // a coconut that rolls into a jelly: both gone, with a splat
+    for (const a of this.shots) if (a.kind === 'coconut' && !a.gone) for (const b of this.shots) if (b.kind === 'jelly' && !b.gone && (a.x - b.x) ** 2 + (a.z - b.z) ** 2 < 1.4) { a.gone = b.gone = true; this.emit('splat', { x: b.x, z: b.z }); }
+    this.shots = this.shots.filter((s) => !s.gone);
+  }
+  collide() {
+    const ks = this.racers().filter((k) => !(k.sinkT > 0) && !(k.floatT > 0)), R = KART.R;
+    for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) {
+      const a = ks[i], b = ks[j]; let dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
+      if (d >= R * 2) continue;
+      if (d < 1e-6) { dx = 1; dz = 0; d = 1; }
+      const nx = dx / d, nz = dz / d, ma = a.boostT > 0 ? 2.5 : 1, mb = b.boostT > 0 ? 2.5 : 1, push = R * 2 - d;
+      a.x -= nx * push * mb / (ma + mb); a.z -= nz * push * mb / (ma + mb); b.x += nx * push * ma / (ma + mb); b.z += nz * push * ma / (ma + mb);
+      // a shove sideways, the heavier (boosting) kart shoving harder
+      const va = Math.cos(a.h) * a.v * nx + Math.sin(a.h) * a.v * nz, vb = Math.cos(b.h) * b.v * nx + Math.sin(b.h) * b.v * nz, closing = va - vb;
+      if (closing <= 0) continue;
+      b.slide += closing * 0.5 * ma / (ma + mb) * Math.sign(-Math.sin(b.h) * nx + Math.cos(b.h) * nz || 1);
+      a.slide -= closing * 0.5 * mb / (ma + mb) * Math.sign(-Math.sin(a.h) * nx + Math.cos(a.h) * nz || 1);
+      a.v *= 0.92; b.v *= 0.96;
+      if (closing > 2.5) this.emit('bump', { a: a.id, b: b.id, power: clamp(closing / 10, 0.15, 1), x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 });
+    }
+  }
+  rank() {
+    const was = this.order.join();
+    this.order = this.racers().sort((a, b) => (a.fin != null || b.fin != null ? (a.fin ?? Infinity) - (b.fin ?? Infinity) : b.dist - a.dist)).map((k) => k.id);
+    this.order.forEach((id, i) => { this.karts.get(id).place = i + 1; });
+    if (this.order.join() !== was && this.phase === 'play') this.emit('order', {});
+  }
+  checkEnd() {
+    const all = this.racers(), people = all.filter((k) => !k.cpu && !k.away);
+    if (this.firstDone != null && this.endAt == null) {
+      // after the first one home, everyone else has a little while; once every person is home it wraps up
+      if (all.every((k) => k.fin != null) || people.every((k) => k.fin != null)) this.endAt = this.raceT + KART.END_S;
+      else if (this.raceT - this.firstDone > KART.WAIT) this.endAt = this.raceT;
+    }
+    if (this.raceT > KART.CAP && this.endAt == null) this.endAt = this.raceT;
+    if (this.endAt != null && this.raceT >= this.endAt) {
+      this.rank();
+      this.champs = [this.order[0]];
+      this.emit('matchEnd', { champs: this.champs, order: this.order.slice() });
+      this.go('done');
+    }
+  }
+  state() {
+    const who = {}, place = {}, lap = {}, item = {}, fin = {}, wrong = {}, hits = {};
+    const all = this.racers();
+    for (const p of this.roster) who[p.id] = { c: p.c, n: p.name, in: this.karts.has(p.id) };
+    for (const c of this.cpus) if (this.karts.has(c.id)) who[c.id] = { c: c.c, n: c.name, in: true, cpu: 1 };
+    for (const k of all) {
+      place[k.id] = k.place; lap[k.id] = clamp(k.lap, 1, KART.LAPS);
+      if (k.roll) item[k.id] = 'roll'; else if (k.item) item[k.id] = k.item + (k.uses > 1 ? `:${k.uses}` : '');
+      if (k.fin != null) fin[k.id] = k.finPlace;
+      if (k.wrongT > 1.2) wrong[k.id] = 1;
+      if (k.hits) hits[k.id] = k.hits;
+    }
+    return { g: 'kart', phase: this.phase, laps: KART.LAPS, who, place, lap, item, fin, wrong, hits, order: this.phase === 'done' ? this.order : null, champs: this.champs };
+  }
+}
+
+// A CPU driver (and the bots in the tests): aim a little way down the road in its own lane, drift on the bends,
+// and use items when it makes sense.
+export function kartBot(game, k) {
+  const T = game.track, here = T.locate(k.x, k.z), ahead = 7 + k.v * 0.45;
+  if (game.rand() < 0.004) k.lane = clamp(k.lane + (game.rand() - 0.5) * 3, -2.4, 2.4);
+  const lane = Math.abs(here.lat) > T.HW ? 0 : k.lane, aim = T.at(here.s + ahead, lane);
+  const bend = T.bend(here.s + 2, 14), x = aim.x - k.x, z = aim.z - k.z, m = Math.hypot(x, z) || 1;
+  k.think = (k.think || 0) + 1 / 60;
+  const d = bend > 0.75 && k.v > 9 && k.surface === 'road' ? 1 : k.drift && bend > 0.3 ? 1 : 0;
+  let u = k.usedSeen ?? 0;
+  if (k.item && !k.roll && k.think > 0.8) {
+    const me = game.order.indexOf(k.id), front = game.order[me - 1] && game.karts.get(game.order[me - 1]), back = game.order[me + 1] && game.karts.get(game.order[me + 1]);
+    const gapF = front ? front.dist - k.dist : 99, gapB = back ? k.dist - back.dist : 99;
+    const go = k.item.startsWith('coffee') ? bend < 0.35 : k.item === 'coconut' ? (gapF > 2 && gapF < 22) || k.think > 7 : k.item === 'jelly' ? gapB < 9 || k.think > 9 : true;
+    if (go) { u += 1; k.think = 0; }
+  }
+  return { x: x / m, y: z / m, d, u };
+}
+
+export const makeGame = (kind, rand) => (kind === 'tug' ? new Tug(rand) : kind === 'freeze' ? new Freeze(rand) : kind === 'kart' ? new Kart(rand) : new Bumper(rand));
+export const parseInput = (kind, s) => (kind === 'tug' ? Tug : kind === 'freeze' ? Freeze : kind === 'kart' ? Kart : Bumper).parse(s);

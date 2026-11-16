@@ -1,9 +1,9 @@
-// The TV's picture for Bumper Buds and Freeze, in 3D: the same puffy buds as on the island and in Island Race
-// (built by js/bud-core.js from each bud's outline and paint), on an island you can fall off and a beach with a
-// crab at the end of it. It only draws: js/party-games.js decides what happens, js/party-tv.js runs the show.
+// The TV's picture for Bumper Buds, Freeze and Island Grand Prix, in 3D: the same puffy buds as on the island and
+// in Island Race (built by js/bud-core.js from each bud's outline and paint), on an island you can fall off, a
+// beach with a crab at the end of it, and a kart track round a lagoon. It only draws: js/party-games.js decides what happens, js/party-tv.js runs the show.
 // Needs THREE and Delaunator loaded as globals first (party.html does that on the TV only).
 import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
-import { BUMPER, FREEZE } from '/js/party-games.js';
+import { BUMPER, FREEZE, KART, KART_ITEMS, kartTrack } from '/js/party-games.js';
 
 const FACE_W = 256, FACE_H = 175, BUD_W = BUMPER.BUD * 2 * 1.08, SEA = -3.2;
 const lerp = (a, b, k) => a + (b - a) * k;
@@ -131,8 +131,8 @@ export function make3d(canvas, { colorFor, nameOf, budData }) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.75, 1, 28), puffMat()); ring.rotation.x = -Math.PI / 2; bit(scene, ring, { x, y: y + 0.05, z, life: 0.9, grow: 3.2 });
     for (let i = 0; i < 12; i++) { const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 2.5; bit(scene, new THREE.Mesh(new THREE.SphereGeometry(0.1 + Math.random() * 0.12, 6, 5), puffMat()), { x, y: y + 0.1, z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 4 + Math.random() * 4, g: 14, life: 0.8 }); }
   }
-  function spark(x, z, power) {
-    for (let i = 0; i < 5 + Math.round(power * 7); i++) { const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5 * (0.4 + power); bit(sB, new THREE.Mesh(new THREE.OctahedronGeometry(0.1 + Math.random() * 0.1), puffMat()), { x, y: 0.9, z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 1 + Math.random() * 3, g: 8, life: 0.4 }); }
+  function spark(x, z, power, scene = sB) {
+    for (let i = 0; i < 5 + Math.round(power * 7); i++) { const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5 * (0.4 + power); bit(scene, new THREE.Mesh(new THREE.OctahedronGeometry(0.1 + Math.random() * 0.1), puffMat()), { x, y: 0.9, z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 1 + Math.random() * 3, g: 8, life: 0.4 }); }
   }
   function puff(x, z) { bit(sB, new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), puffMat()), { x, y: 0.4, z, vy: 0.6, life: 0.45, grow: 1.2 }); }
 
@@ -320,19 +320,262 @@ export function make3d(canvas, { colorFor, nameOf, budData }) {
     showOnly(sF, seen);
     return sF;
   }
+  /* ============================== Island Grand Prix: a ring of land round a lagoon ============================== */
+  const sK = newScene(sky('#8EC5FF', '#CFE9FF', '#EAF6FF'));
+  const KT = kartTrack(), kartModels = new Map(), shotModels = new Map(), bubbleModels = [], padMats = [];
+  const tbox = KT.pts.reduce((b, p) => ({ x0: Math.min(b.x0, p.x), x1: Math.max(b.x1, p.x), z0: Math.min(b.z0, p.z), z1: Math.max(b.z1, p.z) }), { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity });
+  const viewK = { cx: 0, cz: 0, hw: 70, hd: 36, ready: false };
+  const SPARK = ['#FFFFFF', '#FFD23F', '#FF7A1A', '#FF4FD8'];
+  function canvasTex(w, h, draw, repeat = true) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4;
+    if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
+    return t;
+  }
+  // a strip along the road from `a` to `b` metres right of the middle (negative: left), `every` metres per texture
+  function ribbon(a, b, y, mat, every = 0) {
+    const pos = [], uv = [], idx = [], N = KT.N;
+    for (let i = 0; i <= N; i++) {
+      const p = KT.pts[i % N], v = every ? (i * KT.step) / every : 0;
+      pos.push(p.x + p.nx * a, y, p.z + p.nz * a, p.x + p.nx * b, y, p.z + p.nz * b); uv.push(0, v, 1, v);
+      if (i < N) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat); sK.add(m); return m;
+  }
+  // something standing on the road s metres round and lat to the right, facing along it
+  const onRoad = (obj, s, lat = 0, y = 0) => { const p = KT.at(s, lat); obj.position.set(p.x, y, p.z); obj.rotation.y = -Math.atan2(p.tz, p.tx); return obj; };
+  function palm(x, z, s = 1) {
+    const g = new THREE.Group(), trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 3.6, 7), M('#A47551')); trunk.position.y = 1.8; trunk.rotation.z = 0.12; g.add(trunk);
+    for (let k = 0; k < 6; k++) { const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.45, 2.4, 5), M('#5FB36A', { flatShading: true })); const a = k / 6 * Math.PI * 2; leaf.position.set(Math.cos(a) * 0.95 + 0.2, 3.7, Math.sin(a) * 0.95); leaf.rotation.set(Math.sin(a) * 1.25, 0, -Math.cos(a) * 1.25); g.add(leaf); }
+    g.position.set(x, 0, z); g.scale.setScalar(s); sK.add(g); return g;
+  }
+  {
+    sK.add(flat(new THREE.PlaneGeometry(600, 400), M('#5DBDE6', { roughness: 0.3 }), -0.7));
+    const edge = KT.HW + KT.SAND;
+    ribbon(-edge - 1.6, edge + 1.6, -0.45, M('#D9C08C', { roughness: 1 }));                 // the wet sand at the water's edge
+    ribbon(-edge, edge, -0.04, M('#EBD9A8', { roughness: 1 }));                              // the sand
+    ribbon(-KT.HW - 1.4, KT.HW + 1.4, -0.02, M('#86CF86', { roughness: 1 }));                // a strip of grass
+    const road = canvasTex(128, 256, (g, w, h) => {
+      g.fillStyle = '#8F8BA8'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '255,255,255' : '40,30,70'},${0.04 + Math.random() * 0.05})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+      g.fillStyle = '#FFFFFF'; g.fillRect(5, 0, 5, h); g.fillRect(w - 10, 0, 5, h);
+      g.fillStyle = 'rgba(255,255,255,.75)'; g.fillRect(w / 2 - 2, 0, 4, h * 0.5);
+    });
+    ribbon(-KT.HW, KT.HW, 0, new THREE.MeshStandardMaterial({ map: road, roughness: 0.9 }), 7);
+    const curb = canvasTex(8, 64, (g, w, h) => { g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, w, h); g.fillStyle = '#E8394B'; g.fillRect(0, 0, w, h / 2); });
+    const curbMat = new THREE.MeshStandardMaterial({ map: curb, roughness: 0.8 });
+    ribbon(KT.HW, KT.HW + 0.7, 0.01, curbMat, 2.4); ribbon(-KT.HW - 0.7, -KT.HW, 0.01, curbMat, 2.4);
+    // the start: a checkered line and an arch over the road
+    const check = canvasTex(64, 16, (g, w, h) => { for (let y = 0; y < 2; y++) for (let x = 0; x < 8; x++) { g.fillStyle = (x + y) % 2 ? '#1D1C2B' : '#FFFFFF'; g.fillRect(x * 8, y * 8, 8, 8); } }, false);
+    check.magFilter = THREE.NearestFilter;
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(1.4, KT.HW * 2), new THREE.MeshBasicMaterial({ map: check })); line.rotation.x = -Math.PI / 2; line.rotation.z = Math.PI / 2;
+    const lineG = new THREE.Group(); lineG.add(line); line.position.y = 0.02; onRoad(lineG, 0); sK.add(lineG);
+    const arch = new THREE.Group(), post = M('#FFFFFF', { roughness: 0.6 });
+    for (const sd of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 4.6, 10), post); p.position.set(0, 2.3, sd * (KT.HW + 1.1)); arch.add(p); }
+    const sign = canvasTex(512, 96, (g, w, h) => { g.fillStyle = '#FF7A59'; g.fillRect(0, 0, w, h); g.fillStyle = '#FFFFFF'; g.font = '700 54px Fredoka, Nunito, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('ISLAND GRAND PRIX', w / 2, h / 2 + 3); }, false);
+    const signMat = new THREE.MeshBasicMaterial({ map: sign });
+    const banner = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.2, KT.HW * 2 + 2.6), [signMat, signMat, post, post, post, post]);
+    banner.position.y = 4.6; arch.add(banner); onRoad(arch, -0.6); sK.add(arch);
+    // boost pads: arrows that glow and run forward
+    for (const p of KT.pads) {
+      const tex = canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#FFB22E'; g.fillRect(0, 0, w, h); g.strokeStyle = '#FFF4C2'; g.lineWidth = 9; g.lineJoin = 'round'; g.beginPath(); g.moveTo(10, 44); g.lineTo(32, 20); g.lineTo(54, 44); g.stroke(); });
+      const mat = new THREE.MeshBasicMaterial({ map: tex }); tex.repeat.set(1, 2); padMats.push(tex);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.2), mat); m.rotation.x = -Math.PI / 2; m.rotation.z = -Math.PI / 2; m.position.y = 0.03;
+      const g = new THREE.Group(); g.add(m); onRoad(g, p.s, p.lat); sK.add(g);
+    }
+    // gift bubbles
+    for (const b of KT.bubbles) {
+      const g = new THREE.Group(), p = KT.at(b.s, b.lat);
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(1.05, 24, 16), new THREE.MeshStandardMaterial({ color: toLinear('#A8E4FF'), transparent: true, opacity: 0.38, roughness: 0.1, depthWrite: false }));
+      const shine = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })); shine.position.set(-0.4, 0.45, 0.55);
+      const box = new THREE.Group(), gift = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.72, 0.85), M('#FF5FA2', { roughness: 0.5 }));
+      const r1 = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.76, 0.18), M('#FFE08A')), r2 = r1.clone(); r2.rotation.y = Math.PI / 2;
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.07, 6, 12), M('#FFE08A')); bow.position.y = 0.44;
+      box.add(gift, r1, r2, bow); g.add(ball, shine, box); g.position.set(p.x, 1.05, p.z); sK.add(g);
+      bubbleModels.push({ g, box, seed: Math.random() * 6 });
+    }
+    // palms and umbrellas on the sand, rocks and lily pads in the water
+    for (let s = 6, k = 0; s < KT.L; s += 17, k++) {
+      const side = k % 2 ? 1 : -1, p = KT.at(s, side * (KT.HW + KT.SAND - 1.6));
+      if (k % 3 === 2) {
+        const u = new THREE.Group(), pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), M('#FFFFFF')); pole.position.y = 1.3; u.add(pole);
+        const top = new THREE.Mesh(new THREE.ConeGeometry(1.5, 0.7, 10), M(['#FF7EB6', '#4FB3FF', '#FFE08A'][k % 3])); top.position.y = 2.6; u.add(top);
+        u.position.set(p.x, 0, p.z); sK.add(u);
+      } else palm(p.x, p.z, 0.9 + (k % 3) * 0.15);
+    }
+    const rock = M('#A9A7B8', { roughness: 1, flatShading: true });
+    for (const [x, z, r] of [[-8, 4, 1.6], [-6, 7, 0.9], [30, 4, 1.2], [-40, -6, 1.4], [70, 10, 2], [-74, 20, 1.8], [8, -40, 1.5], [52, -36, 1.2]]) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), rock); m.position.set(x, -0.5, z); m.rotation.set(x, z, r); m.scale.y = 0.6; sK.add(m); }
+    for (const [x, z] of [[-20, 6], [-17, 9], [-24, 2], [20, 8], [24, 4], [-30, -2]]) { const pad = flat(new THREE.CircleGeometry(0.9, 16, 0.3, Math.PI * 2 - 0.6), M('#5FB36A'), -0.66); pad.position.set(x, -0.66, z); sK.add(pad); }
+    const isle = new THREE.Mesh(new THREE.CylinderGeometry(4, 5, 1, 24), M('#EBD9A8', { roughness: 1 })); isle.position.set(-12, -0.6, 5); sK.add(isle); palm(-12.5, 4.6, 1.2); palm(-10.4, 6, 0.9);
+  }
+  // A kart, built facing +x: a rounded tub in the driver's color, four fat wheels, a little spoiler.
+  function makeKart(id) {
+    const color = colorFor(id), paint = M(color, { roughness: 0.45, metalness: 0.05 }), dark = M('#2A2838', { roughness: 0.8 }), white = M('#FFFFFF', { roughness: 0.5 });
+    const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+    const tub = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.42, 1.25), paint); tub.position.y = 0.48; body.add(tub);
+    const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.42, 16, 1, false, 0, Math.PI), paint); nose.rotation.y = Math.PI / 2; nose.scale.set(1, 1, 0.75); nose.position.set(1.0, 0.48, 0); body.add(nose);
+    const bumper = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.22, 1.35), white); bumper.position.set(1.42, 0.36, 0); body.add(bumper);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.65, 0.9), dark); seat.position.set(-0.62, 0.86, 0); body.add(seat);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 1.45), paint); fin.position.set(-1.05, 1.12, 0); body.add(fin);
+    for (const sd of [-1, 1]) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.08), dark); st.position.set(-1.0, 0.9, sd * 0.5); body.add(st); }
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.1, 0.3), white); stripe.position.set(0, 0.7, 0); body.add(stripe);
+    const wheels = [];
+    for (const [x, z] of [[0.72, 0.72], [0.72, -0.72], [-0.7, 0.74], [-0.7, -0.74]]) {
+      const w = new THREE.Group(), tyre = new THREE.Mesh(new THREE.CylinderGeometry(x > 0 ? 0.3 : 0.36, x > 0 ? 0.3 : 0.36, 0.34, 14), dark); tyre.rotation.x = Math.PI / 2;
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.36, 10), white); hub.rotation.x = Math.PI / 2; w.add(tyre, hub);
+      w.position.set(x, x > 0 ? 0.3 : 0.36, z); body.add(w); wheels.push(w);
+    }
+    const shadow = flat(new THREE.PlaneGeometry(2.6, 1.7), new THREE.MeshBasicMaterial({ color: 0x1E193C, transparent: true, opacity: 0.22, depthWrite: false }), 0.03); g.add(shadow);
+    const shield = new THREE.Mesh(new THREE.SphereGeometry(1.75, 24, 16), new THREE.MeshStandardMaterial({ color: toLinear('#BDEBFF'), transparent: true, opacity: 0.32, roughness: 0.1, depthWrite: false })); shield.position.y = 1; shield.visible = false;
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.2, 10), new THREE.MeshBasicMaterial({ color: 0xFF9A3E, transparent: true, opacity: 0.85 })); flame.rotation.z = Math.PI / 2; flame.position.set(-1.65, 0.5, 0); flame.visible = false;
+    const floatie = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.32, 10, 24), M('#FF7A59', { roughness: 0.5 })); floatie.rotation.x = Math.PI / 2; floatie.position.y = 0.55; floatie.visible = false;
+    const balloon = new THREE.Group(), ball = new THREE.Mesh(new THREE.SphereGeometry(0.75, 16, 12), M(color, { roughness: 0.3 })); ball.scale.y = 1.15; ball.position.y = 4.1;
+    const str = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.6, 4), white); str.position.y = 2.6; balloon.add(ball, str); balloon.visible = false;
+    body.add(shield, flame, floatie);
+    g.add(balloon); sK.add(g);
+    // the item it's holding (or rolling for), over its head
+    const item = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false })); item.renderOrder = 11; item.visible = false; sK.add(item);
+    const m = { g, body, wheels, shield, flame, floatie, balloon, item, itemKey: '', sparkT: 0, splashed: false };
+    kartModels.set(id, m);
+    return m;
+  }
+  const iconTex = new Map();
+  function icon(ch) {
+    if (!iconTex.has(ch)) iconTex.set(ch, canvasTex(96, 96, (g, w, h) => { g.fillStyle = 'rgba(255,255,255,.95)'; g.beginPath(); g.arc(w / 2, h / 2, 44, 0, 7); g.fill(); g.font = '56px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, w / 2, h / 2 + 3); }, false));
+    return iconTex.get(ch);
+  }
+  function makeShot(sh) {
+    let g;
+    if (sh.kind === 'coconut') {
+      g = new THREE.Group(); const nut = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 10), M('#7A4E2D', { roughness: 0.95 }));
+      for (let i = 0; i < 3; i++) { const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), M('#3A2416')); const a = i * 2.1; eye.position.set(Math.cos(a) * 0.12, 0.42, Math.sin(a) * 0.12); nut.add(eye); }
+      g.add(nut); g.userData.spin = nut;
+    } else if (sh.kind === 'jelly') {
+      g = new THREE.Group(); const blob = new THREE.Mesh(new THREE.SphereGeometry(0.75, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshPhysicalMaterial({ color: toLinear('#FF7EB6'), roughness: 0.15, clearcoat: 1, transparent: true, opacity: 0.88 }));
+      blob.scale.y = 0.9; const cherry = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), M('#E8394B', { roughness: 0.3 })); cherry.position.y = 0.76;
+      g.add(blob, cherry); g.userData.blob = blob;
+    } else {
+      g = new THREE.Group(); const white = M('#FFFFFF', { roughness: 0.6 }), grey = M('#A9A7B8');
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), white); body.scale.set(1.6, 0.8, 0.8); g.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 10), white); head.position.set(0.6, 0.25, 0); g.add(head);
+      const beak = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.36, 8), M('#FFB22E')); beak.rotation.z = -Math.PI / 2; beak.position.set(0.95, 0.22, 0); g.add(beak);
+      const wings = [];
+      for (const sd of [-1, 1]) { const w = new THREE.Group(), wing = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.05, 1.1), grey); wing.position.z = sd * 0.55; w.add(wing); g.add(w); wings.push({ w, sd }); }
+      g.userData.wings = wings;
+    }
+    sK.add(g);
+    return g;
+  }
+  function kartSparks(m, k, T) {
+    // drift sparks from the back wheels, in the color of how charged the boost is
+    const tier = KART.CHARGE.filter((c) => k.charge >= c).length;
+    m.sparkT -= 1;
+    if (m.sparkT > 0) return; m.sparkT = 2;
+    const c = Math.cos(k.h), s = Math.sin(k.h);
+    for (const sd of [-1, 1]) {
+      const x = k.x - c * 0.9 - s * sd * 0.75, z = k.z - s * 0.9 + c * sd * 0.75;
+      bit(sK, new THREE.Mesh(new THREE.OctahedronGeometry(tier ? 0.16 : 0.1), new THREE.MeshBasicMaterial({ color: toLinear(SPARK[tier]), transparent: true, depthWrite: false })), { x, y: 0.2, z, vx: -c * 3 + (Math.random() - 0.5) * 3, vz: -s * 3 + (Math.random() - 0.5) * 3, vy: 1.5 + Math.random() * 2, g: 9, life: 0.35 });
+    }
+  }
+  // karts and their buds are drawn a bit bigger than they bump (so they read across a room); name tags grow
+  // with how far back the camera is
+  const KSCALE = 1.3;
+  function drawKart(game, T, dt, aside) {
+    const tagK = clamp(camera.position.distanceTo(new THREE.Vector3(viewK.cx, 0, viewK.cz)) / 38, 1.2, 3.4);
+    const K = KART, live = new Set();
+    padMats.forEach((t) => { t.offset.y = -T * 1.6; });
+    bubbleModels.forEach((b, i) => {
+      const st = game.bubbles[i], on = !st.wait, k = on ? 1 : Math.max(0, 1 - st.wait / 0.25) * 0;
+      const target = on ? 1 : 0.001; b.g.scale.setScalar(lerp(b.g.scale.x, target, Math.min(1, dt * (on ? 6 : 30))));
+      b.g.position.y = 1.05 + Math.sin(T * 2 + b.seed) * 0.15; b.box.rotation.y = T * 1.4 + b.seed; void k;
+    });
+    for (const k of game.racers()) {
+      live.add(k.id);
+      const m = kartModels.get(k.id) || makeKart(k.id), p = piece(k.id, sK);
+      let y = 0, yaw = -k.h, roll = 0;
+      if (k.hop > 0) y += Math.sin((k.hop / 0.22) * Math.PI) * 0.35;
+      if (k.drift) { yaw -= k.drift * 0.38; roll = k.drift * 0.08; }
+      if (k.spinT > 0) yaw += (1 - k.spinT / K.SPIN) * Math.PI * 4;
+      if (k.sinkT > 0) { const f = 1 - k.sinkT / K.SINK; y = -f * 1.6; roll = f * 0.6; if (!m.splashed) { m.splashed = true; splash(sK, k.x, k.z, -0.65); } } else m.splashed = false;
+      const falling = k.floatT > 0;
+      if (falling) { const f = k.floatT / K.FLOAT; y = f * f * 5 + Math.sin(T * 6) * 0.05; }
+      m.g.position.set(k.x, y, k.z); m.body.rotation.set(roll, 0, k.boostT > 0 ? 0.05 : 0); m.g.rotation.y = yaw; m.g.scale.setScalar(KSCALE);
+      m.wheels.forEach((w) => { w.children[0].rotation.y += k.v * dt * 2.6; });
+      m.shield.visible = k.shieldT > 0; if (m.shield.visible) m.shield.scale.setScalar(1 + Math.sin(T * 8) * 0.03);
+      m.flame.visible = k.boostT > 0 && k.sinkT <= 0; if (m.flame.visible) m.flame.scale.set(1, 0.8 + Math.random() * 0.5, 1);
+      m.floatie.visible = falling; m.balloon.visible = falling; m.balloon.position.set(0, 0, 0);
+      if (k.drift && k.sinkT <= 0) kartSparks(m, k, T);
+      if (k.boostT > 0 && Math.random() < 0.5) puffK(k.x - Math.cos(k.h) * 1.5, k.z - Math.sin(k.h) * 1.5);
+      // the bud in the seat, leaning into turns and facing the room
+      p.root.visible = true; p.stand.visible = false; p.tag.visible = k.sinkT <= 0;
+      p.root.scale.setScalar(1.05 * KSCALE);
+      const sx = k.x - Math.cos(k.h) * 0.26, sz = k.z - Math.sin(k.h) * 0.26, seatY = y + 0.62 * KSCALE;
+      p.root.position.set(sx, seatY, sz); faceCamera(p, sx, sz);
+      p.root.rotation.z = clamp(-k.turn * 0.09, -0.3, 0.3) + (k.spinT > 0 ? Math.sin(T * 20) * 0.3 : 0);
+      p.squash.scale.set(1, 1, 1);
+      const tagY = seatY + p.height * 1.05 * KSCALE + 0.35 * tagK;
+      p.tag.scale.set(p.tag.userData.w * tagK, 0.52 * tagK, 1); p.tag.position.set(sx, tagY, sz);
+      p.happy = (game.phase === 'done' && game.champs?.includes(k.id)) || k.boostT > 0 || k.fin != null; p.sleepy = k.spinT > 0;
+      drawFace(p, T);
+      // the item over its head
+      const show = k.roll ? 'roll' : k.item || '';
+      m.item.visible = !!show && k.sinkT <= 0;
+      if (show) {
+        const ch = show === 'roll' ? ['☕', '🥥', '🍮', '🫧', '🐦'][Math.floor(T * 12) % 5] : KART_ITEMS[show]?.icon || '?';
+        if (m.itemKey !== ch) { m.itemKey = ch; m.item.material.map = icon(ch); m.item.material.needsUpdate = true; }
+        m.item.scale.setScalar(0.95 * tagK); m.item.position.set(sx + (p.tag.userData.w / 2 + 0.6) * tagK, tagY, sz);
+      }
+    }
+    for (const [id, m] of kartModels) if (!live.has(id)) { sK.remove(m.g); sK.remove(m.item); kartModels.delete(id); }
+    showOnly(sK, live);
+    // things in flight
+    const shots = new Set(game.shots);
+    for (const sh of game.shots) {
+      let g = shotModels.get(sh); if (!g) { g = makeShot(sh); shotModels.set(sh, g); }
+      if (sh.kind === 'coconut') { g.position.set(sh.x, 0.45, sh.z); g.userData.spin.rotation.z -= dt * 14; const p = KT.at(sh.s); g.rotation.y = -Math.atan2(p.tz, p.tx); }
+      else if (sh.kind === 'jelly') { g.position.set(sh.x, 0.02, sh.z); const w = 1 + Math.sin(T * 9 + sh.x) * 0.06; g.userData.blob.scale.set(w, 0.9 / w, w); }
+      else { const f = sh.f || 0; g.position.set(sh.x, 3 + Math.sin(f * Math.PI) * 3 - f * 2, sh.z); g.userData.wings.forEach(({ w, sd }) => { w.rotation.x = sd * Math.sin(T * 18) * 0.6; }); const tk = game.karts.get(sh.target); if (tk) g.rotation.y = -Math.atan2(tk.z - sh.fz, tk.x - sh.fx); }
+    }
+    for (const [sh, g] of shotModels) if (!shots.has(sh)) { sK.remove(g); shotModels.delete(sh); }
+    // the camera: the whole track while waiting; in a race it frames the pack and pulls back as it spreads out
+    lens(32);
+    const pitch = 1.0, all = game.racers().filter((k) => k.sinkT <= 0);
+    let bx0 = tbox.x0, bx1 = tbox.x1, bz0 = tbox.z0, bz1 = tbox.z1;
+    if (game.phase === 'play' && all.length) {
+      bx0 = Math.min(...all.map((k) => k.x)) - 12; bx1 = Math.max(...all.map((k) => k.x)) + 12; bz0 = Math.min(...all.map((k) => k.z)) - 9; bz1 = Math.max(...all.map((k) => k.z)) + 9;
+      const minW = 32, minD = 18, cx = (bx0 + bx1) / 2, cz = (bz0 + bz1) / 2;
+      if (bx1 - bx0 < minW * 2) { bx0 = cx - minW; bx1 = cx + minW; }
+      if (bz1 - bz0 < minD * 2) { bz0 = cz - minD; bz1 = cz + minD; }
+    }
+    const want = { cx: (bx0 + bx1) / 2, cz: (bz0 + bz1) / 2, hw: Math.min((bx1 - bx0) / 2, (tbox.x1 - tbox.x0) / 2 + 10), hd: Math.min((bz1 - bz0) / 2, (tbox.z1 - tbox.z0) / 2 + 9) };
+    const ease = viewK.ready ? Math.min(1, dt * 1.4) : 1; viewK.ready = true;
+    for (const key of ['cx', 'cz', 'hw', 'hd']) viewK[key] += (want[key] - viewK[key]) * ease;
+    // (with the panel up on the left, the track fits in the right two thirds)
+    const d = fitDist(viewK.hw + 2, viewK.hd * Math.sin(pitch) + 2) * (1 + aside * 0.85);
+    camera.position.set(viewK.cx, Math.sin(pitch) * d, viewK.cz + Math.cos(pitch) * d); camera.lookAt(viewK.cx, 0, viewK.cz);
+    camera.setViewOffset(W, H, -W * 0.18 * aside, H * 0.02 * aside, W, H);
+    return sK;
+  }
+  function puffK(x, z) { bit(sK, new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), puffMat()), { x, y: 0.5, z, vy: 0.8, life: 0.4, grow: 1.4 }); }
+  function popK(x, z, color = '#BDEBFF') { for (let i = 0; i < 10; i++) { const a = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 3; bit(sK, new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), new THREE.MeshBasicMaterial({ color: toLinear(color), transparent: true, depthWrite: false })), { x, y: 1, z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 2 + Math.random() * 3, g: 10, life: 0.5 }); } }
+
   // back on the island after a round on the beach: stand up straight, full size, ring and all
   function reset(p) { p.root.scale.setScalar(1); p.stand.scale.setScalar(1); p.ring.visible = true; p.aim.visible = true; p.root.rotation.z = 0; p.squash.scale.set(1, 1, 1); p.tag.scale.set(p.tag.userData.w, 0.52, 1); }
 
   let lastKind = null;
   function render(kind, game, T, dt, aside, roster) {
     if (kind !== lastKind) { lastKind = kind; for (const p of pieces.values()) reset(p); for (const [id, w] of waves) { sF.remove(w); waves.delete(id); } shown.clear(); }
-    const scene = kind === 'freeze' ? drawFreeze(game, T, dt, aside, roster) : drawBumper(game, T, dt, aside);
+    const scene = kind === 'freeze' ? drawFreeze(game, T, dt, aside, roster) : kind === 'kart' ? drawKart(game, T, dt, aside) : drawBumper(game, T, dt, aside);
     bitsTick(dt);
     if (!skip) renderer.render(scene, camera);
   }
   addEventListener('resize', resize); resize();
   return {
-    render, resize, spark, drop,
+    render, resize, drop,
+    spark: (x, z, power) => spark(x, z, power, lastKind === 'kart' ? sK : sB),
+    // kart race effects: a popped bubble or shield, a jelly splat, a splash
+    pop: (x, z, color) => popK(x, z, color), splashK: (x, z) => splash(sK, x, z, -0.65),
     forget(ids) { for (const id of [...pieces.keys()]) if (!ids.has(id)) drop(id); },     // people who've left
     refresh(id) { drop(id); },                                                            // their bud's drawing arrived: build it again
     set skip(v) { skip = !!v; },
