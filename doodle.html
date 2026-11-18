@@ -65,6 +65,12 @@ body { margin: 0; color: var(--ink); font-family: var(--font); background: linea
 .tool[aria-checked="true"] { border-color: var(--ink); }
 .tool span { background: var(--ink); border-radius: 50%; display: block; }
 .tool svg { width: 18px; height: 18px; }
+.tool:disabled { opacity: .4; cursor: default; }
+.tool.bucket svg { width: 20px; height: 20px; overflow: visible; }
+.tool.bucket .paint { fill: var(--paint, #2B2B3A); }
+.tool.bucket.nope { animation: nope .35s; }
+@keyframes nope { 25% { transform: rotate(-14deg); } 75% { transform: rotate(10deg); } }
+.paper.filling canvas { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23fff' stroke-width='4.5'%3E%3Cpath d='M10.6 3.4 18.2 11l-7.3 7.3a1.7 1.7 0 0 1-2.4 0l-5.3-5.3a1.7 1.7 0 0 1 0-2.4Z'/%3E%3Cpath d='M6.4 2.6l3.4 3.4'/%3E%3Cpath d='M21.2 17.4c0 1.5-1 2.7-2.2 2.7s-2.2-1.2-2.2-2.7c0-1.5 2.2-4 2.2-4s2.2 2.5 2.2 4Z'/%3E%3C/g%3E%3Cg stroke='%231D1C2B' stroke-width='2'%3E%3Cpath d='M10.6 3.4 18.2 11l-7.3 7.3a1.7 1.7 0 0 1-2.4 0l-5.3-5.3a1.7 1.7 0 0 1 0-2.4Z'/%3E%3Cpath d='M6.4 2.6l3.4 3.4'/%3E%3Cpath d='M21.2 17.4c0 1.5-1 2.7-2.2 2.7s-2.2-1.2-2.2-2.7c0-1.5 2.2-4 2.2-4s2.2 2.5 2.2 4Z'/%3E%3C/g%3E%3C/svg%3E") 21 22, crosshair; }
 
 .blanks { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 .blanks .w { display: flex; gap: 5px; }
@@ -114,6 +120,7 @@ body { margin: 0; color: var(--ink); font-family: var(--font); background: linea
 
 <script src="/js/sound.js"></script>
 <script type="module">
+import { fillPatches, fillAt, grow, isFill, GRID, MAX_FILLS } from '/js/doodle-fill.js';
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -149,6 +156,7 @@ function setupCanvas(c) {
 function clearPaper(g) { g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, g.canvas.width, g.canvas.height); g.restore(); }
 // draw stroke st up to time t (Infinity: the whole thing)
 function drawStroke(g, st, upTo = Infinity) {
+  if (isFill(st)) return;
   const p = st.p;
   g.strokeStyle = PALETTE[st.c]?.[0] || '#2B2B3A'; g.fillStyle = g.strokeStyle; g.lineWidth = SIZES[st.s]?.[0] || 26;
   if (p[2] > upTo) return;
@@ -157,19 +165,70 @@ function drawStroke(g, st, upTo = Infinity) {
   for (let i = 3; i < p.length; i += 3) { if (p[i + 2] > upTo) break; g.lineTo(p[i], p[i + 1]); }
   g.stroke();
 }
-function drawAll(g, strokes, upTo = Infinity) { clearPaper(g); for (const st of strokes) drawStroke(g, st, upTo); }
+// Paint-bucket fills (js/doodle-fill.js works out the patch, the same on every phone and on the server). Each is
+// painted as two pictures of its patch, stretched smooth: the patch itself, over what's there, and the patch a
+// cell bigger, underneath it all (newest first), so it tucks in under the soft edges of the lines round it.
+const FILL_MS = 420;                                            // how long a fill takes to spread, in a replay
+const patchOf = new WeakMap(), artOf = new WeakMap(), born = new WeakMap();
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+function patchPicture(pt, hex) {
+  const c = document.createElement('canvas'); c.width = pt.w + 2; c.height = pt.h + 2;
+  const x = c.getContext('2d'), img = x.createImageData(c.width, c.height), [r, gr, b] = rgbOf(hex);
+  for (let y = 0; y < pt.h; y++) for (let i = 0; i < pt.w; i++) {
+    if (!pt.m[y * pt.w + i]) continue;
+    const o = ((y + 1) * c.width + i + 1) * 4; img.data[o] = r; img.data[o + 1] = gr; img.data[o + 2] = b; img.data[o + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  const cell = 1000 / GRID;
+  return { c, x: (pt.x0 - 1) * cell, y: (pt.y0 - 1) * cell, w: c.width * cell, h: c.height * cell };
+}
+// how far along fill st is (it spreads out from where it was tapped): the circle it's reached so far, 0 when done
+function fillNow(st, upTo) {
+  const pt = patchOf.get(st);
+  if (!pt || st.p[2] > upTo) return null;
+  let art = artOf.get(st);
+  if (!art) {
+    const hex = PALETTE[st.c]?.[0] || '#2B2B3A', cell = 1000 / GRID, [x, y] = st.p;
+    const reach = Math.max(...[[pt.x0, pt.y0], [pt.x0 + pt.w, pt.y0], [pt.x0, pt.y0 + pt.h], [pt.x0 + pt.w, pt.y0 + pt.h]].map(([a, b]) => Math.hypot(a * cell - x, b * cell - y))) + 2 * cell;
+    art = { core: patchPicture(pt, hex), rim: patchPicture(grow(pt), hex), reach };
+    artOf.set(st, art);
+  }
+  let k = Number.isFinite(upTo) ? (upTo - st.p[2]) / FILL_MS : born.has(st) ? (performance.now() - born.get(st)) / 320 : 1;
+  k = Math.min(1, Math.max(0, k));
+  return { st, art, r: k >= 1 ? 0 : 6 + art.reach * (1 - (1 - k) ** 3) };
+}
+function drawFill(g, f, which) {
+  const a = f.art[which];
+  g.save();
+  if (f.r) { g.beginPath(); g.arc(f.st.p[0], f.st.p[1], f.r, 0, Math.PI * 2); g.clip(); }
+  if (which === 'rim') g.globalCompositeOperation = 'destination-over';
+  g.imageSmoothingEnabled = true;
+  g.drawImage(a.c, a.x, a.y, a.w, a.h);
+  g.restore();
+}
+function drawAll(g, strokes, upTo = Infinity) {
+  clearPaper(g);
+  if (strokes.some((st) => isFill(st) && !patchOf.has(st))) fillPatches(strokes, patchOf);
+  const rims = [];
+  for (const st of strokes) {
+    if (!isFill(st)) { drawStroke(g, st, upTo); continue; }
+    const f = fillNow(st, upTo);
+    if (f) { drawFill(g, f, 'core'); rims.push(f); }
+  }
+  for (let i = rims.length - 1; i >= 0; i--) drawFill(g, rims[i], 'rim');
+}
 
 // replay a drawing stroke by stroke, a bit faster than it was drawn
 let replayRaf = 0;
 function replay(g, strokes, done) {
   cancelAnimationFrame(replayRaf);
-  const end = Math.max(...strokes.map((s) => s.p[s.p.length - 1]), 1), speed = Math.max(1.4, end / 25000), t0 = performance.now();
+  const end = Math.max(...strokes.map((s) => s.p[s.p.length - 1] + (isFill(s) ? FILL_MS : 0)), 1), speed = Math.max(1.4, end / 25000), t0 = performance.now();
   let lastStroke = -1;
   const step = () => {
     const t = (performance.now() - t0) * speed;
     drawAll(g, strokes, t);
     const n = strokes.filter((s) => s.p[2] <= t).length;
-    if (n !== lastStroke) { lastStroke = n; if (n) S.play('paint', { gain: 0.5 }); }
+    if (n !== lastStroke) { const fresh = n > lastStroke; lastStroke = n; if (n && fresh) S.play(isFill(strokes.filter((s) => s.p[2] <= t).at(-1)) ? 'splash' : 'paint', { gain: 0.5 }); }
     if (t < end) replayRaf = requestAnimationFrame(step); else { drawAll(g, strokes); done && done(); }
   };
   step();
@@ -221,10 +280,18 @@ function renderPick(main) {
   main.append(box);
 }
 
-function brushTray(onColor, onSize, tools) {
+// The paints, the three brush sizes and the paint bucket (one of the four is what your finger does), then any
+// extra tools (undo, start over).
+function brushTray(onColor, onSize, onBucket, tools) {
   const tray = el('div', 'tray'), brushes = el('div', 'brushes'), sizes = el('div', 'tools');
-  let color = 8, size = 1;
-  const pick = (i) => { color = i; brushes.querySelectorAll('.brush').forEach((b, k) => b.setAttribute('aria-checked', k === i)); onColor(i); };
+  let color = 8, size = 1, bucketOn = false;
+  const bucket = el('button', 'tool bucket'); bucket.type = 'button'; bucket.title = 'Paint bucket: tap a shape to fill it';
+  bucket.setAttribute('aria-label', 'Paint bucket'); bucket.append(svgIcon(BUCKET));
+  const show = () => {
+    sizes.querySelectorAll('.size').forEach((b, j) => b.setAttribute('aria-checked', !bucketOn && j === size));
+    bucket.setAttribute('aria-checked', bucketOn);
+  };
+  const pick = (i) => { color = i; brushes.querySelectorAll('.brush').forEach((b, k) => b.setAttribute('aria-checked', k === i)); bucket.style.setProperty('--paint', PALETTE[i][0]); onColor(i); };
   PALETTE.forEach(([col, name], i) => {
     const b = el('button', 'brush'); b.type = 'button'; b.title = name; b.setAttribute('aria-label', name); b.setAttribute('role', 'radio');
     b.style.setProperty('--tilt', ((i % 3) - 1) * 4 + 'deg');
@@ -232,17 +299,19 @@ function brushTray(onColor, onSize, tools) {
     b.addEventListener('click', () => { pick(i); S.play('click'); });
     brushes.append(b);
   });
-  const setSize = (k) => { size = k; sizes.querySelectorAll('.size').forEach((b, j) => b.setAttribute('aria-checked', j === k)); onSize(k); };
+  const setSize = (k) => { size = k; bucketOn = false; show(); onSize(k); onBucket(false); };
   SIZES.forEach(([px, name], k) => {
     const b = el('button', 'tool size'); b.type = 'button'; b.title = name; b.setAttribute('aria-label', name + ' brush');
     const d = Math.round(4 + px / 52 * 16), dot = el('span'); dot.style.width = dot.style.height = d + 'px'; b.append(dot);
     b.addEventListener('click', () => { setSize(k); S.play('click'); });
     sizes.append(b);
   });
+  bucket.addEventListener('click', () => { bucketOn = true; show(); onBucket(true); S.play('click'); });
+  sizes.append(bucket);
   for (const t of tools) sizes.append(t);
   tray.append(brushes, sizes);
   pick(color); setSize(size);
-  return tray;
+  return { tray, bucket, brush: () => setSize(size) };
 }
 function drawBrush(c, col) {
   const g = c.getContext('2d'), w = c.width, h = c.height, cx = w / 2;
@@ -253,29 +322,66 @@ function drawBrush(c, col) {
   g.beginPath(); g.moveTo(cx - 9, 46); g.bezierCurveTo(cx - 11, 28, cx - 4, 12, cx, 4); g.bezierCurveTo(cx + 4, 12, cx + 11, 28, cx + 9, 46); g.closePath();
   g.fillStyle = col; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 1.5; g.stroke();
 }
+// a tipped-over bucket, its paint and the drip in the paint you've picked
+const BUCKET = '<path d="M10.6 3.4 18.2 11l-7.3 7.3a1.7 1.7 0 0 1-2.4 0l-5.3-5.3a1.7 1.7 0 0 1 0-2.4Z"/><path class="paint" d="M2.7 12.4 18.2 11l-7.3 7.3a1.7 1.7 0 0 1-2.4 0Z" stroke="none"/><path d="M6.4 2.6l3.4 3.4"/><path class="paint" d="M21.2 17.4c0 1.5-1 2.7-2.2 2.7s-2.2-1.2-2.2-2.7c0-1.5 2.2-4 2.2-4s2.2 2.5 2.2 4Z"/>';
 const svgIcon = (d) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round'); s.innerHTML = d; return s; };
 
-// The drawing pad: paper, brushes, undo and start over. onChange runs whenever the drawing changes.
+// The drawing pad: paper, brushes, the paint bucket, undo and start over. onChange runs whenever the drawing changes.
 function drawingPad(main, label, onChange) {
   const paper = el('div', 'paper'), canvas = el('canvas');
   paper.append(canvas); if (label) paper.append(el('span', 'word', label));
   main.append(paper);
   let g = setupCanvas(canvas);
   const strokes = [];
-  let color = 8, size = 1, cur = null, clock = 0, lastReal = 0, lastPt = null;
+  let color = 8, size = 1, bucketOn = false, cur = null, clock = 0, lastReal = 0, lastPt = null;
   const undo = el('button', 'tool'); undo.type = 'button'; undo.title = 'Undo'; undo.append(svgIcon('<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>'));
   const clear = el('button', 'tool'); clear.type = 'button'; clear.title = 'Start over'; clear.append(svgIcon('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/>'));
   undo.addEventListener('click', () => { strokes.pop(); drawAll(g, strokes); S.play('click'); update(); });
   clear.addEventListener('click', () => { if (clear.dataset.sure !== '1') { clear.dataset.sure = '1'; setTimeout(() => { clear.dataset.sure = ''; }, 1500); return; } strokes.length = 0; drawAll(g, strokes); S.play('squish'); update(); });
-  main.append(brushTray((i) => { color = i; }, (k) => { size = k; }, [undo, clear]));
-  const update = () => { undo.disabled = !strokes.length; onChange(strokes); };
-  // record each stroke with timing, so it can replay; long pauses between strokes are shortened
-  const at = (e) => { const b = canvas.getBoundingClientRect(); return [Math.round((e.clientX - b.left) / b.width * 1000), Math.round((e.clientY - b.top) / b.height * 1000)]; };
+  const tray = brushTray((i) => { color = i; }, (k) => { size = k; }, (on) => { bucketOn = on; paper.classList.toggle('filling', on); }, [undo, clear]);
+  main.append(tray.tray);
+  const fills = () => strokes.reduce((n, st) => n + (isFill(st) ? 1 : 0), 0);
+  const update = () => {
+    undo.disabled = !strokes.length;
+    const full = fills() >= MAX_FILLS;
+    tray.bucket.disabled = full; tray.bucket.title = full ? 'That’s all the paint buckets for one drawing' : 'Paint bucket: tap a shape to fill it';
+    if (full && bucketOn) tray.brush();
+    onChange(strokes);
+  };
+  // record each stroke with timing, so it can replay; long pauses between strokes are shortened. Lines can run a
+  // little off the paper (the server keeps them within 100 of it too, so what's sent is what you see).
+  const at = (e) => { const b = canvas.getBoundingClientRect(), k = (v) => Math.max(-100, Math.min(1100, Math.round(v * 1000))); return [k((e.clientX - b.left) / b.width), k((e.clientY - b.top) / b.height)]; };
+  const tick = (now) => { clock += lastReal ? Math.min(450, now - lastReal) : 0; lastReal = now; };
+  // the fill grid as of the strokes already on it, so a tap on a busy drawing doesn't lay them all down again
+  let grid = null;
+  const gridNow = () => {
+    const same = grid && grid.refs.length <= strokes.length && grid.refs.every((st, i) => st === strokes[i]);
+    const lab = fillPatches(strokes, patchOf, same ? grid.refs.length : 0, same ? grid.lab : null).lab;
+    grid = { lab, refs: strokes.slice() };
+    return grid;
+  };
+  function bucketAt(e) {
+    const now = performance.now(), [x, y] = at(e);
+    if (fills() >= MAX_FILLS) return;
+    const gd = gridNow();
+    const pt = fillAt(gd.lab, Math.max(0, Math.min(999, x)), Math.max(0, Math.min(999, y)), color);
+    if (!pt) {   // that spot is already this paint
+      tray.bucket.classList.remove('nope'); void tray.bucket.offsetWidth; tray.bucket.classList.add('nope');
+      S.play('boing', { gain: 0.35 }); return;
+    }
+    tick(now);
+    const st = { c: color, f: 1, p: [Math.max(0, Math.min(999, x)), Math.max(0, Math.min(999, y)), Math.round(clock)] };
+    patchOf.set(st, pt); born.set(st, now);
+    strokes.push(st); gd.refs.push(st);
+    S.play('splash', { gain: 0.45 });
+    const spread = () => { drawAll(g, strokes); if (performance.now() - now < 340 && strokes.includes(st)) requestAnimationFrame(spread); };
+    spread(); update();
+  }
   canvas.addEventListener('pointerdown', (e) => {
     if (busy) return;
+    if (bucketOn) { e.preventDefault(); return bucketAt(e); }
     canvas.setPointerCapture(e.pointerId);
-    const now = performance.now();
-    clock += lastReal ? Math.min(450, now - lastReal) : 0; lastReal = now;
+    tick(performance.now());
     const [x, y] = at(e);
     cur = { c: color, s: size, p: [x, y, Math.round(clock)] }; lastPt = [x, y];
     strokes.push(cur); drawStroke(g, cur); update();
@@ -299,7 +405,7 @@ function drawingPad(main, label, onChange) {
 
 function renderDraw(main) {
   const v = view;
-  hostSays(`draw: ${v.word}`, pick(['no words, no letters, just vibes', 'stick figures count!', 'it doesn’t have to be good, it has to be guessable', `${them()} is counting on you`]));
+  hostSays(`draw: ${v.word}`, pick(['no words, no letters, just vibes', 'stick figures count!', 'it doesn’t have to be good, it has to be guessable', `${them()} is counting on you`, 'the paint bucket fills a shape in one tap 🪣']));
   const send = el('button', 'btn primary', `Send to ${them()}`); send.type = 'button';
   const { strokes, update } = drawingPad(main, `✏️ ${v.word}`, (st) => { send.disabled = !st.length || busy; });
   const r = el('div', 'row'); r.append(send); const msg = el('p', 'msg'); main.append(r, msg);
@@ -392,7 +498,7 @@ function renderMailDraw(who) {
   $('title').textContent = who.self ? 'A doodle for you' : `A doodle for ${who.name}`; $('streak').hidden = true;
   document.title = `${$('title').textContent} · the buddie system`;
   if (who.self) hostSays('just for you', `draw anything! it goes to your Discord DMs and ${who.bud}’s inventory`);
-  else hostSays(`for ${who.name}`, pick([`draw ${who.name} anything! it goes to their Discord DMs`, `${who.bud} would love a drawing. anything goes!`, 'a doodle a day keeps the boredom away', `what would make ${who.name} smile?`]));
+  else hostSays(`for ${who.name}`, pick([`draw ${who.name} anything! it goes to their Discord DMs`, `${who.bud} would love a drawing. anything goes!`, 'a doodle a day keeps the boredom away', `what would make ${who.name} smile?`, 'tip: the paint bucket fills a shape (or the whole background) in one tap 🪣']));
   const main = $('main'); main.textContent = '';
   const send = el('button', 'btn primary', who.self ? 'Send it to me' : `Send to ${who.name}`); send.type = 'button';
   const { strokes, update } = drawingPad(main, null, (st) => { send.disabled = !st.length || busy; });
