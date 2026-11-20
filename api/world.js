@@ -14,6 +14,7 @@ import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
 import { townFor } from '../lib/townStore.js';
 import { awayView, awayAct, porchOf } from '../lib/away.js';
+import { gloamTalk, gloamForget } from '../lib/gloam.js';
 import { dayKey } from '../js/away.js';
 import { waitUntil } from '@vercel/functions';
 
@@ -201,7 +202,7 @@ export async function POST(request) {
   // something done on Lighthouse Rock: a find picked up, a hello to the keeper
   if (body?.away) {
     try {
-      const r = await awayAct(session.id, body.away);
+      const r = body.away.do === 'say' ? await gloamTalk(session.id, body.away) : body.away.do === 'forget' ? await gloamForget(session.id) : await awayAct(session.id, body.away);
       return json(r, r.status || 200);
     } catch (err) { console.error('away failed:', err); return json({ error: 'could not save that' }, 500); }
   }

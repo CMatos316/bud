@@ -52,6 +52,18 @@ canvas#rock { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #toast.gone { opacity: 0; translate: 0 -8px; }
 #stick { position: fixed; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .7); background: rgba(255, 255, 255, .16); pointer-events: none; }
 #stick i { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: rgba(255, 255, 255, .85); box-shadow: 0 2px 8px var(--shadow); }
+/* talking with the keeper: what you might say (chips), a box to type in, Send and Bye */
+#chat { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(520px, calc(100vw - 20px)); background: var(--card); color: var(--ink); border-radius: 20px; padding: 10px; box-shadow: 0 12px 36px var(--shadow); display: flex; flex-direction: column; gap: 8px; touch-action: manipulation; user-select: text; -webkit-user-select: text; }
+#chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+#chips:empty { display: none; }
+#chips button { font: inherit; font-size: 14px; color: var(--ink); background: var(--slot); border: 1px solid var(--chip-line); border-radius: 999px; padding: 7px 12px; min-height: 36px; white-space: nowrap; cursor: pointer; flex: none; }
+.chatrow { display: flex; gap: 6px; align-items: center; }
+#chatIn { flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--ink); background: var(--slot); border: 1px solid var(--chip-line); border-radius: 999px; padding: 10px 14px; min-height: 44px; }
+#chatIn:focus-visible, #chips button:focus-visible { outline: 3px solid #7B6CF6; outline-offset: 1px; }
+#chat .btn { padding: 10px 16px; }
+#chat .btn:disabled { opacity: .5; cursor: default; }
+#chatNote { font-size: 12px; color: var(--muted); padding: 0 6px 2px; display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+#chatNote button { font: inherit; font-size: 12px; color: var(--muted); background: none; border: 0; padding: 4px 0; text-decoration: underline; cursor: pointer; }
 #fade { position: fixed; inset: 0; background: #FFFDF8; opacity: 1; transition: opacity .35s; pointer-events: none; }
 #fade.clear { opacity: 0; }
 #fade.dark { background: #15121C; }
@@ -87,6 +99,15 @@ body.inside #act { background: #F1F0F8; color: #15161F; }
 <div id="hint" class="gone"></div>
 <button id="act" type="button" hidden></button>
 <div id="stick" hidden><i></i></div>
+<form id="chat" hidden autocomplete="off">
+  <div id="chips"></div>
+  <div class="chatrow">
+    <input id="chatIn" type="text" maxlength="200" enterkeyhint="send" aria-label="Say something to the keeper" placeholder="Say something…">
+    <button class="btn primary" id="chatSend" type="submit">Send</button>
+    <button class="btn" id="chatBye" type="button">Bye</button>
+  </div>
+  <div id="chatNote"><span id="chatNoteText">Gloam remembers a little of what you tell it.</span><button type="button" id="chatForget">Make it forget</button></div>
+</form>
 <div class="card" id="findsCard" role="dialog" aria-labelledby="findsTitle" hidden>
   <h2 id="findsTitle">Finds</h2>
   <p id="findsSub"></p>
@@ -727,6 +748,7 @@ const keys = new Set(), stick = { on: false, id: null, x0: 0, y0: 0, x: 0, y: 0,
 let walkTo = null, action = null, moved = false;
 const KEYMAP = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
 addEventListener('keydown', (e) => {
+  if (chat.open) { if (e.code === 'Escape') closeChat(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (!$('findsCard').hidden) { if (e.code === 'Escape' || e.code === 'Enter') $('findsCard').hidden = true; return; }
   if (KEYMAP[e.code]) { keys.add(e.code); walkTo = null; e.preventDefault(); }
@@ -899,7 +921,62 @@ function talk() {
     away.saidHi = true; away.met = true;
     post({ do: 'hi' }).then((r) => { if (r.away) afterFond(r); });
   }
+  openChat(line);
 }
+
+/* ---------------- a real conversation with the keeper ----------------
+   After its hello you can type to Gloam (or tap one of the suggestions) and it answers: lib/gloam.js asks
+   Claude for its line, in a mood that follows how fond it is of you. If that can't be reached, it falls back
+   to its hand-written lines. */
+const chat = { open: false, busy: false, history: [] };
+const chatEl = $('chat'), chatIn = $('chatIn');
+const STARTERS = [['who are you?', 'nice lighthouse!', 'what do you do here?'], ['what’s new on the rock?', 'catch any fish?', 'why so grumpy?'], ['how’s the lamp?', 'tell me about you', 'i found something!'], ['i missed you', 'how was your day?', 'tell me a story']];
+function setChips(list) {
+  const el = $('chips'); el.textContent = '';
+  for (const c of list) { const b = document.createElement('button'); b.type = 'button'; b.textContent = c; b.addEventListener('click', () => sendChat(c)); el.appendChild(b); }
+}
+function openChat(opening) {
+  if (chat.open) return;
+  chat.open = true; chat.busy = false; chat.history = opening ? [{ who: 'gloam', text: opening }] : [];
+  mode = 'chat'; walkTo = null; keys.clear(); me.vx = me.vz = 0; action = null; $('act').hidden = true; $('hint').classList.add('gone');
+  setChips(STARTERS[away.level]); chatIn.value = ''; chatIn.disabled = false; $('chatSend').disabled = false;
+  $('chatNoteText').textContent = `${KEEPER} remembers a little of what you tell it.`;
+  chatEl.hidden = false; placeChat();
+  if (!TOUCH) chatIn.focus();
+}
+function closeChat() {
+  if (!chat.open) return;
+  chat.open = false; chatEl.hidden = true; chatIn.blur(); if (mode === 'chat') mode = 'play';
+}
+async function sendChat(text) {
+  text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (!text || chat.busy || !chat.open) return;
+  chat.busy = true; chatIn.value = ''; $('chatSend').disabled = true; setChips([]);
+  say(me, text, 2600 + text.length * 30);
+  const thinking = setTimeout(() => { if (chat.busy) say(gloam, '…', 20000); }, 700);
+  const r = await post({ do: 'say', text, history: chat.history, doing: gloamAt.doing, inside: gloamAt.area === 'in' });
+  clearTimeout(thinking); chat.busy = false; $('chatSend').disabled = false;
+  if (!chat.open) { gloam.bubbleUntil = 0; return; }
+  const lvl = away.level, speak = (line) => gloamSay(line, 3200 + line.length * 55);
+  if (r.capped) { speak('that’s enough talking for one day. go and find a pinecone.'); setTimeout(closeChat, 2600); return; }
+  if (!r.say) {   // couldn't reach it: one of its own lines, and the talk can go on
+    speak(pick(LINES.more[lvl].filter((l) => l !== lastGloamLine && !l.includes('enough talking')))); setChips(STARTERS[lvl]); return;
+  }
+  chat.history.push({ who: 'me', text }, { who: 'gloam', text: r.say }); chat.history = chat.history.slice(-12);
+  speak(r.say); setChips(r.chips || []);
+  if (r.away) afterFond(r);
+  if (r.bye) { chatIn.disabled = true; $('chatSend').disabled = true; setTimeout(closeChat, 3200 + r.say.length * 55); }
+  else if (!TOUCH) chatIn.focus();
+}
+chatEl.addEventListener('submit', (e) => { e.preventDefault(); sendChat(chatIn.value); });
+$('chatBye').addEventListener('click', () => { closeChat(); say(me, pick(['bye, gloam!', 'see you!', 'bye!']), 1500); });
+$('chatForget').addEventListener('click', async () => {
+  const r = await post({ do: 'forget' });
+  $('chatNoteText').textContent = r.forgot ? `${KEEPER} has forgotten what you told it.` : 'That didn’t work. Try again in a moment.';
+});
+// keep the box above a phone's keyboard
+function placeChat() { const vv = window.visualViewport; chatEl.style.bottom = vv ? `calc(${Math.max(0, innerHeight - vv.height - vv.offsetTop)}px + 14px + env(safe-area-inset-bottom))` : ''; }
+if (window.visualViewport) { visualViewport.addEventListener('resize', placeChat); visualViewport.addEventListener('scroll', placeChat); }
 function afterFond(r) {
   const before = away.level; away = { ...r.away, finds: r.away.finds }; updateFindsPill();
   gloam.mood = away.level >= 2 ? null : 'annoyed';
@@ -907,7 +984,7 @@ function afterFond(r) {
     gloamSay(LINES.gift, 6000); me.happyUntil = T + 3; S.play('chime', { gain: 0.8 });
     toast(`${FINDS.lantern.icon} ${KEEPER} gave you its old lantern. It’s on your porch now.`, 6000);
   }, 4200);
-  else if (away.level > before) setTimeout(() => { if (T > gloam.bubbleUntil - 0.5) gloamSay(['', 'hmph. you’re persistent.', '…you’re all right. for a visitor.', '…i’m glad you keep coming. there. i said it. once.'][away.level], 4500); }, 4200);
+  else if (away.level > before) setTimeout(() => { if (!chat.open && T > gloam.bubbleUntil - 0.5) gloamSay(['', 'hmph. you’re persistent.', '…you’re all right. for a visitor.', '…i’m glad you keep coming. there. i said it. once.'][away.level], 4500); }, 4200);
 }
 
 function fadeThen(fn, dark = false) {
@@ -1057,9 +1134,9 @@ function frame(ms) {
     gloam.look = sameArea && d < 8 ? me : null;
     placeBud(gloam, dt, gloamAt.area === 'in' ? ROOM_Y : height(gloam.x, gloam.z));
     if (gloam.rod.visible) gloam.rod.rotation.z = Math.sin(T * 0.9) * 0.03;
-    if (sameArea && d < 7 && mode === 'play') {
+    if (sameArea && d < 7 && (mode === 'play' || mode === 'chat')) {
       stayT += dt;
-      if (stayT > 60 && !away.stayed && away.saidHi) { away.stayed = true; gloamSay(LINES.stay[lvl], 4200); post({ do: 'stay' }).then((r) => { if (r.away) afterFond(r); }); }
+      if (stayT > 60 && !away.stayed && away.saidHi) { away.stayed = true; if (!chat.open) gloamSay(LINES.stay[lvl], 4200); post({ do: 'stay' }).then((r) => { if (r.away) afterFond(r); }); }
     }
     if (sameArea && d < 9 && !gloam.noticed && mode === 'play') { gloam.noticed = true; if (!away.saidHi) setTimeout(() => { if (!away.saidHi && T > gloam.bubbleUntil) say(gloam, lvl >= 2 ? '…oh. hm.' : '…', 1800); }, 300); }
   }
