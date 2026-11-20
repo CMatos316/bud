@@ -1,10 +1,10 @@
 // bud's sounds, made on the fly with Web Audio: no audio files to download.
 // Every bud has its own babble voice (pitched from its name), plus little pops, boings and squishes.
 // Browsers only allow sound after you tap or press something, so nothing plays before that.
-// window.BudSound.play(name, opts) · .babble(text, seed, opts) · .ambient(on) · .muted / .setMuted(bool)
+// window.BudSound.play(name, opts) · .babble(text, seed, opts) · .ambient(on) · .weather({ rain, wind, snow }) · .muted / .setMuted(bool)
 (function () {
   const KEY = 'bud-sound';
-  let ctx = null, master = null, unlocked = false, muted = false, noiseBuf = null, amb = null, babbling = 0, night = false;
+  let ctx = null, master = null, unlocked = false, muted = false, noiseBuf = null, amb = null, babbling = 0, night = false, wxNow = { rain: 0, wind: 0, snow: 0 };
   try { muted = localStorage.getItem(KEY) === 'off'; } catch (e) {}
   const listeners = new Set();
 
@@ -78,6 +78,8 @@
     sparkle: (v) => [0, 0.06, 0.12, 0.2].forEach((at, i) => tone({ f0: [1319, 1568, 1976, 2637][i] * v.rate, dur: 0.18, gain: 0.07 * v.gain, at })),
     scribble: (v) => [0, 0.07, 0.15, 0.24, 0.31, 0.4].forEach((at, i) => noise({ dur: 0.05, gain: 0.05 * v.gain, f0: 2800 + (i % 3) * 500, q: 3, at })),
     alert: (v) => { tone({ f0: 700 * v.rate, f1: 1200 * v.rate, dur: 0.08, gain: 0.16 * v.gain }); tone({ f0: 900 * v.rate, f1: 1500 * v.rate, dur: 0.1, gain: 0.14 * v.gain, at: 0.09 }); },
+    // a far-off rumble: low noise that rolls in and dies away
+    thunder: (v) => { noise({ dur: 3.2, gain: 0.3 * v.gain, type: 'lowpass', f0: 320, f1: 70, attack: 0.15 }); noise({ dur: 1.4, gain: 0.18 * v.gain, type: 'lowpass', f0: 600, f1: 120, attack: 0.05, at: 0.25 }); tone({ f0: 55, f1: 38, dur: 2.2, gain: 0.12 * v.gain, attack: 0.3 }); },
   };
 
   function play(name, opts = {}) {
@@ -116,7 +118,7 @@
   // Island background: soft wind and the odd bird.
   function ambient(on) {
     if (!on) {
-      if (amb) { try { amb.g.gain.setTargetAtTime(0.0001, now(), 0.4); setTimeout(() => { try { amb.src.stop(); } catch (e) {} }, 1500); clearTimeout(amb.bird); } catch (e) {} amb = null; }
+      if (amb) { try { amb.g.gain.setTargetAtTime(0.0001, now(), 0.4); if (amb.rain) amb.rain.g.gain.setTargetAtTime(0.0001, now(), 0.4); const a = amb; setTimeout(() => { try { a.src.stop(); if (a.rain) a.rain.src.stop(); } catch (e) {} }, 1500); clearTimeout(amb.bird); } catch (e) {} amb = null; }
       return;
     }
     if (amb || !ready()) return;
@@ -127,11 +129,12 @@
     g.gain.value = 0.0001; g.gain.setTargetAtTime(0.035, now(), 2);
     src.connect(f); f.connect(g); g.connect(master);
     src.start(); lfo.start();
-    amb = { src, g };
+    amb = { src, g, f };
+    weather(wxNow);
     // birds by day; crickets (and the odd owl) by night
     const bird = () => {
       if (!amb) return;
-      if (ready()) {
+      if (ready() && wxNow.rain < 0.3 && wxNow.snow < 0.5) {   // birds keep quiet in the rain and snow
         if (night) {
           if (Math.random() < 0.08) {
             tone({ f0: 420, f1: 390, dur: 0.35, gain: 0.03, attack: 0.08 }); tone({ f0: 400, f1: 360, dur: 0.5, gain: 0.03, attack: 0.08, at: 0.45 });
@@ -147,6 +150,22 @@
       amb.bird = setTimeout(bird, night ? 700 + Math.random() * 900 : 7000 + Math.random() * 12000);
     };
     amb.bird = setTimeout(bird, 4000);
+  }
+
+  // The island's weather: rain patters on top of the wind, and the wind picks up. Amounts are 0..1.
+  function weather(w) {
+    wxNow = { rain: w.rain || 0, wind: w.wind || 0, snow: w.snow || 0 };
+    if (!amb || !ctx) return;
+    if (!amb.rain && wxNow.rain > 0.02) {
+      const src = ctx.createBufferSource(), hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = noiseBuf; src.loop = true;
+      hp.type = 'highpass'; hp.frequency.value = 800; lp.type = 'lowpass'; lp.frequency.value = 5200;
+      g.gain.value = 0.0001; src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master); src.start();
+      amb.rain = { src, g };
+    }
+    if (amb.rain) amb.rain.g.gain.setTargetAtTime(0.0001 + wxNow.rain * 0.075, now(), 2);
+    amb.g.gain.setTargetAtTime(0.035 + wxNow.wind * 0.05 + wxNow.snow * 0.01, now(), 2.5);
+    amb.f.frequency.setTargetAtTime(420 + wxNow.wind * 520, now(), 2.5);
   }
 
   function setMuted(m) {
@@ -171,7 +190,7 @@
   }
 
   window.BudSound = {
-    play, babble, ambient, setMuted, bindToggle, onChange: (f) => listeners.add(f),
+    play, babble, ambient, weather, setMuted, bindToggle, onChange: (f) => listeners.add(f),
     setNight: (n) => { night = !!n; },
     get muted() { return muted; }, get ready() { return ready(); },
   };

@@ -67,6 +67,10 @@ body {
   -webkit-user-select: none; user-select: none;
 }
 #world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+/* a rainbow in the sky behind the island, after rain (its strength is set by the weather) */
+#rainbow { position: fixed; left: 50%; top: 4vh; width: max(120vw, 900px); aspect-ratio: 2 / 1; transform: translateX(-50%); pointer-events: none; opacity: 0; transition: opacity 4s;
+  background: radial-gradient(circle at 50% 100%, transparent 0 62%, rgba(199,125,255,.55) 62.5%, rgba(121,80,242,.6) 64%, rgba(77,171,247,.65) 65.6%, rgba(105,219,124,.65) 67.2%, rgba(255,224,102,.7) 68.8%, rgba(255,169,77,.65) 70.4%, rgba(255,107,107,.6) 72%, transparent 73.5%);
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 92%); mask-image: linear-gradient(180deg, #000 55%, transparent 92%); }
 #world.dragging { cursor: grabbing; }
 #world.over-bud { cursor: pointer; }
 
@@ -334,6 +338,12 @@ body { transition: background 2s linear; }
 .paper .gossip li { display: flex; gap: 10px; align-items: center; font-size: 15px; line-height: 1.35; }
 .paper .gossip b { font-weight: 600; }
 .paper .quiet { margin: 0; color: var(--paper-mute); font-size: 14px; }
+.paper .forecast { display: grid; grid-template-columns: repeat(7, 1fr); border: 1px solid var(--paper-rule); border-radius: 12px; overflow: hidden; }
+.paper .forecast .day { display: grid; justify-items: center; gap: 2px; padding: 8px 2px; text-align: center; }
+.paper .forecast .day + .day { border-left: 1px solid var(--paper-rule); }
+.paper .forecast .wd { font: 500 10.5px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--paper-mute); }
+.paper .forecast .ic { font-size: 22px; line-height: 1.2; }
+.paper .forecast .w { font-size: 11.5px; color: var(--paper-mute); line-height: 1.15; }
 .paper footer { margin-top: 14px; padding-top: 10px; border-top: 3px double var(--paper-rule); text-align: center; font: 500 11.5px var(--font-mono); color: var(--paper-mute); letter-spacing: .06em; }
 @media (max-width: 560px) {
   .paper { padding: 22px 18px 18px; }
@@ -438,6 +448,7 @@ body { transition: background 2s linear; }
 </head>
 <body>
 
+<div id="rainbow" aria-hidden="true"></div>
 <canvas id="world" aria-label="The bud world: a floating island where everyone's buds wander around. Drag to look around, tap a bud to say hi."></canvas>
 <div id="labels" aria-hidden="true"></div>
 
@@ -541,6 +552,7 @@ body { transition: background 2s linear; }
 <script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
 <script type="module">
 import { setExtents, buildMesh, drawEyeStyle, setClock, clamp, inPoly, distToPoly, SPACING as EYE_SPACING } from '/js/bud-core.js';
+import { weatherAt, seasonAt, snowCoverAt, groundWetAt, sunTimes, skyHour, forecast } from '/js/seasons.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
 // sound effects and bud voices (js/sound.js); silent stand-in if it didn't load
@@ -626,6 +638,7 @@ function buildIsland(nBuds) {
   const grass = new THREE.MeshStandardMaterial({ color: toLinear('#86CF86'), roughness: 0.95, envMapIntensity: 0.35 });
   const grassSide = new THREE.MeshStandardMaterial({ color: toLinear('#6DB774'), roughness: 0.95, envMapIntensity: 0.35 });
   const top = new THREE.Mesh(topGeo, [grass, grassSide]); top.userData.ground = true; group.add(top);
+  seasonTint(grass, '#A4C27A', 0.92, '#E4ECF4'); seasonTint(grassSide, '#8DAE6C', 0.85, '#C3CFDC');
 
   // rocky underside, a lumpy upside-down cone
   const h = R * 0.85;
@@ -653,6 +666,7 @@ function buildIsland(nBuds) {
   // trees and rocks near the rim
   const trunkMat = new THREE.MeshStandardMaterial({ color: toLinear('#A47551'), roughness: 1 });
   const leafCols = ['#7FCB8A', '#A6E3A1', '#6BBF7A', '#B9E8B0'].map((c) => new THREE.MeshStandardMaterial({ color: toLinear(c), roughness: 0.9, flatShading: true }));
+  leafCols.forEach((m, i) => seasonTint(m, ['#E8873A', '#F2C14E', '#D9573B', '#F0A35E'][i], 0.72));
   const rockMat = new THREE.MeshStandardMaterial({ color: toLinear('#B7B5C6'), roughness: 1, flatShading: true });
   const place = (minR, maxR, clear, rnd) => {
     for (let tries = 0; tries < 40; tries++) {
@@ -673,7 +687,7 @@ function buildIsland(nBuds) {
       leaf.position.set((tr() - 0.5) * 0.3 * s, (1.25 + k * 0.5) * s, (tr() - 0.5) * 0.3 * s); leaf.rotation.y = tr() * 3;
       t.add(leaf);
     }
-    t.position.set(p.x, 0, p.z); group.add(t);
+    t.position.set(p.x, 0, p.z); group.add(t); seasonal.trees.push(t); t.userData.ph = tr() * 6;
     obstacles.push({ x: p.x, z: p.z, r: 0.9 * s });
   }
   for (let i = 0; i < Math.round(R * 0.4); i++) {
@@ -691,7 +705,7 @@ function buildIsland(nBuds) {
     const f = new THREE.Group();
     const st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 4), stem); st.position.y = 0.11; f.add(st);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), petal[i % petal.length]); head.position.y = 0.24; f.add(head);
-    f.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); group.add(f);
+    f.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); group.add(f); seasonal.flowers.push(f);
     flowers.push({ x: f.position.x, z: f.position.z });
   }
 
@@ -705,8 +719,8 @@ function buildIsland(nBuds) {
       const puff = new THREE.Mesh(new THREE.SphereGeometry(s, 14, 10), cloudMat);
       puff.position.set(k * 1.3 - 2, rand(-0.3, 0.3), rand(-0.6, 0.6)); c.add(puff);
     }
-    const d = { g: c, a: Math.random() * Math.PI * 2, r: R * rand(1.5, 2.3), y: rand(-R * 0.6, R * 0.3), sp: rand(0.015, 0.04) * (Math.random() < 0.5 ? -1 : 1) };
-    c.scale.setScalar(rand(0.7, 1.2));
+    const d = { g: c, a: Math.random() * Math.PI * 2, r: R * rand(1.5, 2.3), y: rand(-R * 0.6, R * 0.3), sp: rand(0.015, 0.04) * (Math.random() < 0.5 ? -1 : 1), s0: rand(0.7, 1.2) };
+    c.scale.setScalar(d.s0);
     scene.add(c); clouds.push(d);
   }
 
@@ -756,7 +770,7 @@ const nearHome = (x, z, pad) => !!TOWN && TOWN.homes.some((h) => !h.gone && Math
 function gableRoof(w, d, rise, over, mat) {   // the ridge runs front to back
   const s = new THREE.Shape(); s.moveTo(-w / 2 - over, 0); s.lineTo(w / 2 + over, 0); s.lineTo(0, rise); s.closePath();
   const m = new THREE.Mesh(new THREE.ExtrudeGeometry(s, { depth: d + over * 2, bevelEnabled: false }), mat);
-  m.position.z = -(d / 2 + over);
+  m.position.z = -(d / 2 + over); m.userData.roof = true;   // snow settles on it in winter
   const g = new THREE.Group(); g.add(m); return g;
 }
 function gableWall(w, rise, mat) {
@@ -804,7 +818,7 @@ const HOME_SHAPES = {
   hut(g, r, u) {
     const R0 = 0.95 + r() * 0.13, H = 1.25 + r() * 0.3, rh = 1.2 + r() * 0.7;
     g.add(TCYL(R0, R0 * 1.05, H, 16, u.wall, 0, H / 2, 0));
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(R0 + 0.3, rh, 16), u.roof); roof.position.y = H + rh / 2 - 0.04; g.add(roof);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(R0 + 0.3, rh, 16), u.roof); roof.position.y = H + rh / 2 - 0.04; roof.userData.roof = true; g.add(roof);
     const top = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), townMat('#FFC93C', { metalness: 0.5, roughness: 0.4 })); top.position.y = H + rh; g.add(top);
     doorOn(g, 0, 0, R0 - 0.01, 0.6, 0.95, u.door, true);
     for (const a of [-1.05, 1.05]) { const w = roundWindow(0.2); w.rotation.y = a; w.position.set(Math.sin(a) * (R0 + 0.02), H * 0.62, Math.cos(a) * (R0 + 0.02)); g.add(w); }
@@ -868,7 +882,7 @@ const HOME_SHAPES = {
   },
   // a tent: where a newcomer stays for their first few days, before their home is built
   tent(g, r, u) {
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.25, 1.7, 4), u.wall); cone.rotation.y = Math.PI / 4; cone.position.y = 0.85; g.add(cone);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.25, 1.7, 4), u.wall); cone.rotation.y = Math.PI / 4; cone.position.y = 0.85; cone.userData.roof = true; g.add(cone);
     const s = new THREE.Shape(); s.moveTo(-0.34, 0); s.lineTo(0.34, 0); s.lineTo(0, 1.0); s.closePath();
     const flap = new THREE.Mesh(new THREE.ShapeGeometry(s), townMat('#4A3B33')); flap.rotation.x = -Math.atan2(0.884, 1.7); flap.position.set(0, 0.02, 0.9); g.add(flap);
     g.add(TCYL(0.02, 0.02, 0.6, 5, townMat(WOOD), 0, 1.95, 0));
@@ -884,7 +898,7 @@ const FLOWER_COLS = ['#FF9EBB', '#FFE07A', '#FFFFFF', '#B9A6FF', '#FF8A6B'];
 let flowerGeo = null;
 function flower(r, x, y, z) {
   flowerGeo = flowerGeo || new THREE.SphereGeometry(0.09, 7, 5);
-  const m = new THREE.Mesh(flowerGeo, townMat(FLOWER_COLS[Math.floor(r() * FLOWER_COLS.length)])); m.position.set(x, y, z); return m;
+  const m = new THREE.Mesh(flowerGeo, townMat(FLOWER_COLS[Math.floor(r() * FLOWER_COLS.length)])); m.position.set(x, y, z); seasonal.flowers.push(m); return m;
 }
 const NEW_HOME_MS = 3 * 864e5;   // a newcomer's first days are in a tent
 function makeHome(h) {
@@ -980,10 +994,13 @@ function buildTown() {
     pts.forEach(([x, z, w], k) => { q.setFromAxisAngle(up, (k * 1.7) % 6.28); m4.compose(v.set(x, y + (k % 3) * 0.001, z), q, sc.set(w, 1, w)); inst.setMatrixAt(k, m4); });
     group.add(inst);
   };
-  instanced(new THREE.CylinderGeometry(0.55, 0.6, 0.05, 12), TM('#BCA27C', { roughness: 1 }), dirtPts, 0.02);
-  instanced(new THREE.CylinderGeometry(0.27, 0.3, 0.06, 8), TM('#B4A994', { roughness: 1, flatShading: true }), stonePts, 0.035);
+  const dirtMat = TM('#BCA27C', { roughness: 1 }), stoneMat = TM('#B4A994', { roughness: 1, flatShading: true });
+  instanced(new THREE.CylinderGeometry(0.55, 0.6, 0.05, 12), dirtMat, dirtPts, 0.02);
+  instanced(new THREE.CylinderGeometry(0.27, 0.3, 0.06, 8), stoneMat, stonePts, 0.035);
   // the campfire square: worn ground inside the ring of stones
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(SQ + 0.25, 40), TM('#C4A772', { roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 }));
+  const groundMat = TM('#C4A772', { roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 });
+  seasonTint(dirtMat, null, 0.5); seasonTint(stoneMat, null, 0.35); seasonTint(groundMat, null, 0.42);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(SQ + 0.25, 40), groundMat);
   ground.rotation.x = -Math.PI / 2; ground.position.y = 0.012; group.add(ground);
   // the notice board, and a well once ten buds live here, either side of the road where it meets the square
   {
@@ -1031,6 +1048,7 @@ function buildTown() {
       const a = tr() * Math.PI * 2, rr = Math.sqrt(tr()) * Math.min(reach, WALK_R), x = Math.cos(a) * rr, z = Math.sin(a) * rr;
       if (townBlocked(x, z, 0.7) || nearHome(x, z, 1.0) || obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 0.9)) continue;
       const t = townTree('towntree:' + i); t.position.set(x, 0, z); group.add(t); obstacles.push({ x, z, r: t.userData.r });
+      seasonal.trees.push(t); t.userData.ph = tr() * 6;
       break;
     }
   }
@@ -1062,6 +1080,9 @@ function buildTown() {
   }
   for (let i = solidFrom; i < obstacles.length; i++) obstacles[i].town = true;
   scene.add(group); town.group = group; town.dirt = dirtPts;
+  // greenery changes with the seasons, and snow settles on every roof in winter
+  for (const [hex, fallHex] of [['#7FCB8A', '#E8873A'], ['#6BBF7A', '#D9573B'], ['#A6E3A1', '#F2C14E'], ['#8FD08A', '#B8B06A']]) if (townMats[hex]) seasonTint(townMats[hex], fallHex, hex === '#8FD08A' ? 0.9 : 0.72);
+  addRoofSnow(group);
 }
 function homeAt(x, y) {
   if (!town.group || !town.group.visible) return null;
@@ -1419,6 +1440,21 @@ const HEAD = {
     const dot = mesh(new THREE.CircleGeometry(bud.b.w * 0.035, 20), '#E8394B'); return headRing(bud, '#FFFFFF', dot);
   },
   sweatband: (bud) => headRing(bud, '#E8394B'),
+  // winter gear (handed out at random each winter, like the Halloween costumes)
+  beanie(bud) {
+    const b = bud.b, u = b.w, top = topOf(b), g = new THREE.Group();
+    const col = ['#E8394B', '#4FA39A', '#FFC23E', '#7C6CFF'][Math.floor(seeded('beanie:' + bud.data.id)() * 4)];
+    const dome = mesh(new THREE.SphereGeometry(u * 0.2, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), col); dome.scale.y = 1.1; g.add(dome);
+    const cuff = mesh(new THREE.CylinderGeometry(u * 0.205, u * 0.21, u * 0.075, 24), '#FFFFFF'); cuff.position.y = u * 0.015; g.add(cuff);
+    const pom = mesh(new THREE.SphereGeometry(u * 0.06, 12, 10), '#FFFFFF'); pom.position.y = u * 0.23; g.add(pom);
+    g.position.set(top.x, -top.y - u * 0.05, 0); g.rotation.z = -0.1; return g;
+  },
+  earmuffs(bud) {
+    const b = bud.b, u = b.w, y = b.minY + b.h * 0.3, sd = sidesAt(b, y, b.h * 0.06), top = topOf(b), g = new THREE.Group();
+    for (const [x, s] of [[sd.l, -1], [sd.r, 1]]) { const m = mesh(new THREE.SphereGeometry(u * 0.09, 16, 12), '#FFB3C7', { roughness: 1 }); m.scale.x = 0.72; m.position.set(x + s * u * 0.02, -y, 0); g.add(m); }
+    g.add(tube([new THREE.Vector3(sd.l, -y + u * 0.06, 0), new THREE.Vector3(sd.l + (top.x - sd.l) * 0.25, -top.y + u * 0.07, 0), new THREE.Vector3(top.x, -top.y + u * 0.1, 0), new THREE.Vector3(sd.r - (sd.r - top.x) * 0.25, -top.y + u * 0.07, 0), new THREE.Vector3(sd.r, -y + u * 0.06, 0)], u * 0.02, '#8E7CFF'));
+    return g;
+  },
 };
 
 // in hand (held at the side) or on the ground beside the bud; built at unit size u, base at y = 0
@@ -1430,6 +1466,16 @@ const ball = (u, hex, seams) => {
   return g;
 };
 const HAND = {
+  // a mug of cocoa with marshmallows (winter gear)
+  cocoa: { at: 'held', make(u) {
+    const g = new THREE.Group();
+    const mug = mesh(new THREE.CylinderGeometry(u * 0.075, u * 0.068, u * 0.15, 18, 1, true), '#E8394B', { side: THREE.DoubleSide }); g.add(mug);
+    const base = mesh(new THREE.CircleGeometry(u * 0.068, 18), '#E8394B'); base.rotation.x = Math.PI / 2; base.position.y = -u * 0.075; g.add(base);
+    const drink = mesh(new THREE.CircleGeometry(u * 0.07, 18), '#7A4A2E'); drink.rotation.x = -Math.PI / 2; drink.position.y = u * 0.055; g.add(drink);
+    for (const [x, z] of [[-0.02, 0.01], [0.025, -0.015], [0.005, 0.03]]) { const m = mesh(new THREE.BoxGeometry(u * 0.032, u * 0.026, u * 0.032), '#FFFFFF'); m.position.set(u * x, u * 0.065, u * z); m.rotation.y = x * 20; g.add(m); }
+    const handle = mesh(new THREE.TorusGeometry(u * 0.04, u * 0.012, 8, 16, Math.PI * 1.2), '#E8394B'); handle.position.set(u * 0.075, 0, 0); handle.rotation.z = -Math.PI * 0.6; g.add(handle);
+    return g;
+  } },
   controller: { at: 'held', make(u) {
     const g = new THREE.Group();
     const body = mesh(new THREE.BoxGeometry(u * 0.3, u * 0.12, u * 0.06), '#3B3F52'); g.add(body);
@@ -1590,23 +1636,26 @@ function applyWear(bud) {
 function updateSky(dt) {
   if (T >= skyBits.nextSky) {
     skyBits.nextSky = T + 1;
-    const k = skyAt(localHour());
+    weatherSecond();
+    const sunT = sunNow(), hs = skyHour(localHour(), sunT.rise, sunT.set);
+    const k = weatherSky(skyAt(hs));
     const root = document.documentElement.style;
     root.setProperty('--sky-top', k.top); root.setProperty('--sky-bottom', k.bottom);
     document.documentElement.dataset.sky = k.night > 0.45 ? 'night' : 'day';
-    sun.intensity = k.sun; sun.color.set(k.sunColor).convertSRGBToLinear(); hemi.intensity = k.hemi;
+    sun.intensity = k.sun; sun.color.set(k.sunColor).convertSRGBToLinear(); hemi.intensity = k.hemi; skyBits.hemiBase = k.hemi; skyBits.bottom = k.bottom;
     hemi.color.set(mixHex('#FFFFFF', '#8E9CFF', k.night)).convertSRGBToLinear();
     fill.intensity = 0.22 * (1 - k.night * 0.7);
-    const h = localHour(), az = (h / 24) * Math.PI * 2;
+    const h = hs, az = (h / 24) * Math.PI * 2;
     sun.position.set(Math.cos(az) * 14, 8 + 10 * Math.max(0.2, Math.sin((h - 6) / 12 * Math.PI)), Math.sin(az) * 14);
     scene.environment = k.night > 0.5 ? ENV_NIGHT : ENV_DAY;
-    if (skyBits.cloudMat) { skyBits.cloudMat.color.set(mixHex('#FFFFFF', '#59608F', k.night)).convertSRGBToLinear(); skyBits.cloudMat.emissiveIntensity = 0.15 * (1 - k.night); }
+    if (skyBits.cloudMat) { skyBits.cloudMat.color.set(mixHex(mixHex('#FFFFFF', '#9AA2B4', wx.cloud * 0.75), '#59608F', k.night)).convertSRGBToLinear(); skyBits.cloudMat.emissiveIntensity = 0.15 * (1 - k.night) * (1 - wx.cloud * 0.6); }
     NIGHT = k.night;
     if (S.setNight) S.setNight(NIGHT > 0.5);
   }
   const n = NIGHT;
-  if (skyBits.stars) { skyBits.stars.material.opacity = n; skyBits.stars.rotation.y += dt * 0.003; }
-  if (skyBits.moon) skyBits.moon.material.opacity = n;
+  const clear = 1 - clamp(wx.cloud * 0.9 + wx.fog * 0.5, 0, 1);
+  if (skyBits.stars) { skyBits.stars.material.opacity = n * clear; skyBits.stars.rotation.y += dt * 0.003; }
+  if (skyBits.moon) skyBits.moon.material.opacity = n * clear;
   const f = skyBits.fire;
   if (f) {
     const lit = clamp((n - 0.15) / 0.5, 0, 1);
@@ -1619,7 +1668,7 @@ function updateSky(dt) {
   }
   const ffl = skyBits.fireflies;
   if (ffl) {
-    ffl.points.material.opacity = n * (0.7 + Math.sin(T * 3) * 0.2);
+    ffl.points.material.opacity = n * (0.7 + Math.sin(T * 3) * 0.2) * (SEASON === 'winter' ? 0 : 1 - Math.max(wx.rain, wx.snow));
     const a = ffl.points.geometry.attributes.position;
     ffl.seeds.forEach((s, i) => a.setXYZ(i, s.x + Math.sin(T * 0.4 + s.p) * 0.8, s.y + Math.sin(T * 1.3 + s.p) * 0.25, s.z + Math.cos(T * 0.35 + s.p) * 0.8));
     a.needsUpdate = true;
@@ -1638,6 +1687,310 @@ function updateSky(dt) {
     u.mat.opacity = clamp((n - 0.2) / 0.4, 0, 1);
     bat.visible = u.mat.opacity > 0.02;
   }
+}
+
+/* ---------------- seasons and weather: the same island weather for everyone (js/seasons.js) ---------------- */
+// The island has its own weather, worked out from the clock, so everyone sees the same rain at the same time.
+// Snow settles from the first snowfall in December until it melts in March, and the koi pond freezes over.
+// ?season=winter|spring|summer|fall and ?weather=clear|cloudy|rain|storm|snow|blizzard|fog|windy|rainbow preview them.
+const SEASON_OVERRIDE = ['winter', 'spring', 'summer', 'fall'].includes(params.get('season')) ? params.get('season') : null;
+const WEATHER_PRESETS = {
+  clear: {}, cloudy: { cloud: 0.85 }, rain: { cloud: 1, rain: 0.85 }, storm: { cloud: 1, rain: 1, storm: 1, wind: 0.8 },
+  snow: { cloud: 0.85, snow: 0.8 }, blizzard: { cloud: 1, snow: 1, wind: 1 }, fog: { fog: 1, cloud: 0.4 }, windy: { wind: 1, cloud: 0.35 },
+  rainbow: { rainbow: 1, cloud: 0.3 },
+};
+const WEATHER_OVERRIDE = Object.hasOwn(WEATHER_PRESETS, params.get('weather') || '') ? params.get('weather') : null;
+const LOW_FX = matchMedia('(pointer: coarse)').matches || innerWidth < 700;   // fewer raindrops on phones
+const SEASON = SEASON_OVERRIDE || seasonAt(Date.now());
+// the weather right now, eased toward where it's headed so changes drift in rather than snap
+const wx = { cloud: 0, rain: 0, snow: 0, storm: 0, fog: 0, wind: 0, rainbow: 0, wet: 0, cover: 0, kind: 'clear', goal: null, ready: false, since: 0 };
+function sunNow() {
+  if (SEASON_OVERRIDE) return sunTimes({ winter: 11, spring: 3, summer: 5, fall: 9 }[SEASON_OVERRIDE], 15);
+  const d = new Date(); return sunTimes(d.getMonth(), d.getDate());
+}
+function weatherGoal() {
+  const now = Date.now();
+  let w;
+  if (WEATHER_OVERRIDE) {
+    w = { cloud: 0, rain: 0, snow: 0, storm: 0, fog: 0, wind: 0, rainbow: 0, ...WEATHER_PRESETS[WEATHER_OVERRIDE], kind: WEATHER_OVERRIDE === 'rainbow' ? 'clear' : WEATHER_OVERRIDE };
+    w.wet = w.rain;
+  } else {
+    w = weatherAt(now);
+    if (SEASON_OVERRIDE) {   // previewing another season: its kind of rain or snow
+      const cold = SEASON_OVERRIDE === 'winter', p = Math.max(w.rain, w.snow);
+      w.rain = cold ? 0 : p; w.snow = cold ? p : 0; w.rainbow = cold ? 0 : w.rainbow;
+      if (w.kind === 'rain' && cold) w.kind = 'snow'; else if (w.kind === 'snow' && !cold) w.kind = 'rain';
+    }
+    w.wet = SEASON_OVERRIDE ? w.rain : groundWetAt(now);
+  }
+  w.cover = params.get('cover') === '0' ? 0 : WEATHER_OVERRIDE === 'snow' || WEATHER_OVERRIDE === 'blizzard' || SEASON_OVERRIDE === 'winter' ? 1 : SEASON_OVERRIDE ? 0 : snowCoverAt(now);
+  if (w.cover > 0.3) w.wet = 0;   // no puddles on snow
+  return w;
+}
+// once a second: where the weather is headed (worked out again every half minute), and a step toward it
+function weatherSecond() {
+  if (!wx.goal || T > wx.goalAt) {
+    const before = wx.goal ? wx.goal.kind : null, hadRainbow = wx.goal && wx.goal.rainbow > 0.3;
+    wx.goal = weatherGoal(); wx.goalAt = T + 30;
+    if (before && before !== wx.goal.kind) weatherNews(before, wx.goal.kind);
+    else if (before && !hadRainbow && wx.goal.rainbow > 0.3) weatherNews(before, 'rainbow');
+    S.weather && S.weather({ rain: wx.goal.rain, wind: wx.goal.wind, snow: wx.goal.snow });
+  }
+  const g = wx.goal, k = wx.ready ? 0.06 : 1;
+  for (const key of ['cloud', 'rain', 'snow', 'storm', 'fog', 'wind', 'rainbow', 'wet', 'cover']) wx[key] += (g[key] - wx[key]) * k;
+  wx.kind = g.kind; wx.ready = true;
+  applySeason();
+}
+// grey skies: clouds and fog wash out the sky's colors and dim the sun
+function weatherSky(k) {
+  const grey = clamp(wx.cloud * 0.55 + wx.fog * 0.35 + Math.max(wx.rain, wx.snow) * 0.15, 0, 0.8);
+  k.top = mixHex(k.top, mixHex('#A7B0C2', '#262A3A', k.night), grey);
+  k.bottom = mixHex(k.bottom, mixHex('#D3D8E2', '#353849', k.night), clamp(grey + wx.fog * 0.2, 0, 0.85));
+  k.sun *= 1 - clamp(wx.cloud * 0.5 + wx.fog * 0.25, 0, 0.7);
+  k.hemi *= 1 + wx.cloud * 0.12;
+  return k;
+}
+
+// Everything that changes with the seasons: its summer color, its fall color, and how white snow makes it.
+const seasonal = { tints: [], flowers: [], trees: [], caps: [], applied: '' };
+function seasonTint(mat, fallHex, snowK = 0.85, snowHex = '#E9EFF5') {
+  seasonal.tints.push({ mat, base: mat.color.clone(), fall: fallHex ? toLinear(fallHex) : null, snow: toLinear(snowHex), snowK });
+}
+// a cap of snow on every roof, hidden until winter: the same shape, a little higher, so the roof's edge shows
+const snowMat = new THREE.MeshStandardMaterial({ color: toLinear('#EEF3F8'), roughness: 0.9 });
+function addRoofSnow(root) {
+  const roofs = [];
+  root.traverse((o) => { if (o.isMesh && o.userData.roof) roofs.push(o); });
+  for (const o of roofs) {
+    const cap = new THREE.Mesh(o.geometry, snowMat), cone = o.geometry.type === 'ConeGeometry';
+    cap.position.copy(o.position); cap.position.y += cone ? 0.09 : 0.07;
+    cap.rotation.copy(o.rotation); cap.scale.copy(o.scale).multiply(new THREE.Vector3(1.03, 1, cone ? 1.03 : 1));
+    cap.visible = false; o.parent.add(cap); seasonal.caps.push(cap);
+  }
+}
+function applySeason() {
+  const key = SEASON + '|' + wx.cover.toFixed(2);
+  if (key === seasonal.applied) return;
+  seasonal.applied = key;
+  // fall turns the leaves; in winter they stay a little brown until the snow covers them
+  const fallK = SEASON === 'fall' ? 1 : SEASON === 'winter' ? 0.5 : 0;
+  const c = new THREE.Color();
+  for (const t of seasonal.tints) {
+    c.copy(t.base); if (t.fall) c.lerp(t.fall, fallK);
+    t.mat.color.copy(c.lerp(t.snow, wx.cover * t.snowK));
+  }
+  for (const f of seasonal.flowers) f.visible = wx.cover < 0.35;
+  for (const cap of seasonal.caps) cap.visible = wx.cover > 0.3;
+  // the koi pond freezes under the snow
+  const frozen = wx.cover > 0.3;
+  if (pond.group && pond.frozen !== frozen) {
+    pond.frozen = frozen;
+    const m = pond.water.material;
+    m.color.set(frozen ? '#9CCBE2' : '#6CC6D6').convertSRGBToLinear(); m.opacity = frozen ? 0.95 : 0.55; m.roughness = frozen ? 0.5 : 0.12; m.metalness = frozen ? 0 : 0.1; m.envMapIntensity = frozen ? 0.3 : 1;
+    for (const f of pond.fish) f.g.visible = !frozen;
+    for (const p of pond.pads || []) p.visible = !frozen;
+    if (pond.lotus) pond.lotus.visible = !frozen;
+  }
+}
+
+// rain, snow, puddles, a rainbow and lightning
+const fx = { rain: null, rd: null, nr: 0, snow: null, sd: null, ns: 0, puddles: [], puddleMat: null, rbo: null, flash: 0, nextBolt: 0, breath: [], breathAt: 0, splashes: [], snowBuds: [] };
+const spawnArea = () => { const r = clamp(cam.dist * 0.55, 5, R * 1.4); return { x: cam.target.x, z: cam.target.z, r, top: r * 0.9 + 5 }; };
+function respawn(d, i, stride, a, anywhere) {
+  const ang = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * a.r;
+  d[i * stride] = a.x + Math.cos(ang) * rr; d[i * stride + 2] = a.z + Math.sin(ang) * rr;
+  d[i * stride + 1] = anywhere ? Math.random() * a.top : a.top * rand(0.85, 1);
+}
+function buildWeather() {
+  const a = spawnArea();
+  // rain: short streaks
+  fx.nr = LOW_FX ? 450 : 900;
+  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fx.nr * 6), 3));
+  fx.rain = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: 0xB4CCEA, transparent: true, opacity: 0.55, depthWrite: false }));
+  fx.rain.frustumCulled = false; fx.rain.visible = false; scene.add(fx.rain);
+  fx.rd = new Float32Array(fx.nr * 4);
+  for (let i = 0; i < fx.nr; i++) { respawn(fx.rd, i, 4, a, true); fx.rd[i * 4 + 3] = rand(13, 18); }
+  // snow: soft round flakes
+  fx.ns = LOW_FX ? 550 : 1100;
+  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const x = c.getContext('2d'), gr = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,.95)'); gr.addColorStop(0.7, 'rgba(160,178,205,.55)'); gr.addColorStop(1, 'rgba(160,178,205,0)');   // a faint grey rim, so flakes show against the snow
+  x.fillStyle = gr; x.fillRect(0, 0, 32, 32);
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fx.ns * 3), 3));
+  fx.snow = new THREE.Points(sg, new THREE.PointsMaterial({ size: LOW_FX ? 0.26 : 0.21, map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, opacity: 0.95 }));
+  fx.snow.frustumCulled = false; fx.snow.visible = false; scene.add(fx.snow);
+  fx.sd = new Float32Array(fx.ns * 5);
+  for (let i = 0; i < fx.ns; i++) { respawn(fx.sd, i, 5, a, true); fx.sd[i * 5 + 3] = rand(0.7, 1.3); fx.sd[i * 5 + 4] = Math.random() * 6; }
+  // puddles on open grass, shining while the ground is wet
+  fx.puddleMat = new THREE.MeshStandardMaterial({ color: toLinear('#8AAAC6'), roughness: 0.05, metalness: 0.25, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  const pr = seeded('puddles');
+  for (let i = 0, tries = 0; i < Math.round(R * 0.8) && tries < 200; tries++) {
+    const ang = pr() * Math.PI * 2, rr = Math.sqrt(pr()) * WALK_R * 0.9, px = Math.cos(ang) * rr, pz = Math.sin(ang) * rr, sz = 0.45 + pr() * 0.5;
+    if (obstacles.some((o) => Math.hypot(o.x - px, o.z - pz) < o.r + sz + 0.3) || (TOWN && nearHome(px, pz, 0.6))) continue;
+    const m = new THREE.Mesh(new THREE.CircleGeometry(sz, 20), fx.puddleMat);
+    m.rotation.x = -Math.PI / 2; m.rotation.z = pr() * 3; m.scale.y = 0.65 + pr() * 0.3; m.position.set(px, 0.015, pz); m.renderOrder = 1; m.visible = false;
+    scene.add(m); fx.puddles.push({ m, x: px, z: pz, r: sz }); i++;
+  }
+  scene.fog = new THREE.Fog(0xffffff, 1e4, 2e4);   // always there, so nothing needs redrawing when fog rolls in
+}
+
+function weatherTick(dt) {
+  if (!fx.rain) return;
+  const a = spawnArea();
+  // rain
+  const nRain = Math.floor(fx.nr * clamp(wx.rain * 1.1, 0, 1));
+  fx.rain.visible = nRain > 0;
+  if (nRain) {
+    const pos = fx.rain.geometry.attributes.position.array, d = fx.rd, slant = 0.06 + wx.wind * 0.35;
+    for (let i = 0; i < nRain; i++) {
+      const j = i * 4; let x = d[j], y = d[j + 1], z = d[j + 2]; const sp = d[j + 3];
+      y -= sp * dt; x += slant * sp * dt;
+      if (y < 0 || (x - a.x) ** 2 + (z - a.z) ** 2 > a.r * a.r * 1.5) { respawn(d, i, 4, a, y >= 0); x = d[j]; y = d[j + 1]; z = d[j + 2]; }
+      d[j] = x; d[j + 1] = y;
+      pos.set([x, y, z, x - slant * 0.5, y + 0.55, z], i * 6);
+    }
+    fx.rain.geometry.attributes.position.needsUpdate = true; fx.rain.geometry.setDrawRange(0, nRain * 2);
+    fx.rain.material.opacity = 0.35 + wx.rain * 0.25 - NIGHT * 0.15;
+  }
+  // snow
+  const nSnow = Math.floor(fx.ns * clamp(wx.snow * 1.1, 0, 1));
+  fx.snow.visible = nSnow > 0;
+  if (nSnow) {
+    const pos = fx.snow.geometry.attributes.position.array, d = fx.sd;
+    for (let i = 0; i < nSnow; i++) {
+      const j = i * 5; let x = d[j], y = d[j + 1], z = d[j + 2]; const sp = d[j + 3], ph = d[j + 4];
+      y -= sp * dt * (1 + wx.wind * 0.6); x += (Math.sin(T * 0.9 + ph) * 0.35 + wx.wind * 2.4) * dt; z += Math.cos(T * 0.7 + ph * 1.3) * 0.25 * dt;
+      if (y < 0 || (x - a.x) ** 2 + (z - a.z) ** 2 > a.r * a.r * 1.5) { respawn(d, i, 5, a, y >= 0); x = d[j]; y = d[j + 1]; z = d[j + 2]; }
+      d[j] = x; d[j + 1] = y; d[j + 2] = z;
+      pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
+    }
+    fx.snow.geometry.attributes.position.needsUpdate = true; fx.snow.geometry.setDrawRange(0, nSnow);
+  }
+  // puddles
+  const wet = wx.wet * (1 - wx.cover);
+  fx.puddleMat.opacity = wet * 0.6;
+  for (const p of fx.puddles) p.m.visible = wet > 0.04;
+  // fog (and the haze of heavy rain or a blizzard): things far off fade into the sky
+  const haze = Math.max(wx.fog, wx.snow * (0.25 + wx.wind * 0.35), wx.rain * 0.15);
+  if (haze > 0.03) {
+    scene.fog.color.set(skyBits.bottom || '#DDE3EC').convertSRGBToLinear();
+    scene.fog.near = cam.dist * (1.0 - haze * 0.45); scene.fog.far = cam.dist * (1.65 + (1 - haze) * 5);
+  } else { scene.fog.near = 1e4; scene.fog.far = 2e4; }
+  // wind sways the trees
+  if (wx.wind > 0.02) for (const t of seasonal.trees) { const ph = t.userData.ph || 0; t.rotation.z = (Math.sin(T * 1.7 + ph) * 0.035 + 0.02) * wx.wind; t.rotation.x = Math.sin(T * 1.3 + ph * 2) * 0.025 * wx.wind; }
+  // a rainbow in the sky behind the island
+  const rbo = wx.rainbow * (1 - NIGHT);
+  if (Math.abs(rbo - (fx.rbo ?? -1)) > 0.02) { fx.rbo = rbo; document.getElementById('rainbow').style.opacity = String(clamp(rbo, 0, 1) * 0.85); }
+  // lightning, and thunder a moment later
+  if (wx.storm > 0.5 && T > fx.nextBolt) {
+    fx.flash = 1; fx.nextBolt = T + rand(8, 20);
+    setTimeout(() => S.play('thunder', { gain: 0.5 + wx.storm * 0.5 }), rand(600, 2200));
+  }
+  fx.flash = Math.max(0, fx.flash - dt * 4);
+  const flick = fx.flash > 0.65 || (fx.flash > 0.25 && fx.flash < 0.42) ? fx.flash : 0;
+  hemi.intensity = (skyBits.hemiBase ?? hemi.intensity) + flick * 1.5;
+  // cold air: buds' breath puffs out now and then
+  if ((SEASON === 'winter' || wx.snow > 0.2) && T > fx.breathAt && buds.length) {
+    fx.breathAt = T + (LOW_FX ? 0.5 : 0.25);
+    const b = buds[Math.floor(Math.random() * buds.length)];
+    if (b.placed && !b.gameHidden && b.state !== 'drop' && camera.position.distanceTo(b.root.position) < 30) breathe(b);
+  }
+  for (let i = fx.breath.length - 1; i >= 0; i--) {
+    const p = fx.breath[i]; p.life += dt;
+    p.m.position.x += p.vx * dt; p.m.position.z += p.vz * dt; p.m.position.y += 0.25 * dt;
+    p.m.scale.setScalar(p.s * (1 + p.life * 1.4)); p.m.material.opacity = 0.55 * (1 - p.life / 1.3);
+    if (p.life > 1.3) { scene.remove(p.m); p.m.material.dispose(); fx.breath.splice(i, 1); }
+  }
+  for (let i = fx.splashes.length - 1; i >= 0; i--) {
+    const p = fx.splashes[i]; p.t += dt;
+    const k = p.t / 0.7; p.m.scale.setScalar(0.1 + k * p.max); p.m.material.opacity = 0.7 * (1 - k);
+    if (k >= 1) { scene.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose(); fx.splashes.splice(i, 1); }
+  }
+  // leaf umbrellas while it rains, for the buds that carry one
+  for (const b of buds) {
+    const want = wx.rain > 0.25 && b.placed && b.leafy !== false;
+    if (want && b.leafy === undefined) b.leafy = seeded('leaf:' + b.data.id)() < 0.5;
+    if (want && b.leafy && !b.leaf) b.leaf = makeLeaf(b);
+    if (b.leaf) { b.leaf.visible = want && b.leafy; if (b.leaf.visible) b.leaf.rotation.z = 0.12 + Math.sin(T * 2 + b.x) * 0.06 * (1 + wx.wind * 2); }
+  }
+  for (const sb of fx.snowBuds) if (sb.grow < 1) { sb.grow = Math.min(1, sb.grow + dt / 6); sb.g.scale.setScalar(Math.max(0.01, sb.grow)); }
+}
+const breathGeo = new THREE.SphereGeometry(0.1, 8, 6), breathMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false });
+function breathe(b) {
+  const fwd = { x: Math.sin(b.heading), z: Math.cos(b.heading) }, m = new THREE.Mesh(breathGeo, breathMat.clone());
+  m.position.set(b.x + fwd.x * b.width * 0.5, b.y + b.height * 0.42, b.z + fwd.z * b.width * 0.5);
+  scene.add(m); fx.breath.push({ m, life: 0, s: b.width * 0.6, vx: fwd.x * 0.35 + wx.wind * 0.8, vz: fwd.z * 0.35 });
+}
+function splash(x, z, big = 1) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 24), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.set(x, 0.03, z); scene.add(m); fx.splashes.push({ m, t: 0, max: 0.7 * big });
+}
+// a big leaf held overhead, like a little umbrella
+function makeLeaf(b) {
+  const g = new THREE.Group(), w = b.width;
+  const leafMat = new THREE.MeshStandardMaterial({ color: toLinear('#5DBB63'), roughness: 0.7, side: THREE.DoubleSide });
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), leafMat); leaf.scale.set(w * 0.62, w * 0.16, w * 0.46); g.add(leaf);
+  const rib = new THREE.Mesh(new THREE.BoxGeometry(w * 1.1, 0.02, 0.03), new THREE.MeshStandardMaterial({ color: toLinear('#3F8F48') })); rib.position.y = w * 0.15; g.add(rib);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, b.height * 0.5, 5), new THREE.MeshStandardMaterial({ color: toLinear('#3F8F48') })); stem.position.set(w * 0.42, -b.height * 0.2, 0); stem.rotation.z = 0.25; g.add(stem);
+  g.position.set(0, b.height + w * 0.08, 0);
+  b.squash.add(g);
+  return g;
+}
+// a little snow bud, built by a bud and left standing for the rest of the visit
+function makeSnowBud(b) {
+  const g = new THREE.Group(), snowy = new THREE.MeshStandardMaterial({ color: toLinear('#F7FAFD'), roughness: 0.85 }), coal = new THREE.MeshStandardMaterial({ color: toLinear('#2B2B3A') });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10), snowy); body.position.y = 0.3; body.scale.y = 0.9; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 14, 10), snowy); head.position.y = 0.72; g.add(head);
+  for (const sx of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 5), coal); e.position.set(sx * 0.08, 0.76, 0.2); g.add(e); }
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.16, 6), new THREE.MeshStandardMaterial({ color: toLinear('#FF8A3D') })); nose.rotation.x = Math.PI / 2; nose.position.set(0, 0.7, 0.27); g.add(nose);
+  const fwd = { x: Math.sin(b.heading), z: Math.cos(b.heading) };
+  g.position.set(b.x + fwd.x * (b.width * 0.5 + 0.55), 0, b.z + fwd.z * (b.width * 0.5 + 0.55)); g.rotation.y = b.heading + Math.PI; g.scale.setScalar(0.01);
+  scene.add(g);
+  const sb = { g, grow: 0 };
+  fx.snowBuds.push(sb);
+  if (fx.snowBuds.length > 8) { const old = fx.snowBuds.shift(); scene.remove(old.g); }
+  return sb;
+}
+
+// what buds say about the weather
+const WEATHER_SAYS = {
+  rain: ['rain!', 'drip drop', 'my paint’s getting wet!', 'puddles soon!'],
+  storm: ['thunder!!', 'eek!', 'it’s pouring!'],
+  snow: ['it’s snowing!!', 'snow!!', 'catch one on your tongue!', 'brr!'],
+  blizzard: ['so much snow!!', 'I can’t see my feet', 'brrrr!'],
+  fog: ['where did everyone go?', 'so foggy…', 'hello? anyone?'],
+  windy: ['whoa, windy!', 'hold onto your hat!', 'wheee, the wind!'],
+  clear: ['the sun’s back!', 'yay, it stopped', 'blue sky!'],
+  cloudy: ['clouds rolling in…', 'it’s getting grey'],
+  rainbow: ['a rainbow!!', 'look, a rainbow!', 'make a wish on the rainbow!'],
+};
+// when the weather changes while you're watching, a couple of buds near you say so
+function weatherNews(before, now) {
+  if (now === 'cloudy' && before === 'clear') return;
+  const lines = now === 'clear' && !['rain', 'storm', 'snow', 'blizzard', 'fog'].includes(before) ? null : WEATHER_SAYS[now];
+  if (!lines) return;
+  const near2 = buds.filter((b) => b.placed && !b.gameHidden && b.state !== 'drop' && !b.pose)
+    .sort((a, b) => a.root.position.distanceTo(cam.target) - b.root.position.distanceTo(cam.target)).slice(0, 2);
+  near2.forEach((b, i) => setTimeout(() => { say(b, pick(lines), 1800); b.syv -= 0.1; b.look = { x: b.x, z: b.z, y: 30 }; b.lookUntil = T + 1.5; }, 400 + i * 900));
+}
+// now and then a hello mentions the weather
+function weatherHello() {
+  if (wx.snow > 0.3) return pick(['brr! hi!', 'hi! it’s snowing!', 'hiii, isn’t the snow pretty?']);
+  if (wx.rain > 0.3) return pick(['hi! you’re soaked!', 'hey! nice weather for ducks', 'hi! I’m a puddle']);
+  if (wx.rainbow > 0.3) return pick(['hi! did you see the rainbow?', 'hey! rainbow!!']);
+  if (wx.fog > 0.4) return pick(['oh! didn’t see you there', 'hi? is that you?']);
+  if (wx.wind > 0.5) return pick(['hi! (it’s so windy)', 'hey! whoosh!']);
+  if (wx.cover > 0.5) return pick(['brr! hi!', 'hi! everything’s white!', 'hey! let’s make a snow bud']);
+  return null;
+}
+// a word about the weather when you come back
+function weatherAside() {
+  if (wx.snow > 0.3) return pick(['and it’s snowing!!', 'look, snow!']);
+  if (wx.rain > 0.3) return pick(['it’s raining, come in!', 'it’s pouring out here!']);
+  if (wx.rainbow > 0.3) return 'look, a rainbow!';
+  if (wx.fog > 0.4) return 'it’s so foggy today';
+  if (wx.cover > 0.5) return pick(['everything’s white!', 'it snowed!']);
+  return '';
 }
 
 /* ---------------- buds ---------------- */
@@ -1869,7 +2222,7 @@ function startGreeting(a, b) {
     me.state = 'greet'; me.partner = other; me.timer = 2.4; me.greetCooldown = rand(14, 24);
     me.happyUntil = T + 1.2; me.syv -= 0.09; me.target = null;
   }
-  say(a, pick(HELLOS), 1600);
+  say(a, (Math.random() < 0.35 && weatherHello()) || pick(HELLOS), 1600);
   setTimeout(() => { if (b.state === 'greet') say(b, pick(HELLOS), 1500); }, 500);
 }
 
@@ -1989,13 +2342,24 @@ function updateBud(bud, dt) {
 
 /* ---------------- what buds do with their time ---------------- */
 // Each bud has a favorite thing (its hobby) and does it more often than the rest.
-const ACTS = ['clouds', 'nap', 'explore', 'flowers', 'hop', 'tag', 'fire', 'koi'];
+const ACTS = ['clouds', 'nap', 'explore', 'flowers', 'hop', 'tag', 'fire', 'koi', 'shelter', 'snowbud'];
 const HOBBY_ACT = { clouds: 'clouds', stargazing: 'clouds', explore: 'explore', pebbles: 'explore', flowers: 'flowers', hopping: 'hop', naps: 'nap', races: 'tag' };
 const busy = (b) => !b.placed || b.held || b.pose || b.rush || b.state === 'drop' || b.state === 'act' || b.state === 'greet';
 
 function startActivity(bud) {
   const fav = HOBBY_ACT[bud.data.hobby];
-  const weights = ACTS.map((k) => k === 'fire' ? (NIGHT > 0.5 ? 6 : 0) : k === 'koi' ? (pond.group ? (NIGHT > 0.5 ? 0.4 : 1.2) : 0) : (k === fav ? 4 : 1) * (k === 'tag' ? 1.2 : 1) * (k === 'flowers' && NIGHT > 0.5 ? 0.3 : 1));
+  const wetOut = Math.max(wx.rain, wx.snow);
+  const weights = ACTS.map((k) => {
+    if (k === 'fire') return NIGHT > 0.5 ? 6 * (1 - wx.rain * 0.6) : 0;
+    if (k === 'koi') return pond.group ? (pond.frozen ? (NIGHT > 0.5 ? 0.6 : 2.2) : NIGHT > 0.5 ? 0.4 : 1.2) : 0;
+    if (k === 'shelter') return wx.rain > 0.3 && !bud.leafy ? 6 * wx.rain : 0;   // buds without a leaf look for cover
+    if (k === 'snowbud') return wx.cover > 0.5 && wx.rain < 0.2 ? 1.6 : 0;
+    let w = (k === fav ? 4 : 1) * (k === 'tag' ? 1.2 : 1);
+    if (k === 'clouds') w *= 1 - clamp(wx.cloud * 0.8 + wetOut + wx.fog, 0, 1);       // nothing to see through the clouds
+    if (k === 'flowers') w *= wx.cover > 0.35 ? 0 : (NIGHT > 0.5 ? 0.3 : 1) * (1 - wx.rain * 0.7);
+    if (k === 'hop' && wx.wet > 0.3) w *= 2.5;   // puddles!
+    return w;
+  });
   let roll = Math.random() * weights.reduce((a, b) => a + b, 0), kind = ACTS[0];
   for (let i = 0; i < ACTS.length; i++) { roll -= weights[i]; if (roll <= 0) { kind = ACTS[i]; break; } }
   const h = bud.heading;
@@ -2008,7 +2372,31 @@ function startActivity(bud) {
     setAct(bud, { kind, until: T + rand(5, 9), tilt: -0.24, next: T + rand(1.5, 3) });
     bud.look = { x: bud.x + Math.sin(h), z: bud.z + Math.cos(h), y: 30 }; bud.lookUntil = bud.act.until;
   } else if (kind === 'hop') {
-    setAct(bud, { kind, until: T + rand(3, 5), next: T + 0.2, said: false });
+    // when the ground's wet, find a puddle to jump in
+    const pud = wx.wet > 0.3 && wx.cover < 0.3 ? fx.puddles.filter((p) => Math.hypot(p.x - bud.x, p.z - bud.z) < 9).sort((a, b) => Math.hypot(a.x - bud.x, a.z - bud.z) - Math.hypot(b.x - bud.x, b.z - bud.z))[0] : null;
+    if (pud) goThenDo(bud, { x: pud.x, z: pud.z }, () => setAct(bud, { kind: 'hop', until: T + rand(3, 5), next: T + 0.2, said: false, puddle: true }));
+    else setAct(bud, { kind, until: T + rand(3, 5), next: T + 0.2, said: false });
+  } else if (kind === 'shelter') {
+    // by its own front door, under the eaves, or under the nearest tree
+    const door = TOWN ? homeFront(bud.data.id) : null;
+    let spot = door ? { x: door.x, z: door.z } : null;
+    if (!spot) {
+      const tree = obstacles.filter((o) => !o.town && o.r > 0.5 && o.r < 1.4 && o !== pond.obs && Math.hypot(o.x, o.z) < WALK_R)
+        .sort((p, q) => Math.hypot(p.x - bud.x, p.z - bud.z) - Math.hypot(q.x - bud.x, q.z - bud.z))[0];
+      if (!tree) return false;
+      const ang = Math.atan2(bud.z - tree.z, bud.x - tree.x);
+      spot = { x: tree.x + Math.cos(ang) * (tree.r + 0.45), z: tree.z + Math.sin(ang) * (tree.r + 0.45) };
+    }
+    goThenDo(bud, spot, () => {
+      setAct(bud, { kind: 'shelter', until: T + rand(25, 50), next: T + rand(4, 9) });
+      bud.lookCameraUntil = T + 2; say(bud, pick(['staying dry!', 'I’ll wait it out', 'drip… drip…', 'cozy in here']), 1700);
+    });
+  } else if (kind === 'snowbud') {
+    const spot = freeSpot(2.4, bud, 4);
+    goThenDo(bud, spot, () => {
+      setAct(bud, { kind: 'snowbud', until: T + 7, next: T + 0.5, tilt: 0.32, sb: makeSnowBud(bud) });
+      say(bud, pick(['snow bud time!', 'roll, roll, roll…', 'building a friend']), 1600);
+    });
   } else if (kind === 'fire') {
     const f = skyBits.fire;
     if (!f) return false;
@@ -2026,7 +2414,7 @@ function startActivity(bud) {
       bud.look = { x: f.x, z: f.z, y: 0.6 }; bud.lookUntil = bud.act.until;
     });
   } else if (kind === 'koi') {
-    // sit at the edge of the pond and watch the fish
+    // sit at the edge of the pond and watch the fish (or, when it's frozen, step out and skate)
     let seat = null;
     for (let i = 0; i < 10 && !seat; i++) {
       const a = Math.atan2(bud.z - pond.z, bud.x - pond.x) + rand(-1, 1), r = pond.edge(a) + 0.75;
@@ -2036,6 +2424,7 @@ function startActivity(bud) {
     if (!seat) return false;
     goThenDo(bud, seat, () => {
       bud.heading = Math.atan2(pond.x - bud.x, pond.z - bud.z);
+      if (pond.frozen) { bud.onIce = true; setAct(bud, { kind: 'skate', until: T + rand(9, 15), goal: null, next: T + rand(1, 3), spin: 0, moving: false }); say(bud, pick(['wheee, ice!', 'skating time!', 'look, no feet!']), 1500); return; }
       setAct(bud, { kind: 'koi', until: T + rand(8, 15), next: T + rand(1, 3), tilt: 0.3 });
       bud.look = { x: pond.x, z: pond.z, y: -1 }; bud.lookUntil = bud.act.until;
     });
@@ -2085,6 +2474,7 @@ function goThenDo(bud, spot, fn) {
 }
 function endActivity(bud, rest = rand(1.5, 4)) {
   if (bud.state === 'act') { bud.state = 'idle'; }
+  bud.onIce = false;
   bud.act = null; bud.look = null; bud.timer = rest; bud.hopPhase = 0;
 }
 
@@ -2116,10 +2506,35 @@ function updateActivity(bud, dt) {
       say(bud, NIGHT > 0.5 ? pick(['so many stars!', 'is that one twinkling?', 'make a wish!', 'the moon is so round']) : bud.data.hobby === 'stargazing' ? pick(['waiting for stars', 'is that one twinkling?', 'make a wish!']) : pick(['that cloud looks like a fish', 'ooh, a bunny cloud', 'so fluffy…', 'that one looks like me!']), 1800);
       a.next = Infinity;
     }
+  } else if (a.kind === 'shelter') {
+    if (wx.rain < 0.15) { say(bud, pick(['it stopped!', 'sun’s out!', 'finally!']), 1500); bud.happyUntil = T + 1; endActivity(bud); return; }
+    if (T > a.next) { bud.look = { x: bud.x + rand(-4, 4), z: bud.z + rand(-4, 4), y: 6 }; bud.lookUntil = T + 2; a.next = T + rand(4, 9); }
+  } else if (a.kind === 'snowbud') {
+    // scoop, pat, scoop: little bounces while it grows
+    if (T > a.next) { bud.syv -= 0.06; a.next = T + rand(0.5, 0.9); }
+    if (T > a.until) { say(bud, pick(['meet my snow bud!', 'ta-da!', 'it looks just like me']), 1800); bud.happyUntil = T + 1.5; endActivity(bud); return; }
+  } else if (a.kind === 'skate') {
+    // gliding about on the frozen pond: slippery, so it drifts and slides, and now and then spins
+    const leaving = T > a.until;
+    if (!a.goal || Math.hypot(a.goal.x - bud.x, a.goal.z - bud.z) < 0.35) {
+      if (leaving && a.goal && a.goal.out) { endActivity(bud); return; }
+      const ang = leaving ? Math.atan2(bud.z - pond.z, bud.x - pond.x) : Math.random() * Math.PI * 2;
+      const r = leaving ? pond.edge(ang) + 0.9 : pond.edge(ang) * rand(0.1, 0.62);
+      a.goal = { x: pond.x + Math.cos(ang) * r, z: pond.z + Math.sin(ang) * r, out: leaving };
+      if (!leaving && Math.random() < 0.25) a.spin = 1.2;
+    }
+    const dx = a.goal.x - bud.x, dz = a.goal.z - bud.z, d = Math.hypot(dx, dz) || 1;
+    moveSmoothly(bud, dx / d * 1.5 * bud.speed, dz / d * 1.5 * bud.speed, dt, 1.1);
+    if (a.spin > 0) { a.spin -= dt; bud.heading += dt * 9; }
+    if (T > a.next && !leaving) { say(bud, pick(['wheee!', 'look at me go!', 'whoa, slippery', 'twirl!']), 1300); a.next = T + rand(4, 7); bud.happyUntil = T + 1; }
+    return;
   } else if (a.kind === 'hop') {
     bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt);
-    if (bud.y === 0 && bud.vy < 0) { bud.vy = 0; bud.syv -= 0.08 * RM; }
-    if (T > a.next && bud.y === 0) { S.play('boing', { gain: near(bud, 0.5), rate: 1 + (bud.b.h % 5) / 20 }); bud.vy = 5.2 * RM; bud.syv += 0.06; a.next = T + rand(0.55, 0.8); if (!a.said) { a.said = true; say(bud, pick(['hop!', 'hop hop', 'boing!', 'look how high!']), 1200); } }
+    if (bud.y === 0 && bud.vy < 0) {
+      bud.vy = 0; bud.syv -= 0.08 * RM;
+      if (a.puddle && wx.wet > 0.2) { splash(bud.x, bud.z, 1 + Math.random() * 0.5); S.play('splash', { gain: near(bud, 0.35), rate: 1.3 }); if (!a.splashed) { a.splashed = true; setTimeout(() => say(bud, pick(['splash!!', 'puddle!!', 'hehe, I’m soaked']), 1300), 200); } }
+    }
+    if (T > a.next && bud.y === 0) { S.play('boing', { gain: near(bud, 0.5), rate: 1 + (bud.b.h % 5) / 20 }); bud.vy = 5.2 * RM; bud.syv += 0.06; a.next = T + rand(0.55, 0.8); if (!a.said && !a.puddle) { a.said = true; say(bud, pick(['hop!', 'hop hop', 'boing!', 'look how high!']), 1200); } }
     if (T > a.until && bud.y === 0) { bud.y = 0; endActivity(bud); }
     return;
   } else if (a.kind === 'tag') {
@@ -2171,6 +2586,7 @@ function updateActivity(bud, dt) {
 // side is closer to where it's headed.
 function steerAround(bud, mx, mz) {
   for (const o of obstacles) {
+    if (bud.onIce && o === pond.obs) continue;
     const ox = bud.x - o.x, oz = bud.z - o.z, od = Math.hypot(ox, oz) || 1, reach = o.r + 1.2;
     if (od >= reach) continue;
     const w = (reach - od) / reach;
@@ -2215,6 +2631,7 @@ function separateBuds() {
   for (const b of buds) {
     if (!b.placed || b.state === 'drop' || b.y > 1 || b.gameHidden || b.gamePiece) continue;
     for (const o of obstacles) {
+      if (b.onIce && o === pond.obs) continue;   // skating on the frozen pond
       const dx = b.x - o.x, dz = b.z - o.z, min = o.r + b.width * 0.3;
       if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
       const d = Math.hypot(dx, dz);
@@ -3138,6 +3555,10 @@ function openNews() {
     body.append(section('Island gossip', ul));
   }
   body.append(section('Most popular hobby', el('p', 'quiet', `${news.topHobby.label}, loved by ${news.topHobby.count} ${news.topHobby.count === 1 ? 'bud' : 'buds'}`)));
+  // the week's weather, from the day the paper came out (the island's weather is worked out from the clock)
+  const wk = el('div', 'forecast');
+  for (const f of forecast(news.publishedAt, 7)) { const d = el('div', 'day'); d.append(el('span', 'wd', f.weekday), el('span', 'ic', f.icon), el('span', 'w', f.word)); wk.append(d); }
+  body.append(section('The week ahead', wk));
   paperWrap.hidden = false; paperWrap.scrollTop = 0;
   S.play('pop', { rate: 0.8 });
   document.getElementById('paperClose').focus();
@@ -3154,6 +3575,10 @@ paperWrap.addEventListener('click', (e) => { if (e.target === paperWrap) closeNe
 /* ---------------- coming back to the island ---------------- */
 // Your bud was busy with its own life. Then it notices you're here, and comes running.
 function greetingFor(lastVisit) {
+  const aside = weatherAside();
+  return aside ? `${greetingBase(lastVisit)} ${aside}` : greetingBase(lastVisit);
+}
+function greetingBase(lastVisit) {
   if (!lastVisit) return pick(['oh! hi! welcome to the island!', 'you found the island!']);
   const away = Date.now() - lastVisit, min = 60e3, hr = 60 * min, day = 24 * hr;
   if (away < 10 * min) return pick(['oh, hi again!', 'back already? hehe']);
@@ -4273,10 +4698,11 @@ function buildPond() {
   const blob = (k) => { const sh = new THREE.Shape(); for (let i = 0; i <= 48; i++) { const a = i / 48 * Math.PI * 2, r = edge(a) * k; i ? sh.lineTo(Math.cos(a) * r, Math.sin(a) * r) : sh.moveTo(Math.cos(a) * r, Math.sin(a) * r); } return sh; };
   const flat = (geo, y, mat) => { const m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.position.y = y; return m; };
   // a sandy bank, the deep teal bottom, and the water on top (see-through, so the koi show)
-  g.add(flat(new THREE.ShapeGeometry(blob(1.1)), 0.006, new THREE.MeshStandardMaterial({ color: toLinear('#D8C99A'), roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 })));
+  const bank = new THREE.MeshStandardMaterial({ color: toLinear('#D8C99A'), roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 }); seasonTint(bank, null, 0.85);
+  g.add(flat(new THREE.ShapeGeometry(blob(1.1)), 0.006, bank));
   g.add(flat(new THREE.ShapeGeometry(blob(0.98)), 0.012, new THREE.MeshStandardMaterial({ color: toLinear('#2F6F78'), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 })));
   const water = flat(new THREE.ShapeGeometry(blob(0.98)), 0.06, new THREE.MeshStandardMaterial({ color: toLinear('#6CC6D6'), transparent: true, opacity: 0.55, roughness: 0.12, metalness: 0.1, depthWrite: false }));
-  water.renderOrder = 2; g.add(water);
+  water.renderOrder = 2; g.add(water); pond.water = water;
   // rocks round the rim
   const rock = new THREE.MeshStandardMaterial({ color: toLinear('#A9A7B8'), roughness: 1, flatShading: true });
   const rockDark = new THREE.MeshStandardMaterial({ color: toLinear('#8E8BA0'), roughness: 1, flatShading: true });
@@ -4288,6 +4714,7 @@ function buildPond() {
   }
   // reeds and a couple of cattails on one side
   const reed = new THREE.MeshStandardMaterial({ color: toLinear('#6FAF5C'), roughness: 0.9 }), cat = new THREE.MeshStandardMaterial({ color: toLinear('#7A5233'), roughness: 1 });
+  seasonTint(reed, '#B89A55', 0.35);
   const side = pr() * Math.PI * 2;
   for (let i = 0; i < 9; i++) {
     const a = side + (i - 4) * 0.09, r = edge(a) * (0.92 + pr() * 0.08), h = 0.45 + pr() * 0.4;
@@ -4305,7 +4732,7 @@ function buildPond() {
       const lotus = new THREE.Group(), petal = new THREE.MeshStandardMaterial({ color: toLinear('#FFB3C7'), roughness: 0.6 });
       for (let k = 0; k < 6; k++) { const pe = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), petal); pe.scale.set(0.6, 1.3, 0.35); const t = k / 6 * Math.PI * 2; pe.position.set(Math.cos(t) * 0.05, 0.06, Math.sin(t) * 0.05); pe.rotation.set(Math.sin(t) * 0.5, 0, -Math.cos(t) * 0.5); lotus.add(pe); }
       const mid = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshStandardMaterial({ color: toLinear('#FFE08A') })); mid.position.y = 0.06; lotus.add(mid);
-      lotus.position.set(m.position.x, 0.07, m.position.z); g.add(lotus);
+      lotus.position.set(m.position.x, 0.07, m.position.z); g.add(lotus); pond.lotus = lotus;
     }
   }
   // the koi: orange and white, all white with a red cap, gold, and black-and-orange
@@ -4326,7 +4753,7 @@ function buildPond() {
   }
   scene.add(g);
   Object.assign(pond, { group: g, x: spot.x, z: spot.z, r: PR, edge, pads });
-  obstacles.push({ x: spot.x, z: spot.z, r: PR + 0.15 });
+  pond.obs = { x: spot.x, z: spot.z, r: PR + 0.15 }; obstacles.push(pond.obs);
   // no flowers growing in the water
   if (islandDecor) for (const o of islandDecor.children) if (!o.userData.ground && Math.hypot(o.position.x - spot.x, o.position.z - spot.z) < PR * 1.25) o.visible = false;
   for (let i = flowers.length - 1; i >= 0; i--) if (Math.hypot(flowers[i].x - spot.x, flowers[i].z - spot.z) < PR * 1.25) flowers.splice(i, 1);
@@ -4349,8 +4776,8 @@ function pondTick(dt) {
     f.g.position.set(x, f.depth + Math.sin(T * 1.3 + f.ph) * 0.004, z);
     f.tail.rotation.y = Math.sin(T * (6 + f.boost * 10) + f.ph) * (0.35 + f.boost * 0.3);
   }
-  // now and then a fish kisses the surface
-  if (T > pond.nextRipple) {
+  // now and then a fish kisses the surface (not under the ice)
+  if (T > pond.nextRipple && !pond.frozen) {
     const f = pick(pond.fish); if (f) pondRipple(f.g.position.x, f.g.position.z);
     pond.nextRipple = T + rand(2.5, 6);
   }
@@ -4370,6 +4797,12 @@ function pondAt(x, y) {
   return Math.hypot(lx, lz) < pond.edge(a) * 0.98 ? { x: lx, z: lz } : null;
 }
 function tapPond(hit) {
+  if (pond.frozen) {   // knock knock: it's ice
+    S.play('tick', { rate: 1.6, gain: 0.6 }); setTimeout(() => S.play('tick', { rate: 1.8, gain: 0.5 }), 110);
+    const b = buds.find((x) => x.state === 'act' && x.act && x.act.kind === 'skate') || buds.find((x) => x.placed && Math.hypot(x.x - pond.x, x.z - pond.z) < pond.r + 3);
+    if (b) say(b, pick(['it’s frozen solid!', 'come skate with us!', 'the fish are sleeping under there']), 1700);
+    return;
+  }
   pondRipple(hit.x, hit.z, true); setTimeout(() => pondRipple(hit.x, hit.z), 180);
   S.play('pop', { rate: 0.55, gain: 0.6 });
   for (const f of pond.fish) if (Math.hypot(f.g.position.x - hit.x, f.g.position.z - hit.z) < pond.r) f.boost = 1;
@@ -4389,11 +4822,13 @@ function frame(now) {
   gameTick(dt);
   pondTick(dt);
   updateSky(dt);
+  weatherTick(dt);
   townTick(dt);
   updateFriendTree();
   for (const c of clouds) {
-    c.a += c.sp * dt;
-    c.g.position.set(Math.cos(c.a) * c.r, c.y + Math.sin(T * 0.2 + c.a) * 0.4, Math.sin(c.a) * c.r);
+    c.a += c.sp * dt * (1 + wx.wind * 3);
+    c.g.position.set(Math.cos(c.a) * c.r, c.y + Math.sin(T * 0.2 + c.a) * 0.4 - wx.cloud * R * 0.15, Math.sin(c.a) * c.r);
+    c.g.scale.setScalar(c.s0 * (1 + wx.cloud * 0.7));
   }
   for (let i = puffs.length - 1; i >= 0; i--) {
     const p = puffs[i]; p.life += dt;
@@ -4443,7 +4878,7 @@ function showCenter(title, text, linkText, href = '/') {
     if (!res.ok) throw new Error(String(res.status));
     world = await res.json();
   } catch (e) {
-    buildIsland(0); buildSkyAndSeason(); requestAnimationFrame(frame);
+    buildIsland(0); buildSkyAndSeason(); buildWeather(); requestAnimationFrame(frame);
     showCenter('The island is hiding', 'I couldn’t load the buds just now. Try again in a moment.', 'Back to my bud');
     return;
   }
@@ -4456,6 +4891,7 @@ function showCenter(title, text, linkText, href = '/') {
   buildIsland(world.buds.length);
   buildSkyAndSeason();
   buildTown();
+  buildWeather();
   updateSky(0);
   const n = world.buds.length;
   document.getElementById('titleSub').textContent = (HALLOWEEN ? 'Happy Halloween! ' : '') + (n === 1 ? 'Just one bud here so far.' : `${n} buds live here.`);
@@ -4489,7 +4925,7 @@ function showCenter(title, text, linkText, href = '/') {
   if (found.length) setTimeout(() => {
     const me = myBud(); if (!me) return;
     const what = found.map((f) => `a ${f.name.toLowerCase()}`).join(' and ');
-    say(me, `${what} washed up on the shore! it’s in my wardrobe`, 4200); me.syv -= 0.15; S.play('sparkle');
+    say(me, `${what} ${SEASON === 'winter' ? 'turned up in the snow' : 'washed up on the shore'}! it’s in my wardrobe`, 4200); me.syv -= 0.15; S.play('sparkle');
   }, 7000);
   for (const d of world.buds) {
     try { buds.push(await makeBud(d)); } catch (e) { console.error('could not build bud', d.id, e); }
