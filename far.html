@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<script src="/js/nozoom.js"></script>
+<title>Lighthouse Rock · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<meta name="theme-color" content="#BFD9FF">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&display=swap">
+<style>
+/* Layout: the whole screen is the 3D island. A slim top bar (Home, the island's name, Finds, sound), speech
+   bubbles over the buds, one big "do the thing" button at the bottom, and a card for the finds book. */
+:root {
+  --ink: #1D1C2B; --muted: #5E5D75; --chip: rgba(255, 255, 255, 0.72); --chip-line: rgba(29, 28, 43, 0.08);
+  --tag: rgba(255, 255, 255, 0.94); --tag-ink: #1D1C2B; --me: #1D1C2B; --me-ink: #FFFFFF; --shadow: rgba(46, 40, 90, 0.2);
+  --card: #FFFFFF; --slot: #F3F1F8;
+  --font-display: "Fredoka", "Nunito", ui-rounded, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ink: #EDECF6; --muted: #A9A7C4; --chip: rgba(30, 32, 52, 0.72); --chip-line: rgba(255, 255, 255, 0.1); --tag: rgba(30, 32, 52, 0.92); --tag-ink: #EDECF6; --me: #EDECF6; --me-ink: #15161F; --shadow: rgba(0, 0, 0, 0.5); --card: #1E2034; --slot: #2A2C44; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --ink: #EDECF6; --muted: #A9A7C4; --chip: rgba(30, 32, 52, 0.72); --chip-line: rgba(255, 255, 255, 0.1); --tag: rgba(30, 32, 52, 0.92); --tag-ink: #EDECF6; --me: #EDECF6; --me-ink: #15161F; --shadow: rgba(0, 0, 0, 0.5); --card: #1E2034; --slot: #2A2C44; color-scheme: dark; }
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #BFD9FF; color: var(--ink); font-family: var(--font-display); -webkit-tap-highlight-color: transparent; }
+body { touch-action: none; user-select: none; -webkit-user-select: none; }
+canvas#rock { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.bubble { position: absolute; left: 0; top: 0; transform-origin: 50% 100%; background: var(--tag); color: var(--tag-ink); border: 1.5px solid var(--tag-ink); border-radius: 14px; padding: 6px 11px; font-size: 15px; font-weight: 500; line-height: 1.3; width: max-content; max-width: min(250px, 70vw); text-align: center; }
+.bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; background: inherit; border-right: 1.5px solid var(--tag-ink); border-bottom: 1.5px solid var(--tag-ink); transform: translateX(-50%) rotate(45deg); }
+.bubble.pop { animation: pop .28s cubic-bezier(.3, 1.6, .5, 1); }
+.bubble.keeper { background: #2F3550; color: #F1F0F8; border-color: #F1F0F8; }
+@keyframes pop { from { scale: .6; opacity: 0; } to { scale: 1; opacity: 1; } }
+.bar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 0 calc(12px + env(safe-area-inset-left)); pointer-events: none; }
+.bar > * { pointer-events: auto; }
+.pill { font: inherit; font-weight: 500; font-size: 15px; color: var(--ink); background: var(--chip); border: 1px solid var(--chip-line); border-radius: 999px; padding: 8px 14px; min-height: 40px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.pill svg { width: 18px; height: 18px; }
+.pill:focus-visible, .btn:focus-visible, #act:focus-visible { outline: 3px solid #7B6CF6; outline-offset: 2px; }
+.place { font-weight: 600; font-size: 16px; padding: 8px 4px; text-shadow: 0 1px 8px rgba(255, 255, 255, .6); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 430px) { .pill { padding: 8px 11px; font-size: 14px; } .place { font-size: 15px; } .bar { gap: 6px; } }
+.spacer { flex: 1; }
+#act { position: fixed; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom)); transform: translateX(-50%); font: inherit; font-weight: 600; font-size: 18px; color: var(--me-ink); background: var(--me); border: 0; border-radius: 999px; padding: 14px 26px; min-height: 52px; cursor: pointer; box-shadow: 0 8px 24px var(--shadow); display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+#act kbd { font: inherit; font-size: 12px; font-weight: 500; opacity: .7; border: 1px solid currentColor; border-radius: 6px; padding: 1px 6px; }
+@media (hover: none) { #act kbd { display: none; } }
+#hint { position: fixed; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--chip); border: 1px solid var(--chip-line); border-radius: 999px; padding: 7px 14px; font-size: 14px; color: var(--ink); width: max-content; max-width: 92vw; text-align: center; transition: opacity .6s; pointer-events: none; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+#hint.gone { opacity: 0; }
+#toast { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); background: var(--tag); color: var(--tag-ink); border-radius: 16px; padding: 10px 16px; font-size: 15px; font-weight: 500; box-shadow: 0 8px 24px var(--shadow); max-width: 92vw; text-align: center; transition: opacity .4s, translate .4s; pointer-events: none; }
+#toast.gone { opacity: 0; translate: 0 -8px; }
+#stick { position: fixed; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .7); background: rgba(255, 255, 255, .16); pointer-events: none; }
+#stick i { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: rgba(255, 255, 255, .85); box-shadow: 0 2px 8px var(--shadow); }
+#fade { position: fixed; inset: 0; background: #FFFDF8; opacity: 1; transition: opacity .35s; pointer-events: none; }
+#fade.clear { opacity: 0; }
+#fade.dark { background: #15121C; }
+body.inside .place { color: #F1F0F8; text-shadow: none; }
+body.inside #act { background: #F1F0F8; color: #15161F; }
+.card { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 40px); overflow: auto; background: var(--card); color: var(--ink); border-radius: 22px; padding: 20px; box-shadow: 0 20px 60px rgba(20, 16, 50, .35); touch-action: pan-y; }
+.card h2 { margin: 0 0 2px; font-size: 22px; font-weight: 600; }
+.card p { margin: 6px 0 0; color: var(--muted); font-size: 15px; line-height: 1.4; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0 4px; }
+.slot { background: var(--slot); border-radius: 14px; padding: 10px 4px 8px; text-align: center; min-height: 86px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+.slot .ic { font-size: 26px; line-height: 1; }
+.slot .nm { font-size: 12px; line-height: 1.2; }
+.slot .ct { font-size: 11px; color: var(--muted); }
+.slot.no .ic { opacity: .28; filter: grayscale(1); }
+.slot.no .nm { color: var(--muted); }
+.row { display: flex; gap: 8px; margin-top: 14px; justify-content: flex-end; }
+.btn { font: inherit; font-weight: 500; font-size: 16px; border-radius: 999px; padding: 10px 18px; min-height: 44px; border: 1px solid var(--chip-line); background: var(--slot); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+.btn.primary { background: var(--me); color: var(--me-ink); border-color: transparent; }
+#center { text-align: center; }
+</style>
+</head>
+<body>
+<canvas id="rock" aria-label="Lighthouse Rock: steer your bud around the island"></canvas>
+<div id="labels" aria-live="polite"></div>
+<div class="bar">
+  <button class="pill" id="homeBtn" type="button" aria-label="Sail back to bud island"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>Home</button>
+  <span class="place" id="place">Lighthouse Rock</span>
+  <span class="spacer"></span>
+  <button class="pill" id="findsBtn" type="button" hidden>Finds <span id="findsCount"></span></button>
+  <button class="pill sound-toggle" id="soundBtn" type="button"></button>
+</div>
+<div id="toast" class="gone" role="status"></div>
+<div id="hint" class="gone"></div>
+<button id="act" type="button" hidden></button>
+<div id="stick" hidden><i></i></div>
+<div class="card" id="findsCard" role="dialog" aria-labelledby="findsTitle" hidden>
+  <h2 id="findsTitle">Finds</h2>
+  <p id="findsSub"></p>
+  <div class="grid" id="findsGrid"></div>
+  <p>The last three you found sit on your porch back home, where everyone can see them.</p>
+  <div class="row"><button class="btn primary" id="findsClose" type="button">Close</button></div>
+</div>
+<div class="card" id="center" hidden><h2 id="centerTitle"></h2><p id="centerText"></p><div class="row" style="justify-content:center"><a class="btn primary" id="centerBtn" href="/"></a></div></div>
+<div id="fade"></div>
+
+<script src="/js/sound.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.1/delaunator.min.js"></script>
+<script type="module">
+// Lighthouse Rock: the island the balloon ferry sails to from the dock back home. Here you steer your own bud:
+// walk the island, pick up the day's finds (js/away.js decides them, the same for everyone), climb the
+// lighthouse, and keep its grumpy keeper company. Saving goes through /api/world (lib/away.js).
+import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
+import { weatherAt, seasonAt, snowCoverAt, sunTimes } from '/js/seasons.js';
+import { FINDS, FIND_KINDS, KEEPER, dailyFinds, dayKey, seededRng, fondLevel } from '/js/away.js';
+import { makeFind } from '/js/finds3d.js';
+
+const S = window.BudSound || { play() {}, babble() {}, ambient() {}, weather() {}, setNight() {}, bindToggle() {}, onChange() {}, muted: true };
+const $ = (id) => document.getElementById(id);
+const canvas = $('rock'), labels = $('labels');
+const params = new URLSearchParams(location.search);
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const rand = (a, b) => a + Math.random() * (b - a);
+const smooth01 = (u) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const angleTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+const toLinear = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+const TOUCH = matchMedia('(hover: none)').matches;
+
+/* ---------------- renderer, camera, lights ---------------- */
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); }
+catch (e) { showCenter('This browser can’t draw 3D here', 'Try Chrome or Safari, or turn on hardware acceleration.', 'Back to bud island', '/world'); throw e; }
+renderer.outputEncoding = THREE.sRGBEncoding;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 700);
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8d96b8, 0.45); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff6ea, 0.8); sun.position.set(-8, 16, 10); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.2); fill.position.set(10, 4, -6); scene.add(fill);
+function makeEnv(k = 1) {
+  const s = new THREE.Scene(), g = new THREE.SphereGeometry(10, 32, 16), pos = g.attributes.position, cols = [];
+  for (let i = 0; i < pos.count; i++) { const t = (pos.getY(i) / 10 + 1) / 2; cols.push((0.32 + 0.68 * t) * k, (0.35 + 0.65 * t) * k, (0.42 + 0.58 * t) * k * 1.15); }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  s.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const pm = new THREE.PMREMGenerator(renderer), tex = pm.fromScene(s, 0.03).texture; pm.dispose();
+  return tex;
+}
+const ENV_DAY = makeEnv(1), ENV_NIGHT = makeEnv(0.28);
+function resize() {
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1)); renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+const M = (hex, o = {}) => new THREE.MeshStandardMaterial({ color: toLinear(hex), roughness: 0.9, envMapIntensity: 0.35, ...o });
+const mats = {};
+const mat = (hex, o) => (o ? M(hex, o) : (mats[hex] = mats[hex] || M(hex)));
+const up = new THREE.Vector3(0, 1, 0);
+function box(w, h, d, m, x = 0, y = 0, z = 0) { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); return o; }
+function cyl(rt, rb, h, n, m, x = 0, y = 0, z = 0) { const o = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, n), m); o.position.set(x, y, z); return o; }
+function ball(r, m, x = 0, y = 0, z = 0, d = 12) { const o = new THREE.Mesh(new THREE.SphereGeometry(r, d, Math.max(6, d - 2)), m); o.position.set(x, y, z); return o; }
+function signTex(lines, { w = 256, h = 128, bg = '#E9D7B4', ink = '#3A2A1E', size = 40 } = {}) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, w, h); g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
+  lines.forEach(([text, sz = size], i) => { g.font = `600 ${sz}px Fredoka, ui-rounded, system-ui, sans-serif`; g.fillText(text, w / 2, h * (i + 1) / (lines.length + 1) + (lines.length > 1 ? (i ? 8 : -6) : 0)); });
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+}
+
+/* ---------------- the shape of the Rock ----------------
+   Longer than it is wide, floating in a sea of clouds: the dock at the south tip, a meadow, a pine wood to the
+   west, a lagoon to the east, and at the north end a hill with the lighthouse on top. +z is south. */
+const EX = 27, EZ = 40, HILL = 5.2;
+const LH = { x: 0, z: -27 }, LAG = { x: 12.5, z: 8, r: 6.4 }, WOOD = { x: -13.5, z: -1, r: 9.5 }, ROCKS = { x: 13, z: -19, r: 7.5 }, RING = { x: -15.5, z: -17, r: 2.7 };
+const edgeWobble = (a) => 1 + 0.06 * Math.sin(3 * a + 1.3) + 0.04 * Math.sin(5 * a + 0.4) + 0.025 * Math.sin(8 * a + 2);
+const edgeR = (a) => edgeWobble(a) / Math.sqrt((Math.cos(a) / EX) ** 2 + (Math.sin(a) / EZ) ** 2);
+const relAt = (x, z) => Math.hypot(x, z) / edgeR(Math.atan2(z, x));   // 0 in the middle, 1 at the cliff edge
+const SHORE = edgeR(Math.PI / 2);                                     // the south tip, where the dock is
+const PATH = [[0, SHORE - 0.5], [-1.5, 30], [-3, 22], [2.5, 13], [-2.5, 3], [-5, -7], [-1.5, -16], [0, LH.z + 4.4]];
+function distToPath(x, z) {
+  let best = Infinity;
+  for (let i = 1; i < PATH.length; i++) {
+    const [ax, az] = PATH[i - 1], [bx, bz] = PATH[i], vx = bx - ax, vz = bz - az;
+    const t = clamp(((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz), 0, 1);
+    best = Math.min(best, Math.hypot(ax + vx * t - x, az + vz * t - z));
+  }
+  return best;
+}
+function height(x, z) {
+  const d = Math.hypot(x - LH.x, z - LH.z), hill = 1 - smooth01((d - 5) / 15);
+  let h = HILL * hill;
+  h += 1.1 * Math.exp(-((x + 11) ** 2 + (z - 19) ** 2) / 46);                                   // a low knoll in the meadow
+  const flat = (1 - hill) * (1 - Math.exp(-(x * x + (z - SHORE) ** 2) / 40));                   // level by the dock and on the hilltop
+  h += 0.14 * Math.sin(x * 0.36 + 1) * Math.cos(z * 0.31) * flat;
+  const dl = Math.hypot(x - LAG.x, z - LAG.z);
+  h -= 0.85 * (1 - smooth01((dl - LAG.r * 0.72) / (LAG.r * 0.42)));                             // the lagoon's bowl
+  return h;
+}
+const onPier = (x, z) => Math.abs(x) <= 0.8 && z >= SHORE - 2.2 && z <= SHORE + 4.0;
+const groundY = (x, z) => (onPier(x, z) && z > SHORE - 1.4 ? 0.2 : height(x, z));
+
+const out = new THREE.Group(); scene.add(out);       // everything outdoors (hidden while you're inside the lighthouse)
+const obstacles = [];                                // { x, z, r } things a bud walks around
+const faders = [];                                   // trees and the tower go see-through when they'd hide your bud
+const SNOW = snowCoverAt(Date.now()) > 0.5 || params.get('season') === 'winter';
+const SEASON = ['winter', 'spring', 'summer', 'fall'].includes(params.get('season')) ? params.get('season') : seasonAt(Date.now());
+const GRASS = SNOW ? '#EEF3F8' : SEASON === 'fall' ? '#A9C97A' : '#86CF86', GRASS2 = SNOW ? '#DDE6EE' : SEASON === 'fall' ? '#93B869' : '#74BE79';
+
+let terrain;
+function buildTerrain() {
+  const NR = 56, NS = 180, pos = [], col = [], idx = [];
+  const cGrass = toLinear(GRASS), cGrass2 = toLinear(GRASS2), cPath = toLinear(SNOW ? '#CFC6B8' : '#D9B98A'), cSand = toLinear(SNOW ? '#E6E3DC' : '#EAD9A8'),
+    cRock = toLinear('#9AA0AE'), cEarth = toLinear('#8A6A4E'), cDeep = toLinear('#5E5568'), c = new THREE.Color();
+  const rings = [];   // [scale of the edge radius, how far below the top]
+  for (let i = 0; i <= NR; i++) rings.push([i / NR, 0]);
+  rings.push([1.012, 0.45], [1.0, 1.3], [0.93, 3.2], [0.74, 7], [0.42, 11.5], [0.12, 15]);
+  for (let i = 0; i < rings.length; i++) {
+    for (let j = 0; j < NS; j++) {
+      const a = j / NS * Math.PI * 2, [t, drop] = rings[i], r = edgeR(a) * t, x = Math.cos(a) * r, z = Math.sin(a) * r;
+      const top = i <= NR, hx = Math.cos(a) * edgeR(a), hz = Math.sin(a) * edgeR(a);
+      const y = top ? height(x, z) : height(hx * 0.999, hz * 0.999) * Math.max(0, 1 - drop / 6) - drop + (drop > 2 ? Math.sin(a * 7 + i) * 0.5 : 0);
+      pos.push(x, y, z);
+      if (!top) c.copy(cEarth).lerp(cDeep, smooth01((drop - 1) / 9));
+      else {
+        const n = Math.sin(x * 1.7 + z * 0.9) * Math.sin(z * 1.3 - x * 0.6);
+        c.copy(cGrass).lerp(cGrass2, 0.5 + 0.5 * n);
+        const rock = Math.exp(-((x - ROCKS.x) ** 2 + (z - ROCKS.z) ** 2) / (ROCKS.r * ROCKS.r * 0.9)) + 0.9 * smooth01((t - 0.93) / 0.07) * smooth01((-z - 12) / 10);
+        c.lerp(cRock, clamp(rock, 0, 0.85));
+        const dl = Math.hypot(x - LAG.x, z - LAG.z);
+        c.lerp(cSand, 1 - smooth01((dl - LAG.r - 0.3) / 1.8));
+        c.lerp(cPath, (1 - smooth01((distToPath(x, z) - 0.55) / 0.9)) * 0.9);
+      }
+      col.push(c.r, c.g, c.b);
+    }
+  }
+  for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < NS; j++) {
+    const a = i * NS + j, b = i * NS + (j + 1) % NS, d = (i + 1) * NS + j, e = (i + 1) * NS + (j + 1) % NS;
+    idx.push(a, b, d, b, e, d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  terrain = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, envMapIntensity: 0.3 }));
+  out.add(terrain);
+}
+
+/* ---------------- what's on it ---------------- */
+const rs = seededRng('lighthouse-rock');
+const glow = [];      // { mat, day, night } things that light up after dark
+function pine(x, z, s) {
+  const g = new THREE.Group(), leaf = M(SNOW ? '#5E9B7A' : '#3F8F68'), leaf2 = M(SNOW ? '#F2F6FA' : '#4BA176'), wood = M('#7A5233');
+  g.add(cyl(0.16, 0.22, 1.1, 7, wood, 0, 0.55, 0));
+  [[1.25, 1.5, 1.5, leaf], [0.98, 1.3, 2.35, leaf], [0.68, 1.15, 3.15, leaf2]].forEach(([r, h, y, m]) => { const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 9), m); c.position.y = y; g.add(c); });
+  g.position.set(x, height(x, z) - 0.05, z); g.scale.setScalar(s); g.rotation.y = rs() * 6; out.add(g);
+  obstacles.push({ x, z, r: 0.5 * s });
+  faders.push({ x, z, tall: 3.8 * s, wide: 1.3 * s, mats: [leaf, leaf2, wood], k: 1 });
+}
+function roundTree(x, z, s) {
+  const g = new THREE.Group(), leaf = M(SNOW ? '#E9EFF4' : SEASON === 'fall' ? pick(['#E8873A', '#D9573B', '#F2C14E']) : '#6BBF7A'), wood = M('#7A5233');
+  g.add(cyl(0.18, 0.24, 1.4, 7, wood, 0, 0.7, 0));
+  g.add(ball(1.2, leaf, 0, 2.1, 0), ball(0.8, leaf, 0.75, 1.75, 0.2), ball(0.75, leaf, -0.7, 1.8, -0.2));
+  g.position.set(x, height(x, z) - 0.05, z); g.scale.setScalar(s); out.add(g);
+  obstacles.push({ x, z, r: 0.5 * s });
+  faders.push({ x, z, tall: 3.3 * s, wide: 1.5 * s, mats: [leaf, wood], k: 1 });
+}
+const clear = (x, z, gap) => obstacles.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + gap);
+function buildDecor() {
+  // the pine wood
+  for (let n = 0, tries = 0; n < 30 && tries < 900; tries++) {
+    const a = rs() * Math.PI * 2, d = Math.sqrt(rs()) * WOOD.r, x = WOOD.x + Math.cos(a) * d, z = WOOD.z + Math.sin(a) * d;
+    if (relAt(x, z) > 0.9 || distToPath(x, z) < 2.4 || !clear(x, z, 1.9)) continue;
+    pine(x, z, 0.9 + rs() * 0.5); n++;
+  }
+  for (const [x, z, s] of [[8, 27, 1.1], [-9, 30, 0.95], [16, 20, 1], [-17, 12, 1.05], [7, -4, 0.95], [18, -7, 0.9]]) roundTree(x, z, s);
+  for (const [x, z, s] of [[-6, -22, 0.8], [9.5, -12, 0.85], [-19, -9, 0.9], [4, 34, 0.75]]) pine(x, z, s);
+  // boulders, thickest on the stony side of the hill
+  const stone = M('#9197A6', { flatShading: true }), stone2 = M('#7F8696', { flatShading: true });
+  for (let n = 0, tries = 0; n < 16 && tries < 600; tries++) {
+    const a = rs() * Math.PI * 2, d = Math.sqrt(rs()) * ROCKS.r, x = ROCKS.x + Math.cos(a) * d, z = ROCKS.z + Math.sin(a) * d, s = 0.35 + rs() * 0.9;
+    if (relAt(x, z) > 0.93 || distToPath(x, z) < 2 || !clear(x, z, 1.4) || Math.hypot(x - LH.x, z - LH.z) < 7) continue;
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rs() < 0.5 ? stone : stone2); m.position.set(x, height(x, z) + s * 0.35, z); m.scale.y = 0.7; m.rotation.set(rs(), rs() * 6, rs()); out.add(m);
+    if (s > 0.55) obstacles.push({ x, z, r: s * 0.85 }); n++;
+  }
+  // the lagoon: still water, lily pads, reeds
+  const water = new THREE.Mesh(new THREE.CircleGeometry(LAG.r * 0.97, 48), new THREE.MeshStandardMaterial({ color: toLinear(SNOW ? '#CFE6F2' : '#58B4DC'), roughness: SNOW ? 0.6 : 0.35, transparent: true, opacity: 0.92, envMapIntensity: 0.25 }));
+  water.rotation.x = -Math.PI / 2; water.position.set(LAG.x, -0.3, LAG.z); out.add(water);
+  obstacles.push({ x: LAG.x, z: LAG.z, r: LAG.r * 0.9 });
+  if (!SNOW) for (let i = 0; i < 7; i++) { const a = rs() * 6.3, d = rs() * LAG.r * 0.6; const p = new THREE.Mesh(new THREE.CircleGeometry(0.32 + rs() * 0.2, 12, 0.5, 5.6), mat('#5DB868')); p.rotation.x = -Math.PI / 2; p.rotation.z = rs() * 6; p.position.set(LAG.x + Math.cos(a) * d, -0.28, LAG.z + Math.sin(a) * d); out.add(p); }
+  for (let i = 0; i < 16; i++) { const a = 2.2 + rs() * 2.6, d = LAG.r * (0.84 + rs() * 0.1), x = LAG.x + Math.cos(a) * d, z = LAG.z + Math.sin(a) * d, h = 0.8 + rs() * 0.7; out.add(cyl(0.025, 0.035, h, 5, mat(SEASON === 'fall' || SNOW ? '#B89A62' : '#6FA85C'), x, height(x, z) + h / 2 - 0.1, z)); if (i % 3 === 0) out.add(cyl(0.06, 0.06, 0.26, 6, mat('#7A5233'), x, height(x, z) + h - 0.05, z)); }
+  // flowers through the meadow
+  if (!SNOW) {
+    const fg = new THREE.SphereGeometry(0.1, 7, 5), cols = ['#FF8FB1', '#FFD166', '#FFFFFF', '#C9B8FF', '#FF7A59'];
+    for (let n = 0, tries = 0; n < 90 && tries < 900; tries++) {
+      const x = (rs() - 0.5) * 44, z = -8 + rs() * 44;
+      if (relAt(x, z) > 0.92 || distToPath(x, z) < 1.3 || Math.hypot(x - LAG.x, z - LAG.z) < LAG.r + 1 || Math.hypot(x - WOOD.x, z - WOOD.z) < WOOD.r - 2) continue;
+      const f = new THREE.Mesh(fg, mat(cols[Math.floor(rs() * cols.length)])); f.position.set(x, height(x, z) + 0.12, z); f.scale.y = 0.7; out.add(f); n++;
+    }
+  }
+  // stepping stones up the path
+  for (let i = 1; i < PATH.length; i++) {
+    const [ax, az] = PATH[i - 1], [bx, bz] = PATH[i], L = Math.hypot(bx - ax, bz - az);
+    for (let d = 1; d < L; d += 2.1) { const x = ax + (bx - ax) * d / L + (rs() - 0.5) * 0.5, z = az + (bz - az) * d / L; const s = cyl(0.42, 0.46, 0.08, 8, mat('#C8C2B6'), x, height(x, z) + 0.03, z); s.scale.z = 0.8; s.rotation.y = rs() * 3; out.add(s); }
+  }
+  // the humming stones: a ring of old standing stones in the north-west
+  ring.stones = [];
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2 + 0.3, x = RING.x + Math.cos(a) * RING.r, z = RING.z + Math.sin(a) * RING.r, h = 1.5 + (i % 3) * 0.35;
+    const m = new THREE.MeshStandardMaterial({ color: toLinear('#8D93A8'), emissive: toLinear('#9FE8FF'), emissiveIntensity: 0, roughness: 0.9, flatShading: true });
+    const s = cyl(0.3, 0.42, h, 6, m, x, height(x, z) + h / 2 - 0.1, z); s.rotation.y = a; s.rotation.z = (rs() - 0.5) * 0.16; out.add(s);
+    obstacles.push({ x, z, r: 0.48 }); ring.stones.push({ m, lit: 0 });
+  }
+  // a bench looking east over the clouds
+  { const x = 19.5, z = -3.5, y = height(x, z), g = new THREE.Group(), w = mat('#B5703E');
+    g.add(box(0.5, 0.1, 2, w, 0, 0.5, 0), box(0.1, 0.7, 2, w, -0.28, 0.85, 0), box(0.42, 0.5, 0.1, mat('#7A5233'), 0, 0.25, 0.8), box(0.42, 0.5, 0.1, mat('#7A5233'), 0, 0.25, -0.8));
+    g.position.set(x, y, z); out.add(g); obstacles.push({ x, z: z - 0.5, r: 0.6 }, { x, z: z + 0.5, r: 0.6 }); }
+  // a signpost by the dock
+  { const x = 2.3, z = SHORE - 3.2, y = height(x, z), g = new THREE.Group();
+    g.add(cyl(0.07, 0.08, 1.9, 6, mat('#7A5233'), 0, 0.95, 0));
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 0.08), [mat('#B5703E'), mat('#B5703E'), mat('#B5703E'), mat('#B5703E'), new THREE.MeshStandardMaterial({ map: signTex([['LIGHTHOUSE ↑', 34]], { h: 90 }), roughness: 0.9 }), mat('#B5703E')]);
+    plank.position.y = 1.6; g.add(plank); g.position.set(x, y, z); g.rotation.y = -0.15; out.add(g); obstacles.push({ x, z, r: 0.35 }); }
+}
+const ring = { stones: [], at: -99, step: 0, playing: false, in: false };
+
+// the sea of clouds underneath, the home island far off to the south, and a few clouds up high
+const clouds = [];
+const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92, fog: false });
+function buildSky() {
+  const g1 = new THREE.SphereGeometry(1, 10, 8), r = seededRng('clouds');
+  for (let i = 0; i < 54; i++) {
+    const a = r() * Math.PI * 2, d = 26 + r() * 190, g = new THREE.Group(), s = 5 + r() * 9;
+    for (const [dx, dy, rr] of [[0, 0, 1], [1.1, 0.1, 0.75], [-1.05, 0.05, 0.7], [0.3, 0.35, 0.8]]) { const p = new THREE.Mesh(g1, cloudMat); p.position.set(dx, dy, (r() - 0.5) * 0.8); p.scale.set(rr, rr * 0.55, rr); g.add(p); }
+    g.position.set(Math.cos(a) * d, i < 44 ? -19 + r() * 7 : 22 + r() * 16, Math.sin(a) * d * 1.2); g.scale.setScalar(i < 44 ? s : s * 0.6); scene.add(g);
+    clouds.push({ g, v: 0.15 + r() * 0.35 });
+  }
+  // home: bud island, small in the distance, with its lights on at night
+  const home = new THREE.Group();
+  const top = cyl(10, 9.2, 1.6, 20, M(GRASS, { fog: false }), 0, 0, 0), under = new THREE.Mesh(new THREE.ConeGeometry(9, 9, 12), M('#8A6A4E', { fog: false })); under.rotation.x = Math.PI; under.position.y = -5.2;
+  home.add(top, under);
+  const lit = new THREE.MeshStandardMaterial({ color: toLinear('#FFE9A8'), emissive: toLinear('#FFC463'), emissiveIntensity: 0.2, fog: false }); glow.push({ mat: lit, day: 0.15, night: 1.6 });
+  for (let i = 0; i < 9; i++) { const a = i * 0.7, d = 2.5 + (i % 3) * 2.2, x = Math.cos(a) * d, z = Math.sin(a) * d; home.add(box(1.3, 1.1, 1.3, M(['#F4EBDD', '#FFD9C7', '#D9E8FF'][i % 3], { fog: false }), x, 1.3, z)); const rf = new THREE.Mesh(new THREE.ConeGeometry(1.15, 0.9, 4), M(['#E0715B', '#6E8FD9', '#E8B04A'][i % 3], { fog: false })); rf.position.set(x, 2.3, z); rf.rotation.y = Math.PI / 4; home.add(rf); home.add(box(0.3, 0.3, 0.05, lit, x, 1.3, z + 0.67)); }
+  home.position.set(-52, -10, 175); scene.add(home);
+  for (const [x, y, z, s] of [[120, -14, -90, 5], [-150, -6, -40, 7], [70, -18, -190, 6]]) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), M('#8E94A6', { flatShading: true, fog: false })); m.position.set(x, y, z); m.scale.y = 0.7; scene.add(m); const t = new THREE.Mesh(new THREE.ConeGeometry(s * 0.3, s * 0.8, 7), M('#3F8F68', { fog: false })); t.position.set(x, y + s * 0.9, z); scene.add(t); }
+}
+
+// the balloon ferry (the same little boat as at the dock back home) and the pier it ties up at
+const boat = { g: null, home: new THREE.Vector3(1.95, 0.25, SHORE + 3.1), x: 0, y: 0, z: 0 };
+function buildDock() {
+  const d = new THREE.Group(), wood = mat('#B5703E'), dark = mat('#7A5233'), z0 = SHORE - 2.2, z1 = SHORE + 4.6, PW = 2.1;
+  for (let z = z0, k = 0; z < z1; z += 0.5, k++) d.add(box(PW + (k % 2) * 0.06, 0.08, 0.44, wood, 0, 0.14, z + 0.22));
+  for (const s of [-1, 1]) {
+    d.add(box(0.12, 0.12, z1 - z0, dark, s * PW / 2, 0.07, (z0 + z1) / 2));
+    for (const z of [SHORE + 1.2, SHORE + 4.3]) d.add(cyl(0.09, 0.09, 2.4, 7, dark, s * PW / 2, -1.0, z));
+    for (const z of [SHORE + 0.4, SHORE + 2.4, SHORE + 4.4]) d.add(cyl(0.06, 0.06, 0.7, 6, dark, s * PW / 2, 0.49, z));
+    d.add(box(0.06, 0.06, 4.1, dark, s * PW / 2, 0.82, SHORE + 2.4));
+  }
+  const lampM = new THREE.MeshStandardMaterial({ color: toLinear('#FFE9A8'), emissive: toLinear('#FFC463'), emissiveIntensity: 0.2 }); glow.push({ mat: lampM, day: 0.2, night: 1.8 });
+  d.add(cyl(0.05, 0.05, 1.5, 6, dark, -PW / 2, 0.9, z1 - 0.1), ball(0.16, lampM, -PW / 2, 1.72, z1 - 0.1, 10));
+  out.add(d);
+  const b = new THREE.Group(), rim = mat('#F4EBDD');
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat('#B5703E')); hull.scale.set(0.72, 0.6, 1.25); b.add(hull);
+  const deck = new THREE.Mesh(new THREE.CircleGeometry(1, 20), mat('#D9A066')); deck.rotation.x = -Math.PI / 2; deck.scale.set(0.7, 1.22, 1); deck.position.y = -0.02; b.add(deck);
+  const gun = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 6, 24), rim); gun.rotation.x = Math.PI / 2; gun.scale.set(0.72, 1.25, 1); b.add(gun);
+  const balloon = ball(1.15, M('#FF7A59', { roughness: 0.5 }), 0, 3.1, 0, 20); balloon.scale.y = 1.12; b.add(balloon);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(1.12, 0.09, 8, 28), rim); band.rotation.x = Math.PI / 2; band.position.y = 3.1; b.add(band);
+  const knot = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.3, 8), mat('#E8552F')); knot.position.y = 1.75; b.add(knot);
+  for (const [x, z] of [[-0.5, -0.8], [0.5, -0.8], [-0.5, 0.8], [0.5, 0.8]]) {
+    const a = new THREE.Vector3(x, 0.02, z), e = new THREE.Vector3(x * 0.55, 2.15, z * 0.45), rope = cyl(0.014, 0.014, a.distanceTo(e), 4, rim);
+    rope.position.copy(a).add(e).multiplyScalar(0.5); rope.quaternion.setFromUnitVectors(up, e.clone().sub(a).normalize()); b.add(rope);
+  }
+  scene.add(b); boat.g = b; boat.x = boat.home.x; boat.y = boat.home.y; boat.z = boat.home.z;
+}
+
+/* ---------------- the lighthouse ---------------- */
+const TOWER_H = 11, BASE_Y = HILL + 0.5, GAL_Y = BASE_Y + TOWER_H + 0.2, GAL_R = 3.05;
+const DOOR = { x: LH.x, z: LH.z + 4.1 };
+const lamp = { beams: null, mat: null };
+const tower = new THREE.Group();
+function buildLighthouse(level) {
+  const white = M('#F7F1E6'), red = M('#D8503F'), iron = M('#3A3F4F', { roughness: 0.6 }), fade = [white, red, iron];
+  tower.add(cyl(3.5, 3.7, 0.7, 24, M('#9197A6', { flatShading: true }), 0, 0.2, 0));
+  const R0 = 3.2, R1 = 2.4, N = 5;
+  for (let i = 0; i < N; i++) { const a = lerp(R0, R1, i / N), b = lerp(R0, R1, (i + 1) / N); tower.add(cyl(b, a, TOWER_H / N, 28, i % 2 ? red : white, 0, 0.5 + TOWER_H / N * (i + 0.5), 0)); }
+  const gy = 0.5 + TOWER_H;
+  tower.add(cyl(3.95, 3.7, 0.24, 28, iron, 0, gy + 0.08, 0));
+  const rail = new THREE.Mesh(new THREE.TorusGeometry(3.85, 0.05, 6, 40), iron); rail.rotation.x = Math.PI / 2; rail.position.y = gy + 1.05; tower.add(rail);
+  for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2; tower.add(cyl(0.035, 0.035, 0.95, 5, iron, Math.cos(a) * 3.85, gy + 0.6, Math.sin(a) * 3.85)); }
+  lamp.mat = new THREE.MeshStandardMaterial({ color: toLinear('#FFF3C4'), emissive: toLinear('#FFC94A'), emissiveIntensity: 0.6, roughness: 0.3 });
+  const glass = new THREE.MeshStandardMaterial({ color: toLinear('#DDF3FF'), transparent: true, opacity: 0.3, roughness: 0.1 });
+  tower.add(cyl(1.5, 1.5, 1.7, 14, glass, 0, gy + 1.05, 0), ball(0.6, lamp.mat, 0, gy + 1.05, 0, 14));
+  for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; tower.add(cyl(0.05, 0.05, 1.7, 5, iron, Math.cos(a) * 1.5, gy + 1.05, Math.sin(a) * 1.5)); }
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.95, 1.5, 14), red); roof.position.y = gy + 2.65; tower.add(roof);
+  tower.add(ball(0.2, iron, 0, gy + 3.5, 0, 8));
+  // the door (south side), a step, and two little windows up the tower
+  const doorM = M('#5B3A29'), win = new THREE.MeshStandardMaterial({ color: toLinear('#FFE9A8'), emissive: toLinear('#FFC463'), emissiveIntensity: 0.2 }); glow.push({ mat: win, day: 0.25, night: 1.7 });
+  tower.add(box(1.4, 2.2, 0.3, doorM, 0, 1.6, R0 - 0.1), cyl(0.7, 0.7, 0.3, 16, doorM, 0, 2.7, R0 - 0.1));
+  tower.children[tower.children.length - 1].rotation.x = Math.PI / 2;
+  tower.add(ball(0.07, M('#E8B04A', { roughness: 0.3 }), 0.45, 1.6, R0 + 0.07, 8), box(1.9, 0.25, 1, M('#9197A6'), 0, 0.5, R0 + 0.45));
+  tower.add(box(0.6, 0.8, 0.2, win, 0, 5.4, 2.82), box(0.55, 0.75, 0.2, win, 0, 8.6, 2.55));
+  // the beams, sweeping round after dark and in fog
+  lamp.beams = new THREE.Group();
+  for (const s of [1, -1]) { const c = new THREE.Mesh(new THREE.ConeGeometry(7, 70, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xFFE7A0, transparent: true, opacity: 0.11, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false })); c.rotation.z = s * Math.PI / 2; c.position.x = s * 35; lamp.beams.add(c); }
+  lamp.beams.position.y = gy + 1.05; tower.add(lamp.beams);
+  tower.position.set(LH.x, HILL, LH.z); out.add(tower);
+  obstacles.push({ x: LH.x, z: LH.z, r: 3.75 });
+  faders.push({ x: LH.x, z: LH.z, tall: 16, wide: 3.6, mats: fade, k: 0.35, behind: true });
+  // the keeper's own touches: a sign, a vegetable patch, washing on a line
+  { const g = new THREE.Group(), txt = level >= 2 ? [['NO VISITORS', 38], ['(except you)', 26]] : [['NO VISITORS', 40], ['(please)', 26]];
+    g.add(cyl(0.06, 0.07, 1.3, 6, mat('#7A5233'), 0, 0.65, 0));
+    const p = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.75, 0.07), [mat('#E9D7B4'), mat('#E9D7B4'), mat('#E9D7B4'), mat('#E9D7B4'), new THREE.MeshStandardMaterial({ map: signTex(txt), roughness: 0.9 }), mat('#E9D7B4')]);
+    p.position.y = 1.2; p.rotation.z = 0.05; g.add(p);
+    const x = -2.5, z = LH.z + 5.9; g.position.set(x, height(x, z), z); g.rotation.y = 0.25; out.add(g); obstacles.push({ x, z, r: 0.35 }); }
+  { const gx = -6.3, gz = LH.z + 1.5, soil = box(2.4, 0.12, 3.2, mat('#7A5A46'), gx, height(gx, gz) + 0.02, gz); out.add(soil);
+    for (let i = 0; i < 6; i++) { const x = gx - 0.6 + (i % 2) * 1.2, z = gz - 1.05 + Math.floor(i / 2) * 1.05, y = height(x, z); if (i === 3 || i === 4) { const p = ball(0.34, M('#F08A3C', { roughness: 0.6 }), x, y + 0.3, z, 10); p.scale.y = 0.78; out.add(p, cyl(0.03, 0.04, 0.14, 5, mat('#4E9A57'), x, y + 0.6, z)); } else { const c = ball(0.3, mat(SNOW ? '#CFE3D2' : '#8FD08A'), x, y + 0.24, z, 8); c.scale.y = 0.8; out.add(c); } }
+    obstacles.push({ x: gx, z: gz, r: 1.5 }); }
+  { const x0 = 4.6, z0 = LH.z + 3.4, x1 = 7.4, z1 = LH.z + 0.8, post = mat('#7A5233');
+    for (const [x, z] of [[x0, z0], [x1, z1]]) { out.add(cyl(0.06, 0.07, 2, 6, post, x, height(x, z) + 1, z)); obstacles.push({ x, z, r: 0.3 }); }
+    const a = new THREE.Vector3(x0, height(x0, z0) + 1.9, z0), b = new THREE.Vector3(x1, height(x1, z1) + 1.9, z1), line = cyl(0.012, 0.012, a.distanceTo(b), 4, mat('#F4EBDD'));
+    line.position.copy(a).add(b).multiplyScalar(0.5); line.quaternion.setFromUnitVectors(up, b.clone().sub(a).normalize()); out.add(line);
+    ['#6E8FD9', '#F4EBDD', '#E0715B', '#6E8FD9'].forEach((c, i) => { const p = a.clone().lerp(b, 0.18 + i * 0.21), s = box(0.26, 0.5, 0.04, mat(c), p.x, p.y - 0.3, p.z); s.rotation.y = Math.atan2(b.x - a.x, b.z - a.z) + Math.PI / 2; s.userData.sway = i; wash.push(s); out.add(s); }); }
+}
+const wash = [];
+
+/* ---------------- inside the lighthouse ----------------
+   One round room, drawn with its front wall away so you can see in: the stove, the keeper's bed and desk,
+   and the stairs that wind up to the lamp. It sits out of the way underneath; the outdoors is hidden while you're in. */
+const ROOM_Y = -80, RR = 4.7;
+const room = new THREE.Group(); room.position.y = ROOM_Y; room.visible = false; scene.add(room);
+const roomObstacles = [];
+const STAIR = { x: 3.25, z: 1.5 }, MAT = { x: 0, z: RR - 0.9 }, CRATE = { x: 0.9, z: -1.1 };
+let stoveLight;
+function buildRoom() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  g.fillStyle = '#C89B6A'; g.fillRect(0, 0, 256, 256); g.strokeStyle = 'rgba(90,58,34,.45)'; g.lineWidth = 2;
+  for (let y = 0; y <= 256; y += 32) { g.beginPath(); g.moveTo(0, y); g.lineTo(256, y); g.stroke(); for (let x = (y / 32 % 2) * 60 + 20; x < 256; x += 120) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 32); g.stroke(); } }
+  const ft = new THREE.CanvasTexture(c); ft.encoding = THREE.sRGBEncoding;
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(RR, 48), new THREE.MeshStandardMaterial({ map: ft, roughness: 0.85 })); floor.rotation.x = -Math.PI / 2; room.add(floor);
+  room.add(cyl(RR + 0.25, RR + 0.25, 0.5, 48, M('#6B5648'), 0, -0.26, 0));
+  // the back wall: 250 degrees of it, open toward you
+  const wallM = new THREE.MeshStandardMaterial({ color: toLinear('#DCCBAA'), roughness: 0.95, side: THREE.BackSide }), arc = [Math.PI - 2.18, 4.36];
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(RR, RR, 4.4, 48, 1, true, ...arc), wallM); wall.position.y = 2.2; room.add(wall);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(RR - 0.01, RR - 0.01, 0.9, 48, 1, true, ...arc), new THREE.MeshStandardMaterial({ color: toLinear('#D8503F'), roughness: 0.95, side: THREE.BackSide })); band.position.y = 0.45; room.add(band);
+  const shell = new THREE.Mesh(new THREE.CylinderGeometry(RR + 0.25, RR + 0.25, 4.4, 48, 1, true, ...arc), M('#C9BBA2')); shell.position.y = 2.2; room.add(shell);
+  // a round rug
+  const rug = new THREE.Mesh(new THREE.CircleGeometry(1.9, 32), M('#B5524A')), rug2 = new THREE.Mesh(new THREE.RingGeometry(1.2, 1.45, 32), M('#F0D9A8'));
+  rug.rotation.x = rug2.rotation.x = -Math.PI / 2; rug.position.set(0.4, 0.02, 0.2); rug2.position.set(0.4, 0.03, 0.2); room.add(rug, rug2);
+  // the stove, with its pipe and a kettle on top
+  const iron = M('#34343F', { roughness: 0.55 }), fire = new THREE.MeshStandardMaterial({ color: toLinear('#FFB45A'), emissive: toLinear('#FF8A2A'), emissiveIntensity: 1.6 });
+  const sx = -1.9, sz = -3.0;
+  room.add(cyl(0.6, 0.66, 1.15, 14, iron, sx, 0.72, sz), cyl(0.68, 0.68, 0.08, 14, iron, sx, 1.32, sz), cyl(0.13, 0.13, 3.2, 8, iron, sx - 0.2, 2.9, sz - 0.25));
+  for (const [dx, dz] of [[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]]) room.add(cyl(0.05, 0.05, 0.18, 5, iron, sx + dx, 0.09, sz + dz));
+  const door = box(0.5, 0.34, 0.06, fire, sx + 0.33, 0.7, sz + 0.52); door.rotation.y = 0.56; room.add(door); stove.fire = fire;
+  room.add(ball(0.2, M('#6E8FD9', { roughness: 0.4 }), sx + 0.1, 1.5, sz + 0.05, 10), cyl(0.03, 0.05, 0.22, 5, M('#6E8FD9'), sx + 0.33, 1.56, sz + 0.05));
+  stoveLight = new THREE.PointLight(0xFFA95A, 0.9, 11, 2); stoveLight.position.set(sx + 0.6, 1.2, sz + 0.9); room.add(stoveLight);
+  roomObstacles.push({ x: sx, z: sz, r: 0.95 });
+  // the bed along the west wall
+  { const g = new THREE.Group(); g.add(box(1.3, 0.4, 2.5, M('#8A5A3A'), 0, 0.3, 0), box(1.2, 0.2, 2.4, M('#F4EBDD'), 0, 0.58, 0), box(1.24, 0.14, 1.5, M('#5B79B8'), 0, 0.7, 0.45), box(0.85, 0.16, 0.45, M('#FFFFFF'), 0, 0.76, -0.85), box(1.3, 0.9, 0.12, M('#8A5A3A'), 0, 0.65, -1.26));
+    g.position.set(-3.35, 0, 0.1); g.rotation.y = 0.12; room.add(g); roomObstacles.push({ x: -3.5, z: -0.6, r: 1.0 }, { x: -3.5, z: 0.8, r: 1.0 }); }
+  // the desk under the window: the logbook, a mug, a spyglass
+  { const wd = M('#9C6B43'); room.add(box(2, 0.1, 0.85, wd, 1.2, 0.95, -3.75), box(0.1, 0.95, 0.75, wd, 0.3, 0.47, -3.75), box(0.1, 0.95, 0.75, wd, 2.1, 0.47, -3.75));
+    const book = box(0.55, 0.06, 0.4, M('#F4EBDD'), 1.0, 1.04, -3.7); book.rotation.y = 0.2; room.add(book, cyl(0.07, 0.06, 0.14, 8, M('#E0715B'), 1.75, 1.07, -3.6));
+    const spy = cyl(0.05, 0.07, 0.5, 8, M('#C9A24A', { roughness: 0.35 }), 0.55, 1.05, -3.95); spy.rotation.z = Math.PI / 2; room.add(spy);
+    roomObstacles.push({ x: 0.75, z: -3.8, r: 0.8 }, { x: 1.7, z: -3.8, r: 0.8 }); }
+  const win = new THREE.MeshBasicMaterial({ color: 0xBFE3FF }); room.userData.win = win;
+  { const w = new THREE.Mesh(new THREE.CircleGeometry(0.62, 20), win); w.position.set(1.2, 2.6, -RR + 0.34); room.add(w);
+    const fr = new THREE.Mesh(new THREE.TorusGeometry(0.64, 0.07, 6, 24), M('#8A5A3A')); fr.position.copy(w.position); room.add(fr, box(1.24, 0.06, 0.05, M('#8A5A3A'), 1.2, 2.6, -RR + 0.36), box(0.06, 1.24, 0.05, M('#8A5A3A'), 1.2, 2.6, -RR + 0.36)); }
+  // a shelf of jars and old finds
+  { room.add(box(1.5, 0.07, 0.3, M('#8A5A3A'), -0.3, 2.3, -RR + 0.42));
+    ['shell', 'pebble', 'float', 'pinecone'].forEach((k, i) => { const f = makeFind(THREE, k); f.position.set(-0.85 + i * 0.37, 2.34, -RR + 0.42); f.scale.setScalar(0.62); room.add(f); }); }
+  // the good crate, by the stove
+  room.add(box(0.7, 0.55, 0.7, M('#B98954'), CRATE.x, 0.28, CRATE.z)); room.children[room.children.length - 1].rotation.y = 0.3; roomObstacles.push({ x: CRATE.x, z: CRATE.z, r: 0.5 });
+  // a lantern hanging overhead
+  { const l = makeFind(THREE, 'lantern'); l.position.set(0.4, 3.5, 0.2); l.scale.setScalar(1.6); room.add(l, cyl(0.012, 0.012, 1.4, 4, iron, 0.4, 4.9, 0.2)); }
+  // the stairs winding up the east wall, and the door mat at the front
+  const stepM = M('#9C6B43'), step2 = M('#8A5C38');
+  for (let i = 0; i < 11; i++) { const a = 0.5 - i * 0.2, r = RR - 0.62, s = box(1.15, 0.36, 0.95, i % 2 ? stepM : step2, Math.cos(a) * r, 0.18 + i * 0.36, Math.sin(a) * r); s.rotation.y = -a; room.add(s); if (i < 3) roomObstacles.push({ x: Math.cos(a - 0.2) * r, z: Math.sin(a - 0.2) * r, r: 0.55 }); }
+  room.add(box(1.5, 0.04, 0.8, M('#6E8E5C'), MAT.x, 0.02, MAT.z + 0.35));
+}
+const stove = { fire: null };
+
+/* ---------------- buds ---------------- */
+const FACE_W = 256, FACE_H = 175, BUD_SIZE = 1.9;
+const shadowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  gr.addColorStop(0, 'rgba(30,25,60,.32)'); gr.addColorStop(1, 'rgba(30,25,60,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const loadImage = (src) => new Promise((ok) => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
+function eyeColorFor(img, b) {
+  if (!img) return '#15161F';
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 8; const g = c.getContext('2d', { willReadFrequently: true });
+    const Wd = img.width, Hd = img.height, er = b.eyeR;
+    const sx = (b.eyeRel.x - er * 1.2 - b.minX) / b.w * Wd, sy = (b.eyeRel.y - er * 0.7 - b.minY) / b.h * Hd;
+    g.drawImage(img, clamp(sx, 0, Wd - 1), clamp(sy, 0, Hd - 1), Math.max(1, er * 2.4 / b.w * Wd), Math.max(1, er * 1.4 / b.h * Hd), 0, 0, 8, 8);
+    const d = g.getImageData(0, 0, 8, 8).data; let r = 0, gg = 0, bb = 0;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; bb += d[i + 2]; }
+    return (0.2126 * r + 0.7152 * gg + 0.0722 * bb) / (d.length / 4) / 255 < 0.42 ? '#F3F4F8' : '#15161F';
+  } catch (e) { return '#15161F'; }
+}
+async function makeBud(data, { size = BUD_SIZE, color = '#EEE8DF', eyeCol = null } = {}) {
+  const b = setExtents({ r: data.r.map(([x, y]) => ({ x, y })), eyeRel: data.eyeRel, eyeR: data.eyeR });
+  const { geom, face } = buildMesh(b), img = await loadImage(data.paint), s = size / Math.max(b.w, b.h);
+  const tex = img ? new THREE.Texture(img) : null;
+  if (tex) { tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4; tex.needsUpdate = true; }
+  const bodyMat = new THREE.MeshPhysicalMaterial({ color: tex ? 0xffffff : toLinear(color), map: tex, roughness: 0.58, clearcoat: 0.3, clearcoatRoughness: 0.42, envMapIntensity: 0.55 });
+  const fc = document.createElement('canvas'); fc.width = FACE_W; fc.height = FACE_H;
+  const faceTex = new THREE.CanvasTexture(fc); faceTex.encoding = THREE.sRGBEncoding;
+  const faceMat = new THREE.MeshStandardMaterial({ map: faceTex, transparent: true, depthWrite: false, roughness: 0.55, envMapIntensity: 0.12, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  const root = new THREE.Group(), hop = new THREE.Group(), squash = new THREE.Group(), inner = new THREE.Group();
+  root.add(hop); hop.add(squash); squash.add(inner);
+  inner.scale.setScalar(s); inner.position.set(-(b.minX + b.maxX) / 2 * s, b.maxY * s, 0);
+  const faceMesh = new THREE.Mesh(face, faceMat); faceMesh.renderOrder = 2;
+  inner.add(new THREE.Mesh(geom, bodyMat), faceMesh);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.03; shadow.scale.set(b.w * s * 1.1, b.w * s * 0.75, 1); root.add(shadow);
+  scene.add(root);
+  return {
+    data, b, s, root, hop, squash, shadow, faceTex, fctx: fc.getContext('2d'), faceKey: '', eyeCol: eyeCol || eyeColorFor(img, b),
+    height: b.h * s, width: b.w * s, x: 0, z: 0, y: 0, vy: 0, vx: 0, vz: 0, heading: 0, phase: 0, moving: 0, sy: 1,
+    blinkAt: rand(1, 4), happyUntil: 0, mood: null, lx: 0, ly: 0.1, bubble: null, bubbleUntil: 0, look: null,
+  };
+}
+function drawFace(bud) {
+  const r = bud.b.eyeR, sc = FACE_W / (r * 4.4);
+  let wx = 0, wy = 0.1;
+  if (bud.look) {   // look toward something, in the bud's own frame
+    const dx = bud.look.x - bud.x, dz = bud.look.z - bud.z, c = Math.cos(bud.heading), s = Math.sin(bud.heading), lx = dx * c - dz * s, d = Math.hypot(dx, dz) || 1;
+    wx = clamp(lx / d * 1.3, -1, 1);
+  }
+  bud.lx += (wx - bud.lx) * 0.2; bud.ly += (wy - bud.ly) * 0.2;
+  if (T > bud.blinkAt + 0.15) bud.blinkAt = T + rand(2, 5);
+  const bt = (T - bud.blinkAt) / 0.15, blink = bud.asleep ? 1 : bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0, happy = T < bud.happyUntil;
+  const key = [Math.round(bud.lx * 20), Math.round(blink * 8), happy, bud.mood].join('|');
+  if (key === bud.faceKey) return;
+  bud.faceKey = key;
+  bud.fctx.clearRect(0, 0, FACE_W, FACE_H);
+  drawEyeStyle(bud.fctx, bud.data.eyes || 'classic', FACE_W / 2, FACE_H / 2, r * sc, blink, happy, bud.eyeCol, { x: bud.lx, y: bud.ly }, happy ? null : bud.mood);
+  bud.faceTex.needsUpdate = true;
+}
+function say(bud, text, ms = 2000) {
+  if (bud.keeper) S.babble(text, 'gloam-the-keeper', { gain: 0.9, rate: 0.72 }); else S.babble(text, bud.data.trueName || 'bud', { gain: 1.1 });
+  if (!bud.bubble) { bud.bubble = document.createElement('div'); bud.bubble.className = 'bubble' + (bud.keeper ? ' keeper' : ''); labels.appendChild(bud.bubble); }
+  bud.bubble.textContent = text; bud.bubble.hidden = false;
+  bud.bubble.classList.remove('pop'); void bud.bubble.offsetWidth; bud.bubble.classList.add('pop');
+  bud.bubbleUntil = T + ms / 1000;
+}
+const v3 = new THREE.Vector3();
+function placeBubble(bud) {
+  if (!bud.bubble || bud.bubble.hidden) return;
+  if (T > bud.bubbleUntil || !bud.root.visible) { bud.bubble.hidden = true; return; }
+  v3.set(bud.root.position.x, bud.root.position.y + bud.height * (bud.sitScale || 1) + 0.55, bud.root.position.z).project(camera);
+  if (v3.z > 1) { bud.bubble.style.opacity = 0; return; }
+  const w = bud.bubble.offsetWidth, x = clamp((v3.x + 1) / 2 * innerWidth, w / 2 + 6, innerWidth - w / 2 - 6), y = Math.max(bud.bubble.offsetHeight + 60, (1 - v3.y) / 2 * innerHeight);
+  bud.bubble.style.opacity = 1; bud.bubble.style.transform = `translate(${x - w / 2}px, ${y - bud.bubble.offsetHeight - 8}px)`;
+}
+
+/* ---------------- the keeper ----------------
+   Gloam has kept the lamp alone for a long time and would like you to know it. Gruff about everything at
+   first; a little less each day you say hello or keep it company. Its lines are written by hand. */
+const GLOAM_SHAPE = (() => {
+  const r = [];
+  for (let i = 0; i < 64; i++) { const a = i / 64 * Math.PI * 2, s = Math.sin(a), lump = 2.5 * Math.sin(5 * a + 0.6) + 2 * Math.sin(3 * a); r.push([Math.cos(a) * (50 + 9 * Math.max(0, s) + lump), s * (s > 0 ? 44 : 56) + lump * 0.5]); }
+  return { r, eyeRel: { x: 0, y: -14 }, eyeR: 15, eyes: 'pebble', paint: null, trueName: KEEPER };
+})();
+const LINES = {
+  first: ['…who let you onto my rock.'],
+  hi: [
+    ['oh. a visitor. wonderful.', 'the boat goes back the way it came, you know.', 'you’re standing in my quiet.', 'don’t touch the lamp.'],
+    ['you again.', 'oh. it’s the small one.', 'back, are you. hmph.', 'the fog is nicer company. no offense. some offense.'],
+    ['oh. you. …the kettle’s on, i suppose.', 'you came back. didn’t think you would.', 'hm. sit, if you’re staying.', 'i kept the lamp lit. not for you. for boats. …mostly.'],
+    ['there you are. …i mean. oh. it’s you.', 'took you long enough. the kettle went cold. twice.', 'you’re late. not that i was counting.', 'good. you’re here. don’t make it weird.'],
+  ],
+  more: [
+    ['still here.', 'hm.', 'that’s enough talking for one day.', 'i’m busy. (i’m not. but still.)', 'mind the cabbages.'],
+    ['mind the garden.', 'if you find a fossil, it was mine first.', 'the wood is full of pinecones. take them. they keep hitting the roof.', '…the lagoon is good for sitting by. not that i’d know.', 'those stones in the north-west hum. it’s very annoying.'],
+    ['the shiny ones turn up by the lagoon.', 'stars fall on the rocks some nights. don’t tell everyone.', 'i’ve been here a long while. it’s quieter than it sounds.', 'that island of yours. loud, is it? …sounds nice.', 'you can go up to the lamp. mind the rail.'],
+    ['i saved you the good crate to sit on.', 'the lamp’s for you too. so you can find your way back.', '…it’s less quiet when you go. i’ve noticed.', 'don’t tell the others i’m nice.', 'i looked for your boat this morning. out of habit.'],
+  ],
+  stay: ['…you’re still here.', 'you don’t talk much. good.', '…this is fine. this is fine company.', 'stay as long as you like. i mean. whatever.'],
+  rain: ['rain. the roof leaks in three places. i’ve named them.', 'wipe your… whatever you have. it’s wet out.'],
+  snow: ['snow. now everything is quiet AND cold.', 'shut the door. you’re letting the snow in.'],
+  fog: ['fog. finally, some privacy.'],
+  windy: ['wind’s up. hold on to your feathers.'],
+  night: ['lamp’s lit. that’s the whole job. go and look at it or something.', 'it’s late. boats should be home by now. so should you.'],
+  fish: ['shh. you’ll scare the fish. there aren’t any. but still.', 'nothing’s biting. nothing ever bites. that’s the point.'],
+  garden: ['the cabbages don’t talk back. i like that about them.'],
+  fossil: ['is that a fossil. hm. not bad.'],
+  star: ['a fallen star. huh. you’ve got sharp eyes. don’t let it go to your head.'],
+  gift: 'here. the old lantern. it only gathered dust. …put it somewhere it will be seen.',
+};
+let gloam = null;
+const gloamAt = { area: 'out', x: 0, z: 0, heading: 0, doing: 'porch' };
+async function makeGloam() {
+  gloam = await makeBud(GLOAM_SHAPE, { size: 2.35, color: '#56607F', eyeCol: '#F3F4F8' });
+  gloam.keeper = true; gloam.mood = 'annoyed';
+  // a knitted keeper's cap, pulled down
+  const cap = new THREE.Group(), wool = M('#C9973B', { roughness: 1 });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), wool); dome.scale.set(1, 0.72, 0.62);
+  const brim = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.11, 8, 24), M('#B5822E', { roughness: 1 })); brim.rotation.x = Math.PI / 2; brim.scale.set(1, 0.62, 1);
+  cap.add(dome, brim); cap.position.set(0, gloam.height * 0.86, 0.02); gloam.squash.add(cap);
+  // a fishing rod for lagoon days
+  const rod = new THREE.Group(), stick = cyl(0.02, 0.035, 2.6, 5, mat('#7A5233'), 0.8, 0.5 + Math.cos(0.95) * 1.3, 0.3 + Math.sin(0.95) * 1.3); stick.rotation.x = 0.95;
+  rod.add(stick, cyl(0.006, 0.006, 2.3, 3, mat('#F4EBDD'), 0.8, 0.5 + Math.cos(0.95) * 2.6 - 1.15, 0.3 + Math.sin(0.95) * 2.6));
+  gloam.rod = rod; gloam.root.add(rod);
+}
+// where the keeper is right now: indoors after dark and in bad weather, otherwise out fishing, gardening or by its door
+function placeGloam() {
+  const hour = HOUR_NOW, slot = Math.floor(hour / 3), r = seededRng('gloam:' + DAY + ':' + slot)(), want = params.get('gloam');
+  const indoors = want ? want === 'in' : (NIGHT > 0.6 || WX.rain > 0.25 || WX.snow > 0.25 || r < 0.25);
+  if (indoors) Object.assign(gloamAt, { area: 'in', x: -0.55, z: -1.75, heading: 0.35, doing: 'stove' });
+  else if (want === 'fish' || (!want && r < 0.55 && !SNOW)) Object.assign(gloamAt, { area: 'out', x: LAG.x - LAG.r * 1.06, z: LAG.z + 1.2, heading: Math.PI / 2, doing: 'fish' });
+  else if (want === 'garden' || (!want && r < 0.78 && !SNOW)) Object.assign(gloamAt, { area: 'out', x: -4.3, z: LH.z + 2.6, heading: -1.9, doing: 'garden' });
+  else Object.assign(gloamAt, { area: 'out', x: 2.9, z: LH.z + 4.9, heading: 0.3, doing: 'porch' });
+  gloam.x = gloamAt.x; gloam.z = gloamAt.z; gloam.heading = gloam.home = gloamAt.heading;
+  gloam.rod.visible = gloamAt.doing === 'fish';
+}
+
+/* ---------------- the day's finds ---------------- */
+const finds = [];     // { i, kind, x, z, g, spark, taken }
+function zoneSpot(zone, r) {
+  for (let t = 0; t < 200; t++) {
+    let x, z;
+    if (zone === 'wood') { const a = r() * 6.283, d = Math.sqrt(r()) * (WOOD.r - 1); x = WOOD.x + Math.cos(a) * d; z = WOOD.z + Math.sin(a) * d; }
+    else if (zone === 'rocks') { const a = r() * 6.283, d = Math.sqrt(r()) * ROCKS.r; x = ROCKS.x + Math.cos(a) * d; z = ROCKS.z + Math.sin(a) * d; }
+    else if (zone === 'shore') { const a = r() * 6.283, d = LAG.r + 0.6 + r() * 1.7; x = LAG.x + Math.cos(a) * d; z = LAG.z + Math.sin(a) * d; }
+    else { x = (r() - 0.5) * 40; z = 4 + r() * 30; if (Math.hypot(x - LAG.x, z - LAG.z) < LAG.r + 3 || Math.hypot(x - WOOD.x, z - WOOD.z) < WOOD.r) continue; }
+    if (relAt(x, z) > 0.9 || distToPath(x, z) < 1 || !clear(x, z, 0.9) || Math.hypot(x - LH.x, z - LH.z) < 6.5) continue;
+    if (finds.some((f) => Math.hypot(f.x - x, f.z - z) < 4)) continue;
+    return { x, z };
+  }
+  return { x: 4, z: 20 };
+}
+const sparkTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  g.translate(32, 32); g.fillStyle = '#fff'; g.beginPath();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr = i % 2 ? 5 : 30; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+  g.closePath(); g.fill();
+  return new THREE.CanvasTexture(c);
+})();
+function buildFinds(taken) {
+  dailyFinds(DAY).forEach((f, i) => {
+    const spot = zoneSpot(FINDS[f.kind].zone, seededRng('spot:' + DAY + ':' + i + ':' + f.s)), y = height(spot.x, spot.z), dig = !!FINDS[f.kind].dig;
+    const g = new THREE.Group();
+    const model = makeFind(THREE, f.kind); model.scale.setScalar(1.5); model.rotation.y = i * 1.3;
+    if (dig) {   // buried: only a cross scratched in the ground shows
+      model.visible = false;
+      for (const a of [0.78, -0.78]) { const m = box(0.9, 0.03, 0.14, mat('#6B4A3E')); m.rotation.y = a; m.position.y = 0.04; g.add(m); }
+    }
+    g.add(model);
+    const spark = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkTex, color: 0xFFF3B0, transparent: true, depthWrite: false })); spark.position.y = 1.1; g.add(spark);
+    g.position.set(spot.x, y, spot.z); out.add(g);
+    const find = { i, kind: f.kind, x: spot.x, z: spot.z, g, model, spark, dig, taken: taken.includes(i) };
+    if (find.taken) g.visible = false;
+    finds.push(find);
+  });
+}
+
+/* ---------------- a few birds ---------------- */
+const birds = [];
+function buildBirds() {
+  const r = seededRng('birds:' + DAY);
+  for (let i = 0; i < 5; i++) {
+    const g = new THREE.Group(), body = M(['#F4F1EA', '#8FB7E8', '#F2C14E'][i % 3]);
+    g.add(ball(0.2, body, 0, 0.22, 0, 10), ball(0.13, body, 0, 0.42, 0.1, 8));
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 5), mat('#F08A3C')); beak.rotation.x = Math.PI / 2; beak.position.set(0, 0.42, 0.25); g.add(beak);
+    const wl = box(0.3, 0.03, 0.18, body, -0.22, 0.26, 0), wr = box(0.3, 0.03, 0.18, body, 0.22, 0.26, 0); g.add(wl, wr);
+    const b = { g, wl, wr, r, state: 'sit', t: 0, x: 0, z: 0, vx: 0, vz: 0, y: 0 }; perch(b); out.add(g); birds.push(b);
+  }
+}
+function perch(b) {
+  for (let t = 0; t < 40; t++) { const x = (b.r() - 0.5) * 40, z = -6 + b.r() * 40; if (relAt(x, z) < 0.88 && clear(x, z, 1) && Math.hypot(x - LAG.x, z - LAG.z) > LAG.r) { b.x = x; b.z = z; break; } }
+  b.y = 0; b.state = 'sit'; b.g.rotation.y = b.r() * 6; b.g.visible = true;
+}
+
+/* ---------------- sky, time of day, weather ---------------- */
+const DAY = dayKey();
+const now = new Date(), st = sunTimes(now.getMonth(), now.getDate());
+const HOUR_NOW = params.has('hour') ? Number(params.get('hour')) : now.getHours() + now.getMinutes() / 60;
+const DAYLIGHT = smooth01((HOUR_NOW - (st.rise - 0.8)) / 1.6) * (1 - smooth01((HOUR_NOW - (st.set - 0.6)) / 1.7));
+const NIGHT = 1 - DAYLIGHT;
+const GOLD = Math.max(1 - Math.abs(HOUR_NOW - st.rise) / 1.4, 1 - Math.abs(HOUR_NOW - (st.set - 0.2)) / 1.6, 0);
+const WX = (() => {
+  const w = { ...weatherAt(Date.now()) }, want = params.get('weather');
+  if (want) Object.assign(w, { rain: 0, snow: 0, fog: 0, wind: 0, storm: 0, cloud: 0 }, { rain: { rain: 0.8, cloud: 0.9 }, storm: { rain: 1, storm: 1, cloud: 1, wind: 0.7 }, snow: { snow: 0.8, cloud: 0.8 }, fog: { fog: 0.9, cloud: 0.4 }, cloudy: { cloud: 0.9 }, windy: { wind: 0.9 }, clear: {} }[want] || {}, { kind: want });
+  return w;
+})();
+let skyTex = null, fall = null;
+const light = { hemi: 0.45, sun: 0.8 };
+function buildAtmosphere() {
+  const mix = (a, b, k) => new THREE.Color(a).lerp(new THREE.Color(b), k);
+  const grey = clamp(WX.cloud * 0.6 + WX.fog * 0.5, 0, 0.85);
+  let top = mix('#9CC8FF', '#F2A58E', GOLD * 0.75), bot = mix('#FBE3EF', '#FFE2B8', GOLD);
+  top = top.lerp(new THREE.Color('#0B1030'), NIGHT); bot = bot.lerp(new THREE.Color('#2C1F45'), NIGHT);
+  top.lerp(new THREE.Color(NIGHT > 0.5 ? '#1A1D2E' : '#AEB7C6'), grey); bot.lerp(new THREE.Color(NIGHT > 0.5 ? '#23202F' : '#D5D9E0'), grey);
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256; const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, '#' + top.getHexString()); gr.addColorStop(0.75, '#' + bot.getHexString()); gr.addColorStop(1, '#' + bot.getHexString());
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  skyTex = new THREE.CanvasTexture(c); skyTex.encoding = THREE.sRGBEncoding; scene.background = skyTex;
+  document.querySelector('meta[name=theme-color]').content = '#' + top.getHexString();
+  if (NIGHT > 0.5) document.documentElement.dataset.theme = 'dark';
+  const dim = 1 - grey * 0.45;
+  hemi.intensity = (0.2 + 0.3 * DAYLIGHT) * (0.75 + 0.25 * dim) + 0.06; sun.intensity = (0.1 + 0.72 * DAYLIGHT) * dim;
+  light.hemi = hemi.intensity; light.sun = sun.intensity;
+  sun.color.set(mix('#FFF6EA', '#FFC58A', GOLD).lerp(new THREE.Color('#9FB4FF'), NIGHT)); hemi.color.set(mix('#FFFFFF', '#AEB9FF', NIGHT * 0.8));
+  scene.environment = NIGHT > 0.5 ? ENV_NIGHT : ENV_DAY;
+  const fogCol = bot.clone().convertSRGBToLinear();
+  scene.fog = new THREE.Fog(fogCol, lerp(70, 10, WX.fog), lerp(330, 62, WX.fog));
+  cloudMat.color.copy(mix('#FFFFFF', '#FFD9C2', GOLD * 0.6).lerp(new THREE.Color('#3A3F66'), NIGHT * 0.85).lerp(new THREE.Color('#B9BFCC'), grey * (1 - NIGHT)));
+  for (const gl of glow) gl.mat.emissiveIntensity = lerp(gl.day, gl.night, NIGHT);
+  lamp.mat.emissiveIntensity = lerp(0.5, 2.2, Math.max(NIGHT, WX.fog));
+  lamp.beams.visible = NIGHT > 0.45 || WX.fog > 0.35;
+  room.userData.win.color.set('#' + mix('#BFE3FF', '#FFD9B0', GOLD).lerp(new THREE.Color('#1B2550'), NIGHT).getHexString());
+  // rain (short streaks) or snow (round flakes), falling around wherever you are
+  const amount = Math.max(WX.rain, WX.snow);
+  if (amount > 0.05) {
+    const snow = WX.snow > WX.rain, n = Math.round((TOUCH ? 220 : 440) * amount), at = new Float32Array(n * 3);
+    for (let i = 0; i < n * 3; i += 3) { at[i] = (Math.random() - 0.5) * 44; at[i + 1] = Math.random() * 22; at[i + 2] = (Math.random() - 0.5) * 44; }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(snow ? n * 3 : n * 6), 3));
+    if (snow) {
+      const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.beginPath(); g.arc(16, 16, 14, 0, 7); g.fill();
+      fall = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, map: new THREE.CanvasTexture(c), size: 0.22, transparent: true, opacity: 0.92, depthWrite: false }));
+    } else fall = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0xDCE8FF, transparent: true, opacity: 0.5, depthWrite: false }));
+    fall.userData = { snow, n, at }; fall.frustumCulled = false; out.add(fall);
+  }
+  S.setNight(NIGHT > 0.6); S.weather(WX);
+}
+
+/* ---------------- steering ---------------- */
+let me = null, away = null, T = 0, last = 0;
+let area = 'out';        // 'out' on the island, 'in' inside the lighthouse, 'top' up by the lamp
+let mode = 'load';       // 'load', 'arrive', 'play', 'busy' (mid-animation), 'leave'
+let topAngle = 0;        // where you are round the lamp gallery (0 = looking south, toward home)
+const keys = new Set(), stick = { on: false, id: null, x0: 0, y0: 0, x: 0, y: 0, moved: false };
+let walkTo = null, action = null, moved = false;
+const KEYMAP = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
+addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!$('findsCard').hidden) { if (e.code === 'Escape' || e.code === 'Enter') $('findsCard').hidden = true; return; }
+  if (KEYMAP[e.code]) { keys.add(e.code); walkTo = null; e.preventDefault(); }
+  if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyE') && !e.repeat) { e.preventDefault(); doAction(); }
+});
+addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+canvas.addEventListener('pointerdown', (e) => {
+  if (stick.on) return;
+  canvas.setPointerCapture(e.pointerId);
+  Object.assign(stick, { on: true, id: e.pointerId, x0: e.clientX, y0: e.clientY, x: 0, y: 0, moved: false, mouse: e.pointerType === 'mouse' });
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!stick.on || e.pointerId !== stick.id) return;
+  const dx = e.clientX - stick.x0, dy = e.clientY - stick.y0, d = Math.hypot(dx, dy);
+  if (d > 10 && !stick.moved) { stick.moved = true; walkTo = null; const el = $('stick'); el.hidden = false; el.style.left = stick.x0 + 'px'; el.style.top = stick.y0 + 'px'; }
+  if (!stick.moved) return;
+  const k = Math.min(1, d / 48); stick.x = dx / (d || 1) * k; stick.y = dy / (d || 1) * k;
+  $('stick').firstElementChild.style.transform = `translate(${stick.x * 30}px, ${stick.y * 30}px)`;
+});
+function endStick(e) {
+  if (!stick.on || e.pointerId !== stick.id) return;
+  if (!stick.moved && e.type === 'pointerup') tapAt(e.clientX, e.clientY);
+  stick.on = false; stick.x = stick.y = 0; $('stick').hidden = true;
+}
+canvas.addEventListener('pointerup', endStick); canvas.addEventListener('pointercancel', endStick);
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), floorPlane = new THREE.Plane(up, -ROOM_Y);
+// tap a spot and your bud walks there
+function tapAt(px, py) {
+  if (mode !== 'play' || area === 'top') return;
+  ndc.set(px / innerWidth * 2 - 1, -(py / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
+  if (area === 'in') { if (ray.ray.intersectPlane(floorPlane, v3) && Math.hypot(v3.x, v3.z) < RR + 1.5) walkTo = { x: v3.x, z: v3.z, t: T + 6 }; return; }
+  const hit = ray.intersectObject(terrain)[0];
+  if (hit) { walkTo = { x: hit.point.x, z: hit.point.z, t: T + 14 }; S.play('tick', { gain: 0.3 }); }
+}
+function inputVec() {
+  let x = stick.x, y = stick.y;
+  for (const k of keys) { x += KEYMAP[k][0]; y += KEYMAP[k][1]; }
+  const d = Math.hypot(x, y); if (d > 1) { x /= d; y /= d; }
+  return { x, y, d: Math.min(1, d) };
+}
+const SPEED = 5.4;
+const walkable = (x, z) => (area === 'in' ? Math.hypot(x, z) < RR - 0.95 : relAt(x, z) <= 0.962 || onPier(x, z));
+function pushOut(list, p, rad) {
+  for (const o of list) { const dx = p.x - o.x, dz = p.z - o.z, d = Math.hypot(dx, dz), min = o.r + rad; if (d < min && d > 1e-4) { p.x = o.x + dx / d * min; p.z = o.z + dz / d * min; } }
+}
+function steer(dt) {
+  const inp = inputVec();
+  let vx = 0, vz = 0;
+  if (mode === 'play' && area !== 'top') {
+    if (inp.d > 0.08) { vx = inp.x * SPEED; vz = inp.y * SPEED; walkTo = null; }
+    else if (walkTo) {
+      const dx = walkTo.x - me.x, dz = walkTo.z - me.z, d = Math.hypot(dx, dz);
+      if (d < 0.35 || T > walkTo.t) walkTo = null; else { const k = Math.min(1, d / 1.2) * SPEED; vx = dx / d * k; vz = dz / d * k; }
+    }
+  }
+  if (mode === 'play' && area === 'top') {
+    // round the gallery: left and right walk you round the lamp, and the view turns with you
+    const w = inp.d > 0.08 ? inp.x : 0;
+    topAngle -= w * dt * 1.25; me.moving = lerp(me.moving, Math.abs(w), Math.min(1, dt * 8));
+    me.x = LH.x + Math.sin(topAngle) * GAL_R; me.z = LH.z + Math.cos(topAngle) * GAL_R;
+    me.heading += angleTo(me.heading, topAngle - w * 1.1) * Math.min(1, dt * 8);
+    if (Math.abs(w) > 0.1 && !moved) firstMove();
+    return;
+  }
+  const a = Math.min(1, dt * 9);
+  me.vx += (vx - me.vx) * a; me.vz += (vz - me.vz) * a;
+  const sp = Math.hypot(me.vx, me.vz);
+  me.moving = lerp(me.moving, clamp(sp / SPEED, 0, 1), Math.min(1, dt * 10));
+  if (sp > 0.05) {
+    const p = { x: me.x + me.vx * dt, z: me.z + me.vz * dt };
+    pushOut(area === 'in' ? roomObstacles : obstacles, p, 0.62);
+    if (gloam && gloamAt.area === area) pushOut([{ x: gloam.x, z: gloam.z, r: 0.95 }], p, 0.62);
+    if (walkable(p.x, p.z)) { me.x = p.x; me.z = p.z; }
+    else if (walkable(p.x, me.z)) me.x = p.x;
+    else if (walkable(me.x, p.z)) me.z = p.z;
+    else { me.vx = me.vz = 0; walkTo = null; }
+    if (sp > 0.6) { me.heading += angleTo(me.heading, Math.atan2(me.vx, me.vz)) * Math.min(1, dt * 11); if (!moved) firstMove(); }
+  }
+}
+function firstMove() { moved = true; $('hint').classList.add('gone'); }
+
+/* ---------------- drawing a bud where it stands ---------------- */
+function walkShape(phase) {
+  const u = ((phase % Math.PI) + Math.PI) % Math.PI / Math.PI, d = Math.min(u, 1 - u);
+  return 0.035 * Math.sin(u * Math.PI * 2) ** 2 - 0.07 * Math.exp(-((d / 0.1) ** 2));
+}
+function placeBud(bud, dt, gy) {
+  if (bud.y > 0 || bud.vy > 0) { bud.vy -= 24 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt); if (bud.y === 0) { bud.vy = 0; bud.landAt = T; } }
+  if (bud.moving > 0.05) bud.phase += dt * (5 + 5.5 * bud.moving); else bud.phase = 0;
+  const hopY = Math.abs(Math.sin(bud.phase)) * 0.3 * bud.moving;
+  const land = T - (bud.landAt ?? -9), squish = land < 0.3 ? -0.12 * Math.sin(land / 0.3 * Math.PI) : 0;
+  const breathe = Math.sin(T * 2 + bud.height) * 0.012;
+  const sy = 1 + (bud.moving > 0.05 ? walkShape(bud.phase) * bud.moving : breathe) + squish + (bud.y > 0 ? 0.06 : 0);
+  bud.sy = lerp(bud.sy, sy, 1 - Math.exp(-dt * 40));
+  bud.root.position.set(bud.x, gy, bud.z); bud.root.rotation.y = bud.heading;
+  bud.hop.position.y = bud.y + hopY;
+  bud.squash.scale.set(1 + (1 - bud.sy) * 0.6, bud.sy, 1 + (1 - bud.sy) * 0.6);
+  bud.shadow.material.opacity = clamp(1 - (bud.y + hopY) * 0.25, 0.3, 1);
+  drawFace(bud);
+}
+
+/* ---------------- things to do ---------------- */
+const post = (body) => fetch('/api/world', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ away: body }) }).then((r) => r.json().then((j) => ({ ok: r.ok, ...j }))).catch(() => ({ ok: false }));
+let toastTimer = 0;
+function toast(text, ms = 3200) { const t = $('toast'); t.textContent = text; t.classList.remove('gone'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('gone'), ms); }
+const kindsFound = () => FIND_KINDS.filter((k) => away.finds[k]).length;
+function updateFindsPill() { $('findsBtn').hidden = false; $('findsCount').textContent = `${kindsFound()}/${FIND_KINDS.length}`; }
+function openFinds() {
+  const grid = $('findsGrid'); grid.textContent = '';
+  for (const k of Object.keys(FINDS)) {
+    const n = away.finds[k] || 0, f = FINDS[k];
+    if (f.gift && !n) continue;
+    const s = document.createElement('div'); s.className = 'slot' + (n ? '' : ' no');
+    s.innerHTML = `<span class="ic" aria-hidden="true"></span><span class="nm"></span><span class="ct"></span>`;
+    s.children[0].textContent = n ? f.icon : '?'; s.children[1].textContent = n ? f.name : '???'; s.children[2].textContent = n > 1 ? `×${n}` : n ? (f.gift ? `from ${KEEPER}` : 'found') : 'not yet';
+    grid.appendChild(s);
+  }
+  const left = finds.filter((f) => !f.taken).length;
+  $('findsSub').textContent = `${kindsFound()} of ${FIND_KINDS.length} kinds found. ` + (left ? `${left} thing${left === 1 ? '' : 's'} still out there today.` : 'You found everything that turned up today. Tomorrow brings new things.');
+  $('findsCard').hidden = false; S.play('pop', { gain: 0.5 });
+}
+$('findsBtn').addEventListener('click', openFinds);
+$('findsClose').addEventListener('click', () => { $('findsCard').hidden = true; S.play('click', { gain: 0.5 }); });
+
+function pickUp(f) {
+  mode = 'busy'; walkTo = null; me.vx = me.vz = 0;
+  me.heading = Math.atan2(f.x - me.x, f.z - me.z); f.taken = true;
+  const first = !away.finds[f.kind], info = FINDS[f.kind];
+  const lift = () => {
+    f.model.visible = true; f.spark.visible = false; f.g.children.forEach((c) => { if (c !== f.model && c !== f.spark) c.visible = false; });
+    f.fly = { t: 0, x0: f.g.position.x, y0: f.g.position.y, z0: f.g.position.z };
+    me.vy = 6.5; me.y = 0.01; me.happyUntil = T + 1.8; S.play('sparkle', { gain: 0.8 }); S.play('boing', { gain: 0.5 });
+    say(me, first ? pick([`ooh! a ${info.name}!`, `whoa, a ${info.name}!`, `a ${info.name}! for the porch!`]) : pick([`another ${info.name}!`, `a ${info.name}. nice.`, 'got it!']), 2200);
+    away.finds[f.kind] = (away.finds[f.kind] || 0) + 1; updateFindsPill();
+    toast(`${info.icon} ${info.name}${first ? ` · new! ${kindsFound()} of ${FIND_KINDS.length} kinds` : ''}`);
+    post({ do: 'take', i: f.i }).then((r) => { if (r.away) { away = r.away; updateFindsPill(); } else if (!r.ok) toast('That one couldn’t be saved. It’ll be back if you reload.'); });
+    setTimeout(() => { if (mode === 'busy') mode = 'play'; }, 700);
+  };
+  if (f.dig) {   // three little digs first
+    say(me, 'dig dig dig…', 1100);
+    for (let k = 0; k < 3; k++) setTimeout(() => { me.vy = 3.6; me.y = 0.01; S.play('thump', { gain: 0.5, rate: 1 + k * 0.1 }); }, k * 330);
+    setTimeout(lift, 1050);
+  } else lift();
+}
+
+let talkN = 0, stayT = 0, lastGloamLine = '';
+function gloamSay(text, ms = 3600) { lastGloamLine = text; say(gloam, text, ms); gloam.lookUntil = T + ms / 1000 + 1; }
+function talk() {
+  const lvl = away.level, firstToday = !away.saidHi, pool = [];
+  me.heading = Math.atan2(gloam.x - me.x, gloam.z - me.z);
+  let line;
+  if (!away.met) line = LINES.first[0];
+  else if (firstToday) line = pick(LINES.hi[lvl]);
+  else {
+    pool.push(...LINES.more[lvl]);
+    if (lvl >= 1) {
+      if (WX.rain > 0.25) pool.push(...LINES.rain); if (WX.snow > 0.25) pool.push(...LINES.snow); if (WX.fog > 0.4) pool.push(...LINES.fog); if (WX.wind > 0.5) pool.push(...LINES.windy);
+      if (NIGHT > 0.6) pool.push(...LINES.night);
+      if (gloamAt.doing === 'fish') pool.push(...LINES.fish, ...LINES.fish); if (gloamAt.doing === 'garden') pool.push(...LINES.garden, ...LINES.garden);
+      const today = finds.filter((f) => f.taken).map((f) => f.kind);
+      if (today.includes('fossil')) pool.push(...LINES.fossil, ...LINES.fossil); if (today.includes('star')) pool.push(...LINES.star, ...LINES.star);
+    }
+    line = pick(pool.filter((l) => l !== lastGloamLine));
+  }
+  talkN++;
+  gloamSay(line);
+  if (!away.met && talkN === 1) setTimeout(() => say(me, pick(['um. hi?', 'hi! i’m new!', 'nice lighthouse!']), 1600), 900);
+  if (firstToday) {
+    away.saidHi = true; away.met = true;
+    post({ do: 'hi' }).then((r) => { if (r.away) afterFond(r); });
+  }
+}
+function afterFond(r) {
+  const before = away.level; away = { ...r.away, finds: r.away.finds }; updateFindsPill();
+  gloam.mood = away.level >= 2 ? null : 'annoyed';
+  if (r.gift) setTimeout(() => {
+    gloamSay(LINES.gift, 6000); me.happyUntil = T + 3; S.play('chime', { gain: 0.8 });
+    toast(`${FINDS.lantern.icon} ${KEEPER} gave you its old lantern. It’s on your porch now.`, 6000);
+  }, 4200);
+  else if (away.level > before) setTimeout(() => { if (T > gloam.bubbleUntil - 0.5) gloamSay(['', 'hmph. you’re persistent.', '…you’re all right. for a visitor.', '…i’m glad you keep coming. there. i said it. once.'][away.level], 4500); }, 4200);
+}
+
+function fadeThen(fn, dark = false) {
+  const f = $('fade'); f.classList.toggle('dark', dark); f.classList.remove('clear'); mode = 'busy'; walkTo = null; me.vx = me.vz = 0;
+  setTimeout(() => { fn(); snapCam = true; setTimeout(() => { f.classList.add('clear'); mode = 'play'; }, 120); }, 380);
+}
+function setArea(a) {
+  area = a; out.visible = a !== 'in'; room.visible = a === 'in'; boat.g.visible = a !== 'in';
+  for (const c of clouds) c.g.visible = a !== 'in';
+  scene.background = a === 'in' ? new THREE.Color(0x15121C) : skyTex;
+  hemi.intensity = a === 'in' ? 0.34 : light.hemi; sun.intensity = a === 'in' ? 0.3 : light.sun; fill.intensity = a === 'in' ? 0.08 : 0.2;
+  document.body.classList.toggle('inside', a === 'in');
+  const fov = a === 'top' ? 56 : 38; if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  if (gloam) gloam.root.visible = gloamAt.area === (a === 'top' ? 'out' : a);
+  $('place').textContent = a === 'in' ? 'In the lighthouse' : a === 'top' ? 'Up by the lamp' : 'Lighthouse Rock';
+}
+let beenIn = false, beenUp = false;
+function goIn() {
+  S.play('click', { gain: 0.7 });
+  fadeThen(() => { setArea('in'); me.x = MAT.x; me.z = MAT.z - 0.3; me.heading = Math.PI; if (!beenIn) { beenIn = true; setTimeout(() => say(me, gloamAt.area === 'in' ? 'it’s so cozy in here…' : 'nobody home. it’s cozy though!', 2200), 700); } }, true);
+}
+function goOut() { S.play('click', { gain: 0.7 }); fadeThen(() => { setArea('out'); me.x = DOOR.x; me.z = DOOR.z + 0.5; me.heading = 0; }, true); }
+function goUp() {
+  S.play('tick'); setTimeout(() => S.play('tick', { rate: 1.15 }), 140); setTimeout(() => S.play('tick', { rate: 1.3 }), 280);
+  fadeThen(() => { setArea('top'); topAngle = 0; me.heading = 0; me.moving = 0; if (!beenUp) { beenUp = true; setTimeout(() => say(me, pick(['whoa. you can see everything!', 'look! that’s our island, way over there!']), 2800), 800); } }, true);
+}
+function goDown() { S.play('tick', { rate: 1.3 }); setTimeout(() => S.play('tick'), 140); fadeThen(() => { setArea('in'); me.x = STAIR.x - 1.1; me.z = STAIR.z + 0.2; me.heading = -1.6; me.moving = 0; }, true); }
+
+// the one button: whatever is in reach right now
+function findAction() {
+  if (mode !== 'play') return null;
+  const near = (x, z, d) => Math.hypot(me.x - x, me.z - z) < d;
+  if (area === 'top') return { label: 'Climb back down', run: goDown };
+  if (gloam && gloamAt.area === area && near(gloam.x, gloam.z, 2.7)) return { label: `Talk to ${away.met ? KEEPER : 'the keeper'}`, run: talk };
+  if (area === 'in') {
+    if (near(STAIR.x, STAIR.z, 1.45)) return { label: 'Climb the stairs', run: goUp };
+    if (near(MAT.x, MAT.z + 0.3, 1.3)) return { label: 'Go outside', run: goOut };
+    return null;
+  }
+  let best = null, bd = 1.7;
+  for (const f of finds) { if (f.taken) continue; const d = Math.hypot(me.x - f.x, me.z - f.z); if (d < bd) { bd = d; best = f; } }
+  if (best) return { label: best.dig ? 'Dig here' : `Pick up the ${FINDS[best.kind].name}`, run: () => pickUp(best) };
+  if (near(DOOR.x, DOOR.z, 1.5)) return { label: 'Go inside', run: goIn };
+  if (onPier(me.x, me.z) && me.z > SHORE + 1.6) return { label: 'Sail home', run: sailHome };
+  return null;
+}
+function doAction() { if (action && $('findsCard').hidden) action.run(); }
+$('act').addEventListener('click', doAction);
+function showAction() {
+  const a = findAction(), el = $('act');
+  if ((a && a.label) !== (action && action.label)) { el.hidden = !a; if (a) el.innerHTML = `<span></span>${TOUCH ? '' : '<kbd>Space</kbd>'}`, el.firstChild.textContent = a.label; }
+  action = a;
+}
+
+/* ---------------- arriving and leaving on the ferry ---------------- */
+let cut = null;       // the cutscene in progress: { kind, t }
+function sailHome() {
+  if (mode === 'leave') return;
+  mode = 'leave'; walkTo = null; cut = { kind: 'leave', t: 0, x0: me.x, z0: me.z }; $('act').hidden = true; action = null;
+  say(me, pick(['home time!', 'bye, rock!', 'let’s go home!']), 1600); S.play('boing', { gain: 0.6 });
+}
+$('homeBtn').addEventListener('click', () => {
+  if (mode !== 'play') { if (mode === 'load') location.href = '/world'; return; }
+  if (area !== 'out' || !(onPier(me.x, me.z) && me.z > SHORE)) { $('fade').classList.remove('clear', 'dark'); mode = 'leave'; setTimeout(() => { location.href = '/world?from=far'; }, 420); return; }
+  sailHome();
+});
+function runCut(dt) {
+  cut.t += dt;
+  const seat = (k = 1) => { me.x = boat.x; me.z = boat.z; me.heading = 0; return boat.y + 0.12 * k; };
+  if (cut.kind === 'arrive') {
+    // the ferry floats down out of the sky with your bud aboard, then your bud hops onto the pier
+    const u = smooth01(cut.t / 3.4), e = 1 - (1 - u) ** 2;
+    boat.x = boat.home.x + (1 - e) * -9; boat.y = boat.home.y + (1 - e) * 13; boat.z = boat.home.z + (1 - e) * 26;
+    if (cut.t < 3.6) { cut.gy = seat(); me.moving = 0; }
+    else {
+      const v = clamp((cut.t - 3.6) / 0.55, 0, 1);
+      if (!cut.hopped) { cut.hopped = true; S.play('boing', { gain: 0.7 }); }
+      me.x = lerp(boat.home.x, 0.1, v); me.z = lerp(boat.home.z, SHORE + 2.6, v); cut.gy = lerp(boat.home.y + 0.12, 0.2, v) + Math.sin(v * Math.PI) * 1.1; me.heading = lerp(0, -1.2, v);
+      if (v >= 1) {
+        me.landAt = T; me.heading = Math.PI; cut = null; mode = 'play'; S.play('pop', { gain: 0.6 });
+        const hint = $('hint'); hint.textContent = TOUCH ? 'Drag anywhere to walk · tap a spot to go there' : 'WASD or the arrow keys to walk · click a spot to go there'; hint.classList.remove('gone');
+        setTimeout(() => say(me, away.trips > 1 ? pick(['back on the rock!', 'what’s new today?', 'let’s look around!']) : 'whoa. a whole other island!', 2400), 500);
+      }
+    }
+  } else {
+    // hop aboard, and the ferry lifts off for home
+    if (cut.t < 0.55) { const v = cut.t / 0.55; me.x = lerp(cut.x0, boat.home.x, v); me.z = lerp(cut.z0, boat.home.z, v); cut.gy = lerp(0.2, boat.home.y + 0.12, v) + Math.sin(v * Math.PI) * 1.1; me.heading = 1.2; }
+    else {
+      const u = smooth01((cut.t - 0.9) / 3.2), e = u * u;
+      boat.x = boat.home.x + e * -9; boat.y = boat.home.y + e * 13; boat.z = boat.home.z + e * 26; cut.gy = seat();
+      if (cut.t > 0.9 && !cut.whoosh) { cut.whoosh = true; S.play('whoosh', { gain: 0.7 }); }
+      if (cut.t > 2.5 && !cut.fading) { cut.fading = true; $('fade').classList.remove('clear', 'dark'); }
+      if (cut.t > 3.1 && !cut.gone) { cut.gone = true; location.href = '/world?from=far'; }
+    }
+  }
+}
+
+/* ---------------- the camera ---------------- */
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), wantPos = new THREE.Vector3(), wantLook = new THREE.Vector3();
+let snapCam = true;
+function aimCamera(dt) {
+  const portrait = camera.aspect < 0.8;
+  if (area === 'in') {
+    const d = Math.max(16.5, (RR + 1.1) / (Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
+    wantLook.set(0, ROOM_Y + 0.9, 0.5); wantPos.set(0, ROOM_Y + 0.9 + d * 0.62, 0.5 + d * 0.78);
+  } else if (area === 'top') {
+    const sx = Math.sin(topAngle), sz = Math.cos(topAngle);
+    // from high behind the lamp, over its roof: your bud at the rail and the whole view beyond
+    wantPos.set(LH.x - sx * 5, GAL_Y + 11, LH.z - sz * 5);
+    wantLook.set(LH.x + sx * 20, GAL_Y - 6, LH.z + sz * 20);
+  } else {
+    const D = portrait ? 23 : 17.5, pitch = 0.74, gy = groundY(me.x, me.z), lead = mode === 'arrive' || mode === 'leave' ? 0 : 1.4;
+    wantLook.set(me.x, (cut ? cut.gy : gy) + 1, me.z - lead); wantPos.set(wantLook.x, wantLook.y + Math.sin(pitch) * D, wantLook.z + Math.cos(pitch) * D);
+  }
+  const k = snapCam ? 1 : 1 - Math.exp(-dt * (area === 'top' ? 7 : 5)); snapCam = false;
+  camPos.lerp(wantPos, k); camLook.lerp(wantLook, k);
+  camera.position.copy(camPos); camera.lookAt(camLook);
+}
+// trees (and the tower) between you and the camera go see-through
+function fadeBlockers(dt) {
+  for (const f of faders) {
+    const dz = f.z - me.z, dx = Math.abs(f.x - me.x);
+    const hide = area === 'out' && (f.behind ? (dz > 0.5 && dz < 9 && dx < f.wide + 0.6) : (dz > 0.4 && dz < f.tall * 1.25 && dx < f.wide + 0.5));
+    const want = hide ? 0.22 : 1; f.o = f.o == null ? 1 : f.o + (want - f.o) * Math.min(1, dt * 8);
+    const solid = f.o > 0.98;
+    for (const m of f.mats) { if (m.transparent === solid) { m.transparent = !solid; m.needsUpdate = true; } m.opacity = solid ? 1 : f.o; m.depthWrite = solid; }
+  }
+}
+
+/* ---------------- every frame ---------------- */
+function frame(ms) {
+  requestAnimationFrame(frame);
+  const t = ms / 1000, dt = Math.min(0.05, t - last || 0.016); last = t; T += dt;
+  if (!me) { renderer.render(scene, camera); return; }
+  if (cut) runCut(dt); else steer(dt);
+  const gy = cut ? cut.gy : area === 'in' ? ROOM_Y : area === 'top' ? GAL_Y : groundY(me.x, me.z);
+  placeBud(me, dt, gy);
+
+  // the ferry bobs at its mooring
+  boat.g.position.set(boat.x, boat.y + Math.sin(T * 1.1) * 0.12, boat.z); boat.g.rotation.z = Math.sin(T * 0.8) * 0.04; boat.g.rotation.x = Math.sin(T * 0.6 + 1) * 0.03;
+
+  // the keeper: turns to look at you (slowly, and at first not at all), mutters if you keep it company
+  if (gloam && gloam.root.visible) {
+    const d = Math.hypot(me.x - gloam.x, me.z - gloam.z), sameArea = gloamAt.area === area, lvl = away.level;
+    const facing = sameArea && d < 6 && (lvl >= 1 || T < (gloam.lookUntil || 0)) ? Math.atan2(me.x - gloam.x, me.z - gloam.z) : gloam.home;
+    gloam.heading += angleTo(gloam.heading, facing) * Math.min(1, dt * (1.2 + lvl));
+    gloam.look = sameArea && d < 8 ? me : null;
+    placeBud(gloam, dt, gloamAt.area === 'in' ? ROOM_Y : height(gloam.x, gloam.z));
+    if (gloam.rod.visible) gloam.rod.rotation.z = Math.sin(T * 0.9) * 0.03;
+    if (sameArea && d < 7 && mode === 'play') {
+      stayT += dt;
+      if (stayT > 60 && !away.stayed && away.saidHi) { away.stayed = true; gloamSay(LINES.stay[lvl], 4200); post({ do: 'stay' }).then((r) => { if (r.away) afterFond(r); }); }
+    }
+    if (sameArea && d < 9 && !gloam.noticed && mode === 'play') { gloam.noticed = true; if (!away.saidHi) setTimeout(() => { if (!away.saidHi && T > gloam.bubbleUntil) say(gloam, lvl >= 2 ? '…oh. hm.' : '…', 1800); }, 300); }
+  }
+
+  if (area !== 'in') {
+    // finds glint; one you've picked up flies to your bud
+    for (const f of finds) {
+      if (!f.g.visible) continue;
+      const s = 0.42 + 0.16 * Math.sin(T * 3 + f.i * 1.7); f.spark.scale.set(s, s, 1); f.spark.material.rotation = T * 0.8 + f.i; f.spark.position.y = 1.05 + Math.sin(T * 2 + f.i) * 0.08;
+      if (!f.fly && !f.dig) f.model.rotation.y += dt * 0.5;
+      if (f.fly) {
+        f.fly.t += dt; const u = clamp(f.fly.t / 1.2, 0, 1), e = smooth01(Math.min(1, u * 2.2));
+        f.g.position.set(lerp(f.fly.x0, me.x, e), lerp(f.fly.y0, gy + me.height + 0.5 + me.y, e) + Math.sin(Math.min(1, u * 2.2) * Math.PI) * 0.6, lerp(f.fly.z0, me.z, e));
+        f.model.rotation.y += dt * 6; f.g.scale.setScalar(u > 0.75 ? 1 - (u - 0.75) * 4 : 1);
+        if (u >= 1) f.g.visible = false;
+      }
+    }
+    // birds fly off when you come close, and settle somewhere else later
+    for (const b of birds) {
+      if (b.state === 'sit') {
+        b.g.position.set(b.x, height(b.x, b.z) + Math.abs(Math.sin(T * 3 + b.x)) * 0.04, b.z);
+        if (area === 'out' && Math.hypot(me.x - b.x, me.z - b.z) < 3.4) { b.state = 'fly'; b.t = 0; const a = Math.atan2(b.x - me.x, b.z - me.z) + (Math.random() - 0.5); b.vx = Math.sin(a) * 7; b.vz = Math.cos(a) * 7; b.g.rotation.y = a; S.play('whoosh', { gain: 0.25, rate: 1.8 }); }
+      } else {
+        b.t += dt; b.x += b.vx * dt; b.z += b.vz * dt; b.y += (3 + b.t * 2) * dt; b.g.position.set(b.x, height(clamp(b.x, -20, 20), clamp(b.z, -30, 30)) + b.y, b.z);
+        const flap = Math.sin(T * 26) * 0.9; b.wl.rotation.z = flap; b.wr.rotation.z = -flap;
+        if (b.t > 9) { b.wl.rotation.z = b.wr.rotation.z = 0; perch(b); }
+      }
+    }
+    // the humming stones: step into the ring and they chime, one after another
+    const inRing = area === 'out' && Math.hypot(me.x - RING.x, me.z - RING.z) < 1.5;
+    if (inRing && !ring.in && T > ring.at + 12) { ring.at = T; ring.step = 0; ring.playing = true; if (!ring.said) { ring.said = true; setTimeout(() => say(me, 'they’re… humming?', 2200), 900); } }
+    ring.in = inRing;
+    if (ring.playing) { const k = Math.floor((T - ring.at) / 0.34); while (ring.step <= k && ring.step < 6) { ring.stones[ring.step].lit = 1; S.play('chime', { gain: 0.55, rate: [1, 1.125, 1.25, 1.5, 1.667, 2][ring.step] }); ring.step++; } if (ring.step >= 6) ring.playing = false; }
+    for (const s of ring.stones) { s.lit = Math.max(0, s.lit - dt * 0.3); s.m.emissiveIntensity = s.lit * 1.4; }
+    lamp.beams.rotation.y = T * 0.45;
+    for (const c of clouds) { c.g.position.x += c.v * dt * (1 + WX.wind * 2); if (c.g.position.x > 230) c.g.position.x = -230; }
+    for (const s of wash) s.rotation.x = Math.sin(T * (1.4 + WX.wind * 3) + s.userData.sway) * (0.12 + WX.wind * 0.4);
+    if (fall) {
+      const p = fall.geometry.attributes.position, { snow, n, at } = fall.userData, sp = snow ? 2.6 : 24, lean = WX.wind * 0.25;
+      for (let i = 0; i < n; i++) {
+        let y = at[i * 3 + 1] - sp * dt; if (y < 0) y += 22; at[i * 3 + 1] = y;
+        const x = at[i * 3] + (snow ? Math.sin(T * 0.8 + i) * 0.4 : 0), z = at[i * 3 + 2];
+        if (snow) p.setXYZ(i, x, y, z); else { p.setXYZ(i * 2, x, y, z); p.setXYZ(i * 2 + 1, x + lean, y + 0.7, z); }
+      }
+      p.needsUpdate = true; fall.position.set(camLook.x, (area === 'top' ? GAL_Y : groundY(me.x, me.z)) - 2, camLook.z);
+    }
+  } else if (stove.fire) { const f = 1.3 + Math.sin(T * 9) * 0.2 + Math.sin(T * 23) * 0.12; stove.fire.emissiveIntensity = f; stoveLight.intensity = 0.55 + f * 0.3; }
+
+  aimCamera(dt); fadeBlockers(dt);
+  showAction();
+  placeBubble(me); if (gloam) placeBubble(gloam);
+  renderer.render(scene, camera);
+}
+
+/* ---------------- start ---------------- */
+function showCenter(title, text, button, href) {
+  $('centerTitle').textContent = title; $('centerText').textContent = text; $('centerBtn').textContent = button; $('centerBtn').href = href; $('center').hidden = false; $('fade').classList.add('clear');
+}
+addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+S.bindToggle($('soundBtn'));
+if (!window.BudSound) $('soundBtn').hidden = true;
+S.onChange(() => S.ambient(!S.muted)); S.ambient(true);
+
+(async () => {
+  let world;
+  try {
+    const res = await fetch('/api/world?away=1');
+    if (res.status === 401) { showCenter('Sign in first', 'The ferry only takes islanders.', 'Go to bud', '/'); return; }
+    world = await res.json();
+    if (!res.ok) throw new Error(world.error || 'load failed');
+  } catch (e) { console.error(e); showCenter('The ferry couldn’t make the crossing', 'Something went wrong on the way over. Try again in a moment.', 'Back to bud island', '/world'); return; }
+  if (!world.bud) { showCenter('You’ll need a bud for this trip', 'Make your bud first, then catch the ferry from the dock.', 'Make my bud', '/'); return; }
+  away = world.away;
+  const fond = params.get('fond'); if (fond != null && /^\d+$/.test(fond)) { away.fond = Number(fond); away.level = fondLevel(away.fond); away.met = away.met || away.fond > 0; }   // preview only: nothing is saved
+  buildTerrain(); buildDecor(); buildSky(); buildDock(); buildLighthouse(away.level); buildRoom();
+  buildFinds(away.taken); buildBirds();
+  me = await makeBud(world.bud);
+  await makeGloam();
+  buildAtmosphere(); placeGloam();
+  gloam.mood = away.level >= 2 ? null : 'annoyed';
+  setArea('out'); updateFindsPill();
+  mode = 'arrive'; cut = { kind: 'arrive', t: 0, gy: 13 }; runCut(0); snapCam = true; aimCamera(0);
+  post({ do: 'arrive' }).then((r) => { if (r.away) away.trips = r.away.trips; });
+  setTimeout(() => $('fade').classList.add('clear'), 80);
+  /*TEST*/
+})();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

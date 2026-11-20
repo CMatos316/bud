@@ -177,6 +177,15 @@ body { transition: background 2s linear; }
   transition: opacity .8s ease;
 }
 .hint.gone { opacity: 0; }
+/* the ferry: a button to set sail once you've tapped the boat, and the fade as it carries your bud off */
+.sail {
+  position: fixed; z-index: 4; left: 0; right: 0; margin-inline: auto; width: max-content; max-width: calc(100% - 32px);
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px)); font: inherit; font-weight: 600; font-size: 17px; min-height: 50px;
+  padding: 13px 24px; border-radius: 999px; border: 0; background: var(--me); color: var(--me-ink); cursor: pointer;
+  box-shadow: 0 12px 28px -12px var(--shadow);
+}
+#sailFade { position: fixed; inset: 0; z-index: 60; background: #FFFDF8; opacity: 0; pointer-events: none; transition: opacity .55s ease; }
+#sailFade.on { opacity: 1; }
 
 .card {
   max-height: min(64vh, 560px); overflow: auto;
@@ -492,6 +501,8 @@ body { transition: background 2s linear; }
 </div>
 <div class="title" id="title"><h1 id="titleText">Bud island</h1><p id="titleSub">Everyone&rsquo;s buds live here.</p></div>
 <div class="hint" id="hint">Drag to look around &middot; scroll to zoom in anywhere &middot; tap a bud to say hi</div>
+<button type="button" class="sail" id="sailBtn" hidden>Sail to Lighthouse Rock</button>
+<div id="sailFade"></div>
 <div class="card" id="card" hidden role="dialog" aria-labelledby="cardName">
   <h2 id="cardName"></h2><button type="button" class="x" id="cardClose" aria-label="Close">&times;</button>
   <p id="cardSub"></p>
@@ -553,6 +564,8 @@ body { transition: background 2s linear; }
 <script type="module">
 import { setExtents, buildMesh, drawEyeStyle, setClock, clamp, inPoly, distToPoly, SPACING as EYE_SPACING } from '/js/bud-core.js';
 import { weatherAt, seasonAt, snowCoverAt, groundWetAt, sunTimes, skyHour, forecast } from '/js/seasons.js';
+import { FINDS, ROCK } from '/js/away.js';
+import { makeFind } from '/js/finds3d.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
 // sound effects and bud voices (js/sound.js); silent stand-in if it didn't load
@@ -563,9 +576,10 @@ const canvas = document.getElementById('world');
 const labels = document.getElementById('labels');
 const params = new URLSearchParams(location.search);
 const DROP = params.get('drop') === '1';
+const FROM_FAR = params.get('from') === 'far';   // just back on the ferry from Lighthouse Rock
 const OPEN_NOTES = params.get('notes') === '1';
 const GAME_ID = /^[A-Za-z0-9]{10,40}$/.test(params.get('game') || '') ? params.get('game') : null;
-if (DROP || OPEN_NOTES || params.get('news') === '1') history.replaceState(null, '', location.pathname);
+if (DROP || OPEN_NOTES || FROM_FAR || params.get('news') === '1') history.replaceState(null, '', location.pathname);
 
 const HELLOS = ['hi!', 'hey!', 'oh hi', 'hello!', 'yo', 'hiii'];
 const POKED = ['hehe', 'hi there!', 'boop', 'oh! hello', 'that tickles'];
@@ -911,7 +925,7 @@ function makeHome(h) {
   };
   HOME_SHAPES[kind](g, r, u);
   // out front: a mailbox in the roof's color, a few flowers either side of the path, maybe a bush
-  const side = r() < 0.5 ? -1 : 1;
+  const side = r() < 0.5 ? -1 : 1; u.side = side;
   g.add(TBOX(0.07, 0.75, 0.07, townMat(WOOD), side * 0.95, 0.375, 1.2));
   g.add(TBOX(0.28, 0.22, 0.36, u.roof, side * 0.95, 0.84, 1.2));
   const nf = 3 + Math.floor(r() * 4);
@@ -1076,7 +1090,7 @@ function buildTown() {
       rope.position.copy(a).add(b).multiplyScalar(0.5); rope.quaternion.setFromUnitVectors(up, b.clone().sub(a).normalize()); boat.add(rope);
     }
     boat.position.set(PW / 2 + 1.05, 0.2, shoreZ + 3.1); d.add(boat);
-    group.add(d); town.boat = { g: boat, y: 0.2 };
+    group.add(d); town.boat = { g: boat, x: boat.position.x, y: 0.2, z: boat.position.z, shoreZ, bounce: 0 };
   }
   for (let i = solidFrom; i < obstacles.length; i++) obstacles[i].town = true;
   scene.add(group); town.group = group; town.dirt = dirtPts;
@@ -1110,10 +1124,83 @@ function homeFront(id) {
   const h = TOWN && TOWN.homes.find((x) => x.id === id);
   return h ? { x: h.lane.x0, z: h.lane.z0 } : null;
 }
+/* ---------------- the ferry to Lighthouse Rock ----------------
+   Tap the balloon boat at the dock and your bud can sail off to another island (far.html), where you steer it. */
+const sailBtn = document.getElementById('sailBtn');
+const ferry = { stage: null, t: 0, bud: null, hide: 0 };
+function ferryAt(x, y) {
+  if (!town.boat || !town.group || !town.group.visible || ferry.stage) return false;
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  return ray.intersectObject(town.boat.g, true).length > 0;
+}
+function tapFerry() {
+  const mine = buds.find((b) => b.data.isMe);
+  closeCard();
+  town.boat.bounce = 1; S.play('pop', { gain: 0.6, rate: 0.8 });
+  if (!mine || mine.state === 'drop') return;
+  say(mine, pick(['the ferry! wanna go somewhere?', 'ooh, can we sail somewhere?', 'i’ve always wanted to ride that!']), 2400);
+  mine.happyUntil = T + 1.5;
+  sailBtn.hidden = false; hideHint();
+  clearTimeout(ferry.hide); ferry.hide = setTimeout(() => { sailBtn.hidden = true; }, 10000);
+}
+function boardFerry() {
+  const mine = buds.find((b) => b.data.isMe);
+  if (!mine || ferry.stage || game || photo || composing) return;
+  sailBtn.hidden = true; clearTimeout(ferry.hide); closeCard();
+  if (mine.state === 'act') endActivity(mine);
+  ferry.bud = mine; ferry.stage = 'walk'; ferry.t = 0;
+  focusOn(mine, Infinity, distFor(9));
+  say(mine, pick(['all aboard!', 'to the ferry!', 'let’s go!!']), 1500); S.play('chime', { gain: 0.6 });
+}
+sailBtn.addEventListener('click', boardFerry);
+function ferryTick(dt) {
+  const b = town.boat;
+  if (!b) return;
+  b.bounce = Math.max(0, b.bounce - dt * 2.4);
+  let ox = 0, oy = 0, oz = 0;
+  const bud = ferry.bud;
+  if (ferry.stage) {
+    ferry.t += dt;
+    // nothing else gets a say in where it goes now (the welcome back, a greeting, an open card)
+    Object.assign(bud, { state: 'board', target: null, onArrive: null, greetOnArrive: null, partner: null, held: false, rush: false, lookCameraUntil: 0, look: null, greetCooldown: 9 });
+    if (cardBud === bud && !card.hidden) closeCard();
+    if (ferry.stage === 'walk') {                   // a run to the head of the dock
+      const dx = 0.2 - bud.x, dz = WALK_R - 0.3 - bud.z, d = Math.hypot(dx, dz);
+      if (d < 0.5 || ferry.t > 9) { if (d >= 0.5) { bud.x = 0.2; bud.z = WALK_R - 0.3; } ferry.stage = 'pier'; ferry.t = 0; }
+      else { const [mx, mz] = steerAround(bud, dx / d, dz / d), m = Math.hypot(mx, mz) || 1, sp = Math.max(3.6, bud.speed * 3); moveSmoothly(bud, mx / m * sp, mz / m * sp, dt); bud.hopPhase += dt * 10; }
+    } else if (ferry.stage === 'pier') {            // down the pier
+      const dz = b.z - bud.z;
+      bud.x += (0.2 - bud.x) * Math.min(1, dt * 4); bud.z += Math.min(dz, 4.4 * dt);
+      bud.y = bud.z > b.shoreZ - 1.3 ? 0.12 : 0; bud.heading += angleTo(bud.heading, 0) * Math.min(1, dt * 8); bud.hopPhase += dt * 9;
+      if (dz < 0.05) { ferry.stage = 'hop'; ferry.t = 0; ferry.x0 = bud.x; S.play('boing', { gain: 0.8 }); }
+    } else if (ferry.stage === 'hop') {             // and a hop into the boat
+      const v = Math.min(1, ferry.t / 0.5);
+      bud.x = mix(ferry.x0, b.x, v); bud.y = mix(0.12, b.y + 0.1, v) + Math.sin(v * Math.PI) * 1.0; bud.heading = mix(Math.PI / 2, 0, v);
+      if (v >= 1) { ferry.stage = 'sail'; ferry.t = 0; bud.happyUntil = T + 4; say(bud, pick(['wheee!', 'bye everyone!', 'off we go!']), 1800); S.play('whoosh', { gain: 0.7 }); }
+    } else if (ferry.stage === 'sail') {            // up and away
+      const u = smooth01((ferry.t - 0.3) / 3.2), e = u * u;
+      ox = e * 9; oy = e * 13; oz = e * 26;
+      bud.x = b.x + ox; bud.z = b.z + oz; bud.y = b.y + oy + 0.1;
+      if (ferry.t > 2.2) document.getElementById('sailFade').classList.add('on');
+      if (ferry.t > 2.9 && !ferry.gone) { ferry.gone = true; location.href = '/far'; }
+    }
+  }
+  b.g.position.set(b.x + ox, b.y + oy + Math.sin(T * 1.1) * 0.12 + Math.sin((1 - b.bounce) * Math.PI * 3) * b.bounce * 0.16, b.z + oz);
+  b.g.rotation.z = Math.sin(T * 0.8) * 0.04; b.g.rotation.x = Math.sin(T * 0.6 + 1) * 0.03;
+}
+// what a bud brought back from the Rock sits on a little shelf by its front door
+function setPorch(id, kinds) {
+  const u = town.homes.get(id);
+  if (!u || !Array.isArray(kinds) || !kinds.length) return;
+  const n = Math.min(3, kinds.length), w = 0.36 * n + 0.08;
+  u.group.add(TBOX(w, 0.07, 0.4, townMat(WOOD), -u.side * (0.2 + w / 2), 0.045, 1.32));
+  kinds.slice(0, n).forEach((k, i) => { const f = makeFind(THREE, k); f.position.set(-u.side * (0.42 + i * 0.36), 0.08, 1.32); f.rotation.y = i * 1.1; u.group.add(f); });
+}
 function townTick(dt) {
   if (!town.group) return;
   for (const l of town.lit) l.mat.emissiveIntensity = l.day + (l.night - l.day) * NIGHT;
-  if (town.boat) { const b = town.boat; b.g.position.y = b.y + Math.sin(T * 1.1) * 0.12; b.g.rotation.z = Math.sin(T * 0.8) * 0.04; b.g.rotation.x = Math.sin(T * 0.6 + 1) * 0.03; }
+  ferryTick(dt);
   for (const u of town.homes.values()) {
     if (!u.bounce) continue;
     u.bounce = Math.max(0, u.bounce - dt * 2.2);
@@ -2343,17 +2430,17 @@ function updateBud(bud, dt) {
   }
 
   // anything that interrupts a hop still lets the bud land
-  if (bud.y > 0 && bud.state !== 'drop' && bud.state !== 'act') { bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt); if (bud.y === 0) land(bud); }
+  if (bud.y > 0 && bud.state !== 'drop' && bud.state !== 'act' && bud.state !== 'board') { bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt); if (bud.y === 0) land(bud); }
 
   // stay on the island
   const rr = Math.hypot(bud.x, bud.z);
-  if (rr > WALK_R + 0.5 && bud.state !== 'drop') { bud.x *= (WALK_R + 0.5) / rr; bud.z *= (WALK_R + 0.5) / rr; }
+  if (rr > WALK_R + 0.5 && bud.state !== 'drop' && bud.state !== 'board') { bud.x *= (WALK_R + 0.5) / rr; bud.z *= (WALK_R + 0.5) / rr; }
 
   // blinking
   if (T > bud.blinkAt) { bud.blinkStart = T; bud.blinkAt = T + (Math.random() < 0.15 ? 0.3 : rand(2.5, 6)); }
 
   // place it
-  const moving = bud.state === 'walk' || (bud.state === 'act' && bud.act && bud.act.moving);
+  const moving = bud.state === 'walk' || (bud.state === 'act' && bud.act && bud.act.moving) || (bud.state === 'board' && (ferry.stage === 'walk' || ferry.stage === 'pier'));
   const hopY = moving ? Math.abs(Math.sin(bud.hopPhase)) * 0.22 * RM : 0;
   bud.root.position.set(bud.x, 0, bud.z);
   bud.hop.position.y = bud.y + hopY;
@@ -3096,7 +3183,7 @@ function hoverAt(x, y) {
     canvas.classList.toggle('over-bud', tappable(t));
     return;
   }
-  canvas.classList.toggle('over-bud', !!budAt(x, y) || !!treeAt(x, y));
+  canvas.classList.toggle('over-bud', !!budAt(x, y) || !!treeAt(x, y) || ferryAt(x, y));
 }
 const card = document.getElementById('card');
 const cardBody = document.getElementById('cardBody');
@@ -3141,6 +3228,7 @@ function clickAt(x, y) {
   if (game) { gameTap(x, y); return true; }
   const bud = budAt(x, y);
   if (photo) { if (photo.stage === 'pick' && bud) togglePicked(bud); return true; }
+  if (!bud && !composing && ferryAt(x, y)) { tapFerry(); return true; }
   if (!bud && !composing) { const h = homeAt(x, y); if (h) { tapHome(h); return true; } }
   if (!bud && !composing) { const t = treeAt(x, y); if (t) { openTreeCard(t.heart); return true; } }
   if (!bud && !composing) { const w = pondAt(x, y); if (w) { tapPond(w); return true; } }
@@ -3175,6 +3263,8 @@ function openCard(bud) {
   sub.textContent = '';
   sub.append(owner);
   if (bud.data.hobbyLabel) sub.append(` \u00b7 loves ${bud.data.hobbyLabel}`);
+  const porch = (bud.data.porch || []).filter((k) => FINDS[k]);
+  if (porch.length) sub.append(` \u00b7 back from ${ROCK} with ${porch.map((k) => FINDS[k].icon).join(' ')}`);
   if (nick && nick !== tn) {
     sub.append(' · real name ');
     sub.append(el('span', 'tn', tn));
@@ -4998,6 +5088,13 @@ function showCenter(title, text, linkText, href = '/') {
     const door = TOWN && Math.random() < 0.6 ? homeFront(bud.data.id) : null;
     const p = door ? freeSpot(1.6, door, 2.2) : freeSpot(2.4); bud.x = p.x; bud.z = p.z; bud.placed = true;
   }
+  // finds from Lighthouse Rock, out on the porches
+  if (TOWN) for (const bud of buds) setPorch(bud.data.id, bud.data.porch);
+  // back from the Rock: your bud is just off the ferry, at the head of the dock
+  if (FROM_FAR && mine && TOWN) {
+    mine.x = 0.3; mine.z = WALK_R - 1; mine.heading = Math.PI; mine.timer = 4;
+    setTimeout(() => { focusOn(mine, 5, distFor(9)); mine.happyUntil = T + 2; mine.syv -= 0.14; mine.lookCameraUntil = T + 4; say(mine, pick(['we’re back!', 'home again!', 'what a trip!']), 2000); }, 900);
+  }
 
   if (!buds.length) {
     showCenter('No buds here yet', 'Make the first one and it’ll be waiting here when your friends arrive.', 'Make my bud');
@@ -5013,7 +5110,7 @@ function showCenter(title, text, linkText, href = '/') {
     document.getElementById('titleSub').textContent = 'Your bud just moved in.';
     setTimeout(() => { mine.heading = Math.atan2(camera.position.x - mine.x, camera.position.z - mine.z); say(mine, 'wheeeee!', 1500); }, 200);
   }
-  if (mine && !DROP && !GAME_ID && !params.get('bud')) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
+  if (mine && !DROP && !FROM_FAR && !GAME_ID && !params.get('bud')) setTimeout(() => welcomeBack(mine, world.me.lastVisit), 1400);
   if (GAME_ID && mine) setTimeout(() => enterGame(GAME_ID), 700);
   const OPEN_BUD = /^\d{5,25}$/.test(params.get('bud') || '') ? buds.find((b) => b.data.id === params.get('bud')) : null;
   if (OPEN_BUD && !GAME_ID) {
@@ -5024,6 +5121,8 @@ function showCenter(title, text, linkText, href = '/') {
   requestAnimationFrame(frame);
 })();
 
+// coming back with the browser's Back button after sailing off: start the page fresh, not mid-sail
+addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
 S.bindToggle(document.getElementById('soundBtn'));
 if (!window.BudSound) document.getElementById('soundBtn').hidden = true;
 S.onChange(() => S.ambient(!S.muted));   // wind and birds once sound is allowed, off when muted

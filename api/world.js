@@ -13,6 +13,8 @@ import { myGames as myPults } from '../lib/bpgame.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
 import { townFor } from '../lib/townStore.js';
+import { awayView, awayAct, porchOf } from '../lib/away.js';
+import { dayKey } from '../js/away.js';
 import { waitUntil } from '@vercel/functions';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -27,6 +29,12 @@ export async function GET(request) {
   if (!session) return json({ error: 'sign in first' }, 401);
   try {
     const me = session.id;
+    // Lighthouse Rock (/far) only needs your own bud and what you've done there
+    if (new URL(request.url).searchParams.get('away') === '1') {
+      const [budDoc, userDoc] = await Promise.all([refs.bud(me).get(), refs.user(me).get()]);
+      const d = budDoc.exists ? budDoc.data() : null, bud = d ? budForWorld(me, d, session.name, true) : null;
+      return json({ me: { id: me, name: session.name }, bud: bud && bud.r.length === 64 ? bud : null, day: dayKey(), away: awayView(userDoc.exists ? userDoc.get('away') : null) });
+    }
     const buds = db().collection('guilds').doc(GUILD_ID).collection('buds');
     const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news, gameSnap, profileSnap, allFriends] = await Promise.all([
       buds.select(...FIELDS).limit(MAX_BUDS).get(),
@@ -77,9 +85,10 @@ export async function GET(request) {
 
     // Owner display names, so a bud can say whose it is.
     const people = [...new Set([...snap.docs.map((d) => d.id), ...inbox.map((n) => n.from)])];
-    const owners = people.length ? await db().getAll(...people.map((id) => refs.user(id)), { fieldMask: ['displayName', 'wardrobe'] }) : [];
+    const owners = people.length ? await db().getAll(...people.map((id) => refs.user(id)), { fieldMask: ['displayName', 'wardrobe', 'away'] }) : [];
     const names = new Map(owners.map((d) => [d.id, d.exists ? d.get('displayName') : null]));
     const wardrobes = new Map(owners.map((d) => [d.id, d.exists ? d.get('wardrobe') || null : null]));
+    const porches = new Map(owners.map((d) => [d.id, d.exists ? porchOf(d.get('away')) : []]));
     if (granted) wardrobes.set(me, { ...(wardrobes.get(me) || {}), items: granted.items });
     const myTags = tagsOf.get(me) || [], iShare = sharing.has(me);
 
@@ -95,6 +104,8 @@ export async function GET(request) {
         // only the things you share, and only if you both said yes to showing them
         common: d.id !== me && iShare && sharing.has(d.id) ? inCommon(myTags, tagsOf.get(d.id) || []) : null,
         hobby: hobbyOf(d.id), hobbyLabel: HOBBY_LABEL[hobbyOf(d.id)],
+        // what it brought back from Lighthouse Rock, set out on its porch
+        porch: porches.get(d.id) || [],
       };
     }).filter((b) => b.r.length === 64);
     const budNames = new Map(list.map((b) => [b.id, b.nickname || b.trueName]));
@@ -180,12 +191,20 @@ export async function GET(request) {
 }
 
 // The island remembers which Island Times issue you've read, so it only opens by itself once.
+// (Lighthouse Rock saves through here too: every serverless function is in use.)
 export async function POST(request) {
   if (!sameOrigin(request)) return json({ error: 'wrong origin' }, 403);
   const session = readSession(request);
   if (!session) return json({ error: 'sign in first' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+  // something done on Lighthouse Rock: a find picked up, a hello to the keeper
+  if (body?.away) {
+    try {
+      const r = await awayAct(session.id, body.away);
+      return json(r, r.status || 200);
+    } catch (err) { console.error('away failed:', err); return json({ error: 'could not save that' }, 500); }
+  }
   if (typeof body?.newsSeen !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.newsSeen)) return json({ error: 'bad issue' }, 400);
   await refs.user(session.id).set({ newsSeen: body.newsSeen }, { merge: true });
   return json({ saved: true });
