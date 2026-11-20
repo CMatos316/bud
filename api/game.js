@@ -5,8 +5,6 @@
 // drawing them); POST { action: 'sd-new' | 'sd-join' | 'sd-start' | 'sd-pick', room, choice }
 // Prankster rooms (lib/prankster.js) too: GET ?pk= checks in; POST { action: 'pk-new' | 'pk-join' | 'pk-start'
 // | 'pk-night' | 'pk-ready' | 'pk-vote', room, target }
-// Doodle Duel (lib/doodle.js): GET ?doodle= one game; POST { action: 'dd-new' | 'dd-pick' | 'dd-send' | 'dd-guess'
-// | 'dd-giveup', id, opponent, choice, strokes, guess }
 // Bud-a-pult test range (lib/catapult.js, the physics runs here): POST { action: 'bp-build' | 'bp-shoot' |
 // 'bp-repair', pieces, bud, state, angle, power, add, remove }
 // Island Race (lib/race.js, played on a call): GET ?rc=<room>[&full=1] checks in; POST { action: 'rc-new' |
@@ -15,8 +13,6 @@
 // 'bpg-patch' | 'bpg-resign', id, opponent, pieces, bud, angle, power, add, remove, skip }
 // Doodle mail (lib/doodlemail.js): GET ?mail=list (your bud's doodles) | ?mail=<id> (one, to replay) | ?mailto=<user>;
 // POST { action: 'mail-send' | 'mail-star' | 'mail-toss', to, strokes, caption, id, fav }
-// Hold the Fort, the daily puzzle (lib/fort.js, lib/fortStore.js): GET ?fort=today | ?fort=<day number> (any other
-// day is practice); POST { action: 'hf-try', n, pieces }
 // Party night (lib/party.js: a TV and everyone's phones): GET ?party=<CODE>[&tv=1] where the party is now;
 // POST { action: 'party-new' | 'party-set' | 'party-token', code, game, tv }. The TV watches a race or a Prankster
 // game without joining: GET ?rc=<room>&watch=1, ?pk=<room>&watch=1
@@ -25,12 +21,10 @@ import { createGame, hide, shoot, resign, getGame, myGames } from '../lib/peekab
 import { isDiscordId } from '../lib/notes.js';
 import { newRoomId, joinRoom, checkIn, startGame, pick, budsFor } from '../lib/showdown.js';
 import * as prank from '../lib/prankster.js';
-import * as doodle from '../lib/doodle.js';
 import * as mail from '../lib/doodlemail.js';
 import * as pult from '../lib/catapult.js';
 import * as bpg from '../lib/bpgame.js';
 import * as race from '../lib/race.js';
-import * as fortStore from '../lib/fortStore.js';
 import * as party from '../lib/party.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
@@ -47,21 +41,11 @@ export async function GET(request) {
   if (!session) return json({ error: 'sign in first' }, 401);
   const url = new URL(request.url), id = url.searchParams.get('id'), room = url.searchParams.get('room');
   if (url.searchParams.get('mine') != null) {
-    // the same three lists the island loads with, so its Games list can check again without reloading
+    // the same lists the island loads with, so its Games list can check again without reloading
     try {
-      const [peek, doodles, catapults] = await Promise.all([myGames(session.id), doodle.myDoodles(session.id).catch(() => []), bpg.myGames(session.id).catch(() => [])]);
-      return json({ games: peek.filter((g) => g.status === 'setup' || g.status === 'playing').map(({ id, them, myTurn, status }) => ({ id, them, myTurn, status })), doodles, catapults });
+      const [peek, catapults] = await Promise.all([myGames(session.id), bpg.myGames(session.id).catch(() => [])]);
+      return json({ games: peek.filter((g) => g.status === 'setup' || g.status === 'playing').map(({ id, them, myTurn, status }) => ({ id, them, myTurn, status })), catapults });
     } catch (err) { return fail(err); }
-  }
-  const dd = url.searchParams.get('doodle');
-  if (dd != null) {
-    if (!/^[A-Za-z0-9]{10,40}$/.test(dd)) return json({ error: 'which game?' }, 400);
-    try { return json(await doodle.getGame(session.id, dd)); } catch (err) { return fail(err); }
-  }
-  const hf = url.searchParams.get('fort');
-  if (hf != null) {
-    if (hf !== 'today' && !/^[0-9]{1,6}$/.test(hf)) return json({ error: 'which day?' }, 400);
-    try { return json(await fortStore.view(session.id, hf === 'today' ? null : Number(hf))); } catch (err) { return fail(err); }
   }
   const pt = url.searchParams.get('party');
   if (pt != null) {
@@ -113,20 +97,6 @@ export async function POST(request) {
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
   const { action, id } = body || {};
-  if (typeof action === 'string' && action.startsWith('dd-')) {
-    try {
-      if (action === 'dd-new') {
-        if (!isDiscordId(body.opponent)) return json({ error: 'who are you doodling with?' }, 400);
-        return json(await doodle.createGame(session.id, body.opponent));
-      }
-      if (typeof id !== 'string' || !/^[A-Za-z0-9]{10,40}$/.test(id)) return json({ error: 'which game?' }, 400);
-      if (action === 'dd-pick') return json(await doodle.pickWord(session.id, id, Number(body.choice)));
-      if (action === 'dd-send') return json(await doodle.sendDrawing(session.id, id, body.strokes));
-      if (action === 'dd-guess') return json(await doodle.guess(session.id, id, String(body.guess || '').slice(0, 60)));
-      if (action === 'dd-giveup') return json(await doodle.giveUp(session.id, id));
-      return json({ error: 'unknown move' }, 400);
-    } catch (err) { return fail(err); }
-  }
   if (typeof action === 'string' && action.startsWith('party-')) {
     try {
       const code = typeof body.code === 'string' ? body.code.toUpperCase() : null;
@@ -136,9 +106,6 @@ export async function POST(request) {
       if (action === 'party-token') return json(await party.rtToken(code, session.id, session.name, body.tv === true));
       return json({ error: 'unknown move' }, 400);
     } catch (err) { return fail(err); }
-  }
-  if (action === 'hf-try') {
-    try { return json(await fortStore.attempt(session.id, session.name, body.n == null ? null : Number(body.n), body.pieces)); } catch (err) { return fail(err); }
   }
   if (typeof action === 'string' && action.startsWith('rc-')) {
     try {

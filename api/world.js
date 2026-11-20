@@ -8,7 +8,6 @@ import { latestIssue } from '../lib/newsletter.js';
 import { sameOrigin } from '../lib/session.js';
 import { lifeDiary, hobbyOf, HOBBY_LABEL } from '../lib/life.js';
 import { games as gamesRef } from '../lib/peekaboo.js';
-import { myDoodles } from '../lib/doodle.js';
 import { counts as doodleCounts } from '../lib/doodlemail.js';
 import { myGames as myPults } from '../lib/bpgame.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
@@ -147,7 +146,7 @@ export async function GET(request) {
       : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(session.id) >> 22n) % 6}.png`;
     return json({
       me: {
-        id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists, dms: !meDoc.get?.('questionsOff'),
+        id: me, name: session.name, avatarUrl, lastVisit, hasProfile: profileDoc.exists, dms: meDoc.get?.('questionsOn') === true && !meDoc.get?.('questionsOff'),
         // what your bud knows about you (only you see this), for your bud's card
         profile: profileDoc.exists ? {
           interests: profileDoc.get('interests') || [],
@@ -163,8 +162,6 @@ export async function GET(request) {
       friendships: allFriends.docs.map((f) => ({ a: f.get('members')[0], b: f.get('members')[1], since: f.get('since')?.toMillis() ?? 0 }))
         .filter((f) => budNames.has(f.a) && budNames.has(f.b)).sort((x, y) => x.since - y.since),
       diary,
-      // Doodle Duel games, whose turn it is
-      doodles: await myDoodles(me).catch(() => []),
       // Bud-a-pult games still going
       catapults: await myPults(me).catch(() => []),
       // doodle mail in your bud's inventory (the pictures load when you open it)

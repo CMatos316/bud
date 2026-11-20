@@ -20,7 +20,7 @@ export async function GET(request) {
   const session = guard(request, false);
   if (session instanceof Response) return session;
   const [snap, user] = await Promise.all([refs.profile(session.id).get(), refs.user(session.id).get()]);
-  const dms = !(user.exists && user.get('questionsOff'));
+  const dms = !!(user.exists && user.get('questionsOn') === true && !user.get('questionsOff'));   // opt-in
   if (!snap.exists) return json({ profile: null, dms });
   const d = snap.data();
   const profile = Object.fromEntries(FIELDS.map((k) => [k, d[k] ?? null]));
@@ -41,7 +41,7 @@ export async function PUT(request) {
     catch (err) { return json({ error: err.message }, err.status || 500); }
   }
   // bud's question DMs on or off (works even before there's a profile)
-  if (typeof body?.dms === 'boolean') await refs.user(session.id).set({ questionsOff: !body.dms }, { merge: true });
+  if (typeof body?.dms === 'boolean') await refs.user(session.id).set({ questionsOn: body.dms, questionsOff: !body.dms }, { merge: true });
   const ref = refs.profile(session.id), snap = await ref.get();
   if (!snap.exists) return typeof body?.dms === 'boolean' ? json({ saved: true }) : json({ error: 'chat with your bud first' }, 404);
   const cur = snap.data(), patch = { updatedAt: Timestamp.now() };

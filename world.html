@@ -2643,7 +2643,7 @@ const cardBody = document.getElementById('cardBody');
 let inbox = [];        // notes stuck on my bud: { from, fromName, fromBud, text, color }
 let diary = [];        // what my bud got up to: { at, kind, text, with?, fresh }
 let hasProfile = true; // false until you've done the getting-to-know-you chat
-let dmsOn = true;      // bud's question DMs every couple of days
+let dmsOn = false;     // bud's question DMs every couple of days (opt-in)
 let myProfile = null;  // what your bud knows about you: { interests, answered, shareInterests }
 let myWardrobe = null; // { head, hand, owned: [{ id, slot, name, icon, from }] }
 const MAX_TOTAL = 10;  // interview questions in all (3 when you make your bud, then "Keep chatting")
@@ -2789,8 +2789,8 @@ function renderCardBody() {
     cardBody.append(el('span', 'friends', `You and ${d.ownerName || 'them'} are friends`));
     renderInCommon(d);
     if (myBud()) {
-      const r = el('div', 'row'); r.append(peekabooButton(bud), pultButton(bud), sendDoodleButton(bud), doodleButton(bud)); cardBody.append(r);
-      cardBody.append(el('p', 'muted', `Peekaboo: hide 3 buds each, then take turns finding them. Bud-a-pult: build forts, then fling your buds at each other’s. Send a doodle: draw ${d.ownerName || 'them'} something for their DMs. Doodle Duel: take turns drawing and guessing.`));
+      const r = el('div', 'row'); r.append(peekabooButton(bud), pultButton(bud), sendDoodleButton(bud)); cardBody.append(r);
+      cardBody.append(el('p', 'muted', `Peekaboo: hide 3 buds each, then take turns finding them. Bud-a-pult: build forts, then fling your buds at each other’s. Send a doodle: draw ${d.ownerName || 'them'} something for their DMs.`));
     }
     return;
   }
@@ -2926,7 +2926,7 @@ function renderWardrobe(bud) {
 }
 function renderDmToggle(bud) {
   const r = el('div', 'row dm-row');
-  r.append(el('span', 'muted', `${nameOf(bud)}’s questions in your Discord DMs: ${dmsOn ? 'on' : 'off'}`));
+  r.append(el('span', 'muted', `${nameOf(bud)} can DM you a question every couple of days: ${dmsOn ? 'on' : 'off'}`));
   const t = el('button', 'btn', dmsOn ? 'Turn off' : 'Turn on'); t.type = 'button';
   t.addEventListener('click', async () => {
     t.disabled = true;
@@ -3977,20 +3977,6 @@ async function startGameWith(them) {
 }
 
 // the card buttons: on a friend's bud, and the list on your own
-// Doodle Duel (doodle.html): a drawing game between friends, in turns
-let myDoodles = [];
-function doodleButton(bud) {
-  const g = myDoodles.find((x) => x.them === bud.data.id);
-  const b = el('button', 'btn', g ? (g.myTurn ? '🎨 Your turn to doodle' : '🎨 Doodle Duel') : '🎨 Doodle Duel'); b.type = 'button';
-  b.addEventListener('click', async () => {
-    b.disabled = true;
-    try {
-      const id = g ? g.id : (await api('POST', '/api/game', { action: 'dd-new', opponent: bud.data.id })).id;
-      location.href = `/doodle?id=${id}`;
-    } catch (e) { b.disabled = false; b.textContent = e.message; }
-  });
-  return b;
-}
 // Doodle mail (doodle.html?to=): draw a friend something; it goes to their DMs and their bud's inventory
 function sendDoodleButton(bud) {
   const a = el('a', 'btn', '✏️ Send a doodle'); a.href = `/doodle?to=${bud.data.id}`;
@@ -4074,7 +4060,6 @@ function peekabooButton(bud) {
 }
 function renderGamesList() {
   renderPultList();
-  renderDoodlesList();
   if (!myGames.length) return;
   const box = el('section', 'diary games');
   box.append(el('h3', null, 'Peekaboo'));
@@ -4091,21 +4076,6 @@ function renderGamesList() {
   cardBody.append(box);
 }
 
-function renderDoodlesList() {
-  if (!myDoodles.length) return;
-  const box = el('section', 'diary games');
-  box.append(el('h3', null, 'Doodle Duel'));
-  const ul = el('ul');
-  for (const g of myDoodles) {
-    const other = budById(g.them), who = other ? other.data.ownerName || nameOf(other) : 'a friend';
-    const li = el('li', g.myTurn ? 'fresh' : null);
-    const open = el('a', 'btn', g.myTurn ? (g.stage === 'guess' ? 'Guess it' : 'Your turn') : 'Open'); open.href = `/doodle?id=${g.id}`;
-    li.append(el('span', 'ico', '🎨'), el('span', null, `with ${who}${g.streak ? ` · streak ${g.streak}` : ''}`), open);
-    ul.append(li);
-  }
-  box.append(ul);
-  cardBody.append(box);
-}
 gameSeg.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-board]');
   if (!b || !game || b.dataset.board === game.board) return;
@@ -4123,7 +4093,7 @@ let cameFrom = null;    // the list a bud's card was opened from
 let budsTab = 'all', budsQuery = '';
 const gamesPill = document.getElementById('gamesPill'), budsPill = document.getElementById('budsPill');
 const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
-const waitingOnMe = () => [...myGames, ...myDoodles, ...myPults].filter((g) => g.myTurn);
+const waitingOnMe = () => [...myGames, ...myPults].filter((g) => g.myTurn);
 function openListCard(kind) {
   if (photo || game) return;
   closeComposer(); closeCard();
@@ -4197,7 +4167,6 @@ function gameRows() {
   const rows = [];
   for (const g of myGames) rows.push({ them: g.them, name: 'Peekaboo', myTurn: g.myTurn, label: g.myTurn ? (g.status === 'setup' ? 'Hide your buds' : 'Your turn') : 'Open', go: () => { closeCard(); enterGame(g.id); } });
   for (const g of myPults) rows.push({ them: g.them, name: 'Bud-a-pult', myTurn: g.myTurn, label: g.myTurn ? (g.stage === 'build' ? 'Build your fort' : 'Your turn') : 'Open', href: `/catapult?id=${g.id}` });
-  for (const g of myDoodles) rows.push({ them: g.them, name: 'Doodle Duel', myTurn: g.myTurn, label: g.myTurn ? (g.stage === 'guess' ? 'Guess it' : 'Your turn') : 'Open', href: `/doodle?id=${g.id}`, more: g.streak ? `streak ${g.streak}` : '' });
   return rows;
 }
 function renderGamesPanel() {
@@ -4225,7 +4194,7 @@ function renderGamesPanel() {
   const friends = buds.filter((b) => b.data.friend).sort(byName);
   if (!friends.length) cardBody.append(el('p', 'muted', 'Games are played with friends. Tap a bud and stick a note on it to make one.'));
   else {
-    cardBody.append(el('p', 'muted', 'Pick a friend. Peekaboo, Bud-a-pult and Doodle Duel are on their bud’s card.'));
+    cardBody.append(el('p', 'muted', 'Pick a friend. Peekaboo, Bud-a-pult and Send a doodle are on their bud’s card.'));
     const row = el('div', 'row friends-row');
     for (const f of friends) {
       const b = el('button', 'btn'); b.type = 'button';
@@ -4252,7 +4221,7 @@ async function refreshGames() {
   if (!myBud()) return;
   try {
     const v = await api('GET', '/api/game?mine=1');
-    myGames = v.games || []; myDoodles = v.doodles || []; myPults = v.catapults || []; gamesAt = Date.now();
+    myGames = v.games || []; myPults = v.catapults || []; gamesAt = Date.now();
   } catch (e) { return; }
   updateGamesPill();
   if (cardList === 'games') renderGamesPanel();
@@ -4495,7 +4464,6 @@ function showCenter(title, text, linkText, href = '/') {
   inbox = world.inbox || [];
   diary = world.diary || [];
   myGames = world.games || [];
-  myDoodles = world.doodles || [];
   myMail = world.doodleMail || { count: 0, fresh: 0 };
   myPults = world.catapults || [];
   news = world.news || null;
@@ -4507,7 +4475,7 @@ function showCenter(title, text, linkText, href = '/') {
     else if (!news.seen && !DROP && !GAME_ID) setTimeout(() => { if (card.hidden && !photo && !composing && !game) openNews(); }, 9500);
   }
   hasProfile = world.me.hasProfile !== false;
-  dmsOn = world.me.dms !== false;
+  dmsOn = world.me.dms === true;
   myProfile = world.me.profile || null;
   myWardrobe = world.me.wardrobe || null;
   // a friend drew you something: your bud mentions it, and ?doodles=1 (from the doodle page) opens the drawer
