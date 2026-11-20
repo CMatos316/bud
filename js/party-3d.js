@@ -305,7 +305,9 @@ export function make3d(canvas, { colorFor, nameOf, budData }) {
       p.root.scale.setScalar(size); p.root.position.set(x, 0.03 + hop + (back ? 0.5 : 0), z); faceCamera(p, x, z);
       const dizzy = !back && r.stun > 0;                       // washed up and seeing stars
       p.root.rotation.z = back ? T * 9 : dizzy ? Math.sin(T * 5 + i) * 0.35 : -0.2 * mv + Math.sin(T * 22 + i) * 0.07 * mv;
-      const sq = 1 + Math.sin(T * 15 + i * 1.7) * 0.07 * mv; p.squash.scale.set(2 - sq, sq, 1);
+      // squashed as it touches down, a little stretched in the air (not squashed mid-air every other hop)
+      const u = ((T * 15 + i * 1.7) % Math.PI + Math.PI) % Math.PI / Math.PI, dn = Math.min(u, 1 - u);
+      const sq = 1 + (0.05 * Math.sin(u * Math.PI * 2) ** 2 - 0.1 * Math.exp(-((dn / 0.12) ** 2))) * mv; p.squash.scale.set(2 - sq, sq, 1);
       p.stand.position.set(x, 0.03, z); p.stand.scale.setScalar(size); p.ring.visible = false; p.aim.visible = false;
       const ts = lerp(1, 1.5, (size - 0.95) / 0.95); p.tag.scale.set(p.tag.userData.w * ts, 0.52 * ts, 1);
       p.tag.position.set(x - (BUD_W * 0.6 * size + p.tag.userData.w * ts / 2 + 0.3), 0.8 * size, z + 0.2);

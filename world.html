@@ -2226,6 +2226,40 @@ function startGreeting(a, b) {
   setTimeout(() => { if (b.state === 'greet') say(b, pick(HELLOS), 1500); }, 500);
 }
 
+/* ---------------- the shape of a jump ----------------
+   Stretched going up and coming down, round at the top, and a quick squash the moment it lands that springs
+   straight back, with a little crouch before each hop. (Before, the squash came after landing and kept going
+   down, then the bud took off still squashed, so it looked like it was sinking into the ground.) */
+const JUMP_V = 5.2;
+const smooth01 = (u) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+const mix = (a, b, u) => a + (b - a) * u;
+function takeOff(bud, vy) {
+  bud.vy = vy; bud.y = Math.max(bud.y, 0.001);
+  bud.upAt = T; bud.upFrom = bud.shape || 0; bud.crouchAt = 0;
+}
+function land(bud) {
+  bud.landAt = T; bud.landFrom = bud.shape || 0;
+  bud.landDepth = 0.15 * Math.min(1, Math.abs(bud.vy) / JUMP_V);
+  bud.y = 0; bud.vy = 0;
+}
+function jumpShape(bud) {
+  if (bud.y > 0 && bud.state !== 'drop') {
+    const air = 0.1 * Math.pow(Math.min(1, Math.abs(bud.vy) / JUMP_V), 1.5);
+    const u = (T - (bud.upAt ?? -9)) / 0.07;
+    return u < 1 ? mix(bud.upFrom, air, smooth01(u)) : air;
+  }
+  let off = 0;
+  const t = T - (bud.landAt ?? -9), d = bud.landDepth || 0;
+  if (t < 0.32) off = t < 0.05 ? mix(bud.landFrom, -d, smooth01(t / 0.05)) : t < 0.18 ? mix(-d, d * 0.2, smooth01((t - 0.05) / 0.13)) : mix(d * 0.2, 0, smooth01((t - 0.18) / 0.14));
+  if (bud.crouchAt && T > bud.crouchAt - 0.1) off = Math.min(off, -0.09 * RM * smooth01(1 - (bud.crouchAt - T) / 0.1));
+  return off;
+}
+// the little hops of walking and running: a squash each time it touches down, a slight stretch in between
+function walkShape(phase) {
+  const u = ((phase % Math.PI) + Math.PI) % Math.PI / Math.PI, d = Math.min(u, 1 - u);
+  return RM * (0.035 * Math.sin(u * Math.PI * 2) ** 2 - 0.07 * Math.exp(-((d / 0.1) ** 2)));
+}
+
 function updateBud(bud, dt) {
   // spring for squash and stretch (tuned at 60fps, scaled to frame time)
   const f = dt * 60;
@@ -2289,10 +2323,7 @@ function updateBud(bud, dt) {
       const m = Math.hypot(mx, mz) || 1;
       const sp = bud.pose || bud.rush ? bud.speed * 1.8 : bud.speed;
       moveSmoothly(bud, mx / m * sp, mz / m * sp, dt);
-      // little hops
-      const before = Math.sin(bud.hopPhase);
-      bud.hopPhase += dt * 8.5;
-      if (Math.sin(bud.hopPhase) * before < 0) bud.syv -= 0.05 * RM;   // landing squish
+      bud.hopPhase += dt * 8.5;   // little hops (walkShape squashes each landing)
     }
   } else if (bud.state === 'act') {
     updateActivity(bud, dt);
@@ -2312,7 +2343,7 @@ function updateBud(bud, dt) {
   }
 
   // anything that interrupts a hop still lets the bud land
-  if (bud.y > 0 && bud.state !== 'drop' && bud.state !== 'act') { bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt); if (bud.y === 0) bud.vy = 0; }
+  if (bud.y > 0 && bud.state !== 'drop' && bud.state !== 'act') { bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt); if (bud.y === 0) land(bud); }
 
   // stay on the island
   const rr = Math.hypot(bud.x, bud.z);
@@ -2328,7 +2359,10 @@ function updateBud(bud, dt) {
   bud.hop.position.y = bud.y + hopY;
   bud.root.rotation.y = bud.heading;
   if (bud.pet) bud.pet.userData.tail.rotation.z = Math.sin(T * 7 + bud.blinkAt) * 0.5;   // a happy little tail
-  const sy = bud.sy;
+  const shape = jumpShape(bud) + (moving ? walkShape(bud.hopPhase) : 0);
+  bud.shape = (bud.shape || 0) + (shape - (bud.shape || 0)) * (1 - Math.exp(-dt * 50));   // eased a touch, so nothing pops
+  // (a hop's squash never stacks with a greeting's below 80% height; the drop-in's big splat is its own)
+  const sy = bud.shape < 0 ? Math.max(Math.min(bud.sy, 0.8), bud.sy + bud.shape) : bud.sy + bud.shape;
   bud.squash.scale.set(2 - sy, sy, 2 - sy);
   // lean back to look at the sky, forward to peek over the edge or smell a flower
   const wantTilt = bud.state === 'act' && bud.act ? bud.act.tilt || 0 : 0;
@@ -2475,7 +2509,7 @@ function goThenDo(bud, spot, fn) {
 function endActivity(bud, rest = rand(1.5, 4)) {
   if (bud.state === 'act') { bud.state = 'idle'; }
   bud.onIce = false;
-  bud.act = null; bud.look = null; bud.timer = rest; bud.hopPhase = 0;
+  bud.act = null; bud.look = null; bud.timer = rest; bud.hopPhase = 0; bud.crouchAt = 0;
 }
 
 function updateActivity(bud, dt) {
@@ -2483,7 +2517,7 @@ function updateActivity(bud, dt) {
   if (!a) { endActivity(bud); return; }
   if (a.kind === 'nap') {
     // slow breathing, and the odd z
-    bud.syv += Math.sin(T * 2.2) * 0.0016;
+    bud.syv += Math.sin(T * 2.2) * 0.0016 * dt * 60;   // the same depth at any frame rate
     if (T > a.next) { say(bud, pick(['z', 'zz', 'zzz']), 1200); a.next = T + rand(2, 3.2); }
   } else if (a.kind === 'koi') {
     // watching the fish: eyes follow one, and the odd comment
@@ -2529,13 +2563,23 @@ function updateActivity(bud, dt) {
     if (T > a.next && !leaving) { say(bud, pick(['wheee!', 'look at me go!', 'whoa, slippery', 'twirl!']), 1300); a.next = T + rand(4, 7); bud.happyUntil = T + 1; }
     return;
   } else if (a.kind === 'hop') {
-    bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt);
-    if (bud.y === 0 && bud.vy < 0) {
-      bud.vy = 0; bud.syv -= 0.08 * RM;
-      if (a.puddle && wx.wet > 0.2) { splash(bud.x, bud.z, 1 + Math.random() * 0.5); S.play('splash', { gain: near(bud, 0.35), rate: 1.3 }); if (!a.splashed) { a.splashed = true; setTimeout(() => say(bud, pick(['splash!!', 'puddle!!', 'hehe, I’m soaked']), 1300), 200); } }
+    // crouch, spring up, come down, again (jumpShape does the squash and stretch)
+    if (bud.y > 0) {
+      bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt);
+      if (bud.y === 0) {
+        land(bud);
+        a.next = T + rand(0.16, 0.32); a.done = a.next + 0.5 > a.until;
+        if (a.puddle && wx.wet > 0.2) { splash(bud.x, bud.z, 1 + Math.random() * 0.5); S.play('splash', { gain: near(bud, 0.35), rate: 1.3 }); if (!a.splashed) { a.splashed = true; setTimeout(() => say(bud, pick(['splash!!', 'puddle!!', 'hehe, I’m soaked']), 1300), 200); } }
+      }
+      return;
     }
-    if (T > a.next && bud.y === 0) { S.play('boing', { gain: near(bud, 0.5), rate: 1 + (bud.b.h % 5) / 20 }); bud.vy = 5.2 * RM; bud.syv += 0.06; a.next = T + rand(0.55, 0.8); if (!a.said && !a.puddle) { a.said = true; say(bud, pick(['hop!', 'hop hop', 'boing!', 'look how high!']), 1200); } }
-    if (T > a.until && bud.y === 0) { bud.y = 0; endActivity(bud); }
+    if (a.done || T > a.until) { endActivity(bud); return; }
+    bud.crouchAt = a.next;
+    if (T >= a.next) {
+      S.play('boing', { gain: near(bud, 0.5), rate: 1 + (bud.b.h % 5) / 20 });
+      takeOff(bud, JUMP_V * RM);
+      if (!a.said && !a.puddle) { a.said = true; say(bud, pick(['hop!', 'hop hop', 'boing!', 'look how high!']), 1200); }
+    }
     return;
   } else if (a.kind === 'tag') {
     const g = a.game, other = buds.find((o) => o !== bud && o.act && o.act.game === g);
@@ -2565,8 +2609,7 @@ function updateActivity(bud, dt) {
     [mx, mz] = steerAround(bud, mx / d, mz / d);
     const m = Math.hypot(mx, mz) || 1, sp = (it ? 2.5 : 2.2) * bud.speed;
     moveSmoothly(bud, mx / m * sp, mz / m * sp, dt, 7);
-    const before = Math.sin(bud.hopPhase); bud.hopPhase += dt * 11;
-    if (Math.sin(bud.hopPhase) * before < 0) bud.syv -= 0.04 * RM;
+    bud.hopPhase += dt * 11;
     const touch = (bud.width + other.width) * 0.5 * 0.85 + 0.25;
     if (it && Math.hypot(other.x - bud.x, other.z - bud.z) < touch && T - g.tagAt > 1.2) {
       g.it = other; g.tagAt = T; g.freezeUntil = T + 1.8;
@@ -4371,7 +4414,7 @@ function animateShot(s, board) {
     puff(p.x, p.z);
     S.play('sparkle', { gain: 0.8 });
     if (b && b.gamePiece) {
-      b.y = 0.01; b.vy = 8; b.syv -= 0.15; b.happyUntil = T + 2.5;
+      takeOff(b, 8); b.happyUntil = T + 2.5;
       say(b, board === 'theirs' ? pick(['peekaboo!', 'aw, you found me!', 'how did you know?!']) : pick(['eek, they found me!', 'aw, found!', 'peekaboo…']), 2000);
     }
     return;
