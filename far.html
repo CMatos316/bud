@@ -67,6 +67,10 @@ canvas#rock { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #fade { position: fixed; inset: 0; background: #FFFDF8; opacity: 1; transition: opacity .35s; pointer-events: none; }
 #fade.clear { opacity: 0; }
 #fade.dark { background: #15121C; }
+#fade.flash { background: #E9F8FF; transition: opacity .25s; }
+.card .paper { background: #FBF5E6; color: #3A2A1E; border-radius: 12px; padding: 14px 16px; font-size: 16px; line-height: 1.5; font-style: italic; margin-top: 12px; }
+.journal { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.journal button { font: inherit; font-size: 14px; border: 1px solid var(--chip-line); background: var(--slot); color: var(--ink); border-radius: 999px; padding: 7px 12px; min-height: 36px; cursor: pointer; }
 body.inside .place { color: #F1F0F8; text-shadow: none; }
 body.inside #act { background: #F1F0F8; color: #15161F; }
 .card { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 40px); overflow: auto; background: var(--card); color: var(--ink); border-radius: 22px; padding: 20px; box-shadow: 0 20px 60px rgba(20, 16, 50, .35); touch-action: pan-y; }
@@ -113,7 +117,14 @@ body.inside #act { background: #F1F0F8; color: #15161F; }
   <p id="findsSub"></p>
   <div class="grid" id="findsGrid"></div>
   <p>The last three you found sit on your porch back home, where everyone can see them.</p>
+  <div id="journalBox" hidden><h2 style="font-size:17px;margin-top:14px">Wick’s journal</h2><p id="journalSub"></p><div class="journal" id="journal"></div></div>
   <div class="row"><button class="btn primary" id="findsClose" type="button">Close</button></div>
+</div>
+<div class="card" id="pageCard" role="dialog" aria-labelledby="pageTitle" hidden>
+  <h2 id="pageTitle"></h2>
+  <p id="pageText" class="paper"></p>
+  <p id="pageNote"></p>
+  <div class="row"><button class="btn primary" id="pageClose" type="button">Close</button></div>
 </div>
 <div class="card" id="center" hidden><h2 id="centerTitle"></h2><p id="centerText"></p><div class="row" style="justify-content:center"><a class="btn primary" id="centerBtn" href="/"></a></div></div>
 <div id="fade"></div>
@@ -127,7 +138,7 @@ body.inside #act { background: #F1F0F8; color: #15161F; }
 // lighthouse, and keep its grumpy keeper company. Saving goes through /api/world (lib/away.js).
 import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
 import { weatherAt, seasonAt, snowCoverAt, sunTimes } from '/js/seasons.js';
-import { FINDS, FIND_KINDS, KEEPER, dailyFinds, dayKey, seededRng, fondLevel } from '/js/away.js';
+import { FINDS, FIND_KINDS, KEEPER, dailyFinds, dayKey, seededRng, fondLevel, PAGES, LETTER, FAR_TREE } from '/js/away.js';
 import { makeFind } from '/js/finds3d.js';
 
 const S = window.BudSound || { play() {}, babble() {}, ambient() {}, weather() {}, setNight() {}, bindToggle() {}, onChange() {}, muted: true };
@@ -353,7 +364,7 @@ function buildSky() {
   const lit = new THREE.MeshStandardMaterial({ color: toLinear('#FFE9A8'), emissive: toLinear('#FFC463'), emissiveIntensity: 0.2, fog: false }); glow.push({ mat: lit, day: 0.15, night: 1.6 });
   for (let i = 0; i < 9; i++) { const a = i * 0.7, d = 2.5 + (i % 3) * 2.2, x = Math.cos(a) * d, z = Math.sin(a) * d; home.add(box(1.3, 1.1, 1.3, M(['#F4EBDD', '#FFD9C7', '#D9E8FF'][i % 3], { fog: false }), x, 1.3, z)); const rf = new THREE.Mesh(new THREE.ConeGeometry(1.15, 0.9, 4), M(['#E0715B', '#6E8FD9', '#E8B04A'][i % 3], { fog: false })); rf.position.set(x, 2.3, z); rf.rotation.y = Math.PI / 4; home.add(rf); home.add(box(0.3, 0.3, 0.05, lit, x, 1.3, z + 0.67)); }
   home.position.set(-52, -10, 175); scene.add(home);
-  for (const [x, y, z, s] of [[120, -14, -90, 5], [-150, -6, -40, 7], [70, -18, -190, 6]]) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), M('#8E94A6', { flatShading: true, fog: false })); m.position.set(x, y, z); m.scale.y = 0.7; scene.add(m); const t = new THREE.Mesh(new THREE.ConeGeometry(s * 0.3, s * 0.8, 7), M('#3F8F68', { fog: false })); t.position.set(x, y + s * 0.9, z); scene.add(t); }
+  for (const [x, y, z, s] of [[120, -14, -90, 5], [-150, -6, -40, 7], [-80, -18, -200, 6]]) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), M('#8E94A6', { flatShading: true, fog: false })); m.position.set(x, y, z); m.scale.y = 0.7; scene.add(m); }
 }
 
 // the balloon ferry (the same little boat as at the dock back home) and the pier it ties up at
@@ -552,7 +563,7 @@ function drawFace(bud) {
   bud.faceTex.needsUpdate = true;
 }
 function say(bud, text, ms = 2000) {
-  if (bud.keeper) S.babble(text, 'gloam-the-keeper', { gain: 0.9, rate: 0.72 }); else S.babble(text, bud.data.trueName || 'bud', { gain: 1.1 });
+  if (bud.keeper) S.babble(text, 'gloam-the-keeper', { gain: 0.9, rate: 0.72 }); else S.babble(text, bud.data.trueName || 'bud', { gain: 1.1, voice: bud.data.voice });
   if (!bud.bubble) { bud.bubble = document.createElement('div'); bud.bubble.className = 'bubble' + (bud.keeper ? ' keeper' : ''); labels.appendChild(bud.bubble); }
   bud.bubble.textContent = text; bud.bubble.hidden = false;
   bud.bubble.classList.remove('pop'); void bud.bubble.offsetWidth; bud.bubble.classList.add('pop');
@@ -686,6 +697,206 @@ function perch(b) {
   b.y = 0; b.state = 'sit'; b.g.rotation.y = b.r() * 6; b.g.visible = true;
 }
 
+/* ---------------- the Far Tree ----------------
+   The scrap of rock with one great tree, seen far off to the north from the top of the lighthouse. The humming
+   stones take you there (and back). The tree catches falling stars and hangs on to them; Wick, the keeper before
+   Gloam, came here long ago and stayed to look after it. His journal pages are tucked around the tree, and the
+   last one is a sealed letter for Gloam. At night a little light moves through the top branches. */
+const TI = { x: 46, y: -3, z: -150 }, TR = 12.5;
+const tEdge = (a) => TR * (1 + 0.07 * Math.sin(3 * a + 0.8) + 0.045 * Math.sin(7 * a + 2.1));
+const tRel = (x, z) => Math.hypot(x - TI.x, z - TI.z) / tEdge(Math.atan2(z - TI.z, x - TI.x));
+function tHeight(x, z) {
+  const dx = x - TI.x, dz = z - TI.z, d = Math.hypot(dx, dz);
+  return TI.y + 1.3 * (1 - smooth01(d / TR)) + 0.1 * Math.sin(dx * 0.7) * Math.cos(dz * 0.6);
+}
+const TRUNK = { x: TI.x + 0.8, z: TI.z - 2.4 }, TRING = { x: TI.x - 1.4, z: TI.z + 7.4, r: 2.4 };
+const TPAGES = [null,
+  { x: TI.x + 2.1, z: TI.z + 5.2, where: 'by the stones' },
+  { x: TI.x + 6.6, z: TI.z + 0.4, where: 'in the hammock' },
+  { x: TRUNK.x - 0.2, z: TRUNK.z + 2.9, where: 'in the hollow of the trunk' },
+  { x: TI.x - 6.4, z: TI.z - 2.6, where: 'by the telescope' },
+  { x: TRUNK.x - 2.6, z: TRUNK.z - 3.6, where: 'under the scarf, behind the tree' },
+];
+const treeObstacles = [];
+const ftree = { g: new THREE.Group(), terrain: null, stars: [], stones: [], canopy: [], wick: null, falling: [], pages: [], swing: null };
+function buildFarTree() {
+  const g = ftree.g, moss = toLinear('#7FBF86'), moss2 = toLinear('#6AAE7E'), stoneC = toLinear('#9AA0AE'), earth = toLinear('#7E6452'), deep = toLinear('#5A5066'), c = new THREE.Color();
+  // the rock: a mossy dome with a rough cliff underneath
+  const NR = 22, NS = 96, pos = [], col = [], idx = [], rings = [];
+  for (let i = 0; i <= NR; i++) rings.push([i / NR, 0]);
+  rings.push([1.02, 0.5], [0.98, 1.6], [0.85, 4.5], [0.6, 8.5], [0.3, 12], [0.08, 14.5]);
+  for (let i = 0; i < rings.length; i++) for (let j = 0; j < NS; j++) {
+    const a = j / NS * Math.PI * 2, [t, drop] = rings[i], r = tEdge(a) * t, x = TI.x + Math.cos(a) * r, z = TI.z + Math.sin(a) * r, top = i <= NR;
+    const y = top ? tHeight(x, z) : TI.y - drop + (drop > 2 ? Math.sin(a * 5 + i) * 0.6 : 0);
+    pos.push(x, y, z);
+    if (top) { const n = Math.sin(x * 1.3 + z * 0.7) * Math.sin(z * 1.1 - x * 0.5); c.copy(moss).lerp(moss2, 0.5 + 0.5 * n).lerp(stoneC, smooth01((t - 0.86) / 0.14) * 0.7); }
+    else c.copy(earth).lerp(deep, smooth01((drop - 1) / 9));
+    col.push(c.r, c.g, c.b);
+  }
+  for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < NS; j++) { const a = i * NS + j, b = i * NS + (j + 1) % NS, d = (i + 1) * NS + j, e = (i + 1) * NS + (j + 1) % NS; idx.push(a, b, d, b, e, d); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+  ftree.terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, envMapIntensity: 0.3 })); g.add(ftree.terrain);
+  const at = (x, z, o) => { o.position.set(x, tHeight(x, z), z); g.add(o); return o; };
+
+  // the tree: a thick old trunk, roots gripping the rock, a few big branches and a wide crown
+  const bark = M('#6E5240', { roughness: 1 }), bark2 = M('#5C4434', { roughness: 1 }), base = tHeight(TRUNK.x, TRUNK.z);
+  const trunk = cyl(1.35, 2.2, 9.5, 16, bark, TRUNK.x, base + 4.6, TRUNK.z); g.add(trunk);
+  treeObstacles.push({ x: TRUNK.x, z: TRUNK.z, r: 2.45 });
+  const between = (a, b, r0, r1, m) => {   // a tapered log from point a to point b
+    const o = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, a.distanceTo(b), 8), m);
+    o.position.copy(a).add(b).multiplyScalar(0.5); o.quaternion.setFromUnitVectors(up, b.clone().sub(a).normalize()); g.add(o); return o;
+  };
+  for (let i = 0; i < 7; i++) {   // roots, gripping the rock
+    const a = i / 7 * Math.PI * 2 + 0.4, len = 3 + (i % 3) * 0.7;
+    if (Math.abs(Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2))) < 0.35) continue;   // leave the hollow's front clear
+    const x0 = TRUNK.x + Math.cos(a) * 1.7, z0 = TRUNK.z + Math.sin(a) * 1.7, x1 = TRUNK.x + Math.cos(a) * (1.7 + len), z1 = TRUNK.z + Math.sin(a) * (1.7 + len);
+    between(new THREE.Vector3(x0, base + 1.1, z0), new THREE.Vector3(x1, tHeight(x1, z1) - 0.25, z1), 0.62, 0.16, i % 2 ? bark : bark2);
+    treeObstacles.push({ x: TRUNK.x + Math.cos(a) * 2.9, z: TRUNK.z + Math.sin(a) * 2.9, r: 0.55 });
+  }
+  // the hollow in the trunk, facing the stones
+  const hollow = new THREE.Mesh(new THREE.CircleGeometry(0.85, 20), M('#2B2130')); hollow.scale.y = 1.5; hollow.position.set(TRUNK.x, base + 1.3, TRUNK.z + 1.95); hollow.rotation.x = -0.12; g.add(hollow);
+  for (const [a, len, y] of [[0.5, 6, 7.6], [2.3, 5.5, 8.4], [3.9, 6.2, 7.9], [5.3, 5, 8.8]]) {
+    const b = cyl(0.3, 0.6, len, 8, bark, TRUNK.x + Math.cos(a) * len * 0.4, base + y + 0.9, TRUNK.z + Math.sin(a) * len * 0.4);
+    b.rotation.order = 'YZX'; b.rotation.y = -a; b.rotation.z = Math.PI / 2 - 0.55; g.add(b);
+  }
+  const leafA = M('#5FAE8F', { flatShading: true }), leafB = M('#8CCDA8', { flatShading: true }), leafC = M('#4E9A80', { flatShading: true });
+  ftree.canopyMats = [leafA, leafB, leafC];
+  for (const [dx, dy, dz, r, m] of [[0, 12.4, 0, 4.6, leafA], [3.6, 11.2, 1.2, 3.4, leafB], [-3.8, 11.4, -0.6, 3.6, leafC], [0.6, 11, 3.4, 3.2, leafB], [-0.8, 11.6, -3.6, 3.5, leafA], [2.6, 13.8, -1.8, 2.9, leafC], [-2.2, 14, 1.6, 2.7, leafB], [0, 15.6, 0, 2.6, leafA]]) {
+    const p = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), m); p.position.set(TRUNK.x + dx, base + dy, TRUNK.z + dz); p.rotation.set(dx, dy, dz); g.add(p); ftree.canopy.push(p);
+  }
+  // fallen stars it caught, hanging under the crown on fine threads
+  const starMat = new THREE.MeshStandardMaterial({ color: toLinear('#FFE27A'), emissive: toLinear('#FFC83A'), emissiveIntensity: 0.5, roughness: 0.4, flatShading: true });
+  ftree.starMat = starMat;
+  const sr = seededRng('far tree stars');
+  for (let i = 0; i < 16; i++) {
+    const a = sr() * Math.PI * 2, d = 2.6 + sr() * 4.6, x = TRUNK.x + Math.cos(a) * d, z = TRUNK.z + Math.sin(a) * d, top = base + 9.4 - d * 0.18, len = 0.8 + sr() * 1.6;
+    const s = new THREE.Group();
+    s.add(cyl(0.008, 0.008, len, 3, mat('#F4EBDD'), 0, -len / 2, 0));
+    const st = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), starMat); st.position.y = -len - 0.12; st.scale.z = 0.55; s.add(st);
+    s.position.set(x, top, z); g.add(s); ftree.stars.push({ g: s, st, ph: sr() * 6 });
+  }
+  // the humming stones' twin ring
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2 + 0.1, x = TRING.x + Math.cos(a) * TRING.r, z = TRING.z + Math.sin(a) * TRING.r, h = 1.4 + (i % 3) * 0.3;
+    const m = new THREE.MeshStandardMaterial({ color: toLinear('#8D93A8'), emissive: toLinear('#9FE8FF'), emissiveIntensity: 0, roughness: 0.9, flatShading: true });
+    const s = cyl(0.28, 0.4, h, 6, m, x, tHeight(x, z) + h / 2 - 0.1, z); s.rotation.y = a; s.rotation.z = (sr() - 0.5) * 0.18; g.add(s);
+    treeObstacles.push({ x, z, r: 0.45 }); ftree.stones.push({ m, lit: 0 });
+  }
+  // Wick's camp: a hammock slung between two roots, a little stove with a mug, a telescope aimed up, a scarf on a branch
+  { const x = TI.x + 6.6, z = TI.z + 0.4, y = tHeight(x, z), cloth = M('#C9973B', { roughness: 1 }), wood = mat('#7A5233');
+    for (const s of [-1, 1]) { const p = cyl(0.08, 0.1, 1.6, 6, wood, x + s * 1.5, y + 0.8, z); g.add(p); treeObstacles.push({ x: x + s * 1.5, z, r: 0.3 }); }
+    const N = 10, sag = (u) => y + 1.45 - 0.75 * Math.sin(u * Math.PI);
+    for (let k = 0; k < N; k++) {
+      const u0 = k / N, u1 = (k + 1) / N, xa = x - 1.5 + 3 * u0, xb = x - 1.5 + 3 * u1, ya = sag(u0), yb = sag(u1);
+      const seg = box(Math.hypot(xb - xa, yb - ya) + 0.02, 0.05, 0.85, k % 2 ? cloth : M('#D9AA52', { roughness: 1 }), (xa + xb) / 2, (ya + yb) / 2, z); seg.rotation.z = Math.atan2(yb - ya, xb - xa); g.add(seg);
+    }
+    treeObstacles.push({ x, z, r: 0.55 }); }
+  { const x = TI.x - 3.6, z = TI.z + 2.6, y = tHeight(x, z), iron = M('#3A3F4F', { roughness: 0.6 });
+    g.add(cyl(0.32, 0.36, 0.55, 10, iron, x, y + 0.3, z), cyl(0.07, 0.07, 1.2, 6, iron, x - 0.1, y + 1.1, z - 0.1), cyl(0.09, 0.07, 0.16, 8, M('#E0715B'), x + 0.12, y + 0.65, z + 0.05));
+    treeObstacles.push({ x, z, r: 0.5 }); }
+  { const x = TI.x - 6.4, z = TI.z - 2.6, y = tHeight(x, z), brass = M('#C9A24A', { roughness: 0.35 }), wood = mat('#7A5233');
+    for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2, l = cyl(0.03, 0.03, 1.5, 4, wood, x + Math.cos(a) * 0.3, y + 0.7, z + Math.sin(a) * 0.3); l.rotation.set(Math.sin(a) * 0.22, 0, -Math.cos(a) * 0.22); g.add(l); }
+    const tube = cyl(0.08, 0.13, 1.3, 10, brass, x + 0.25, y + 1.75, z - 0.2); tube.rotation.set(-0.5, 0, -0.55); g.add(tube); treeObstacles.push({ x, z, r: 0.5 }); }
+  { const sc = box(0.32, 1.0, 0.05, M('#B5524A', { roughness: 1 }), TRUNK.x - 2.4, base + 5.4, TRUNK.z - 2.6); sc.rotation.y = 0.6; g.add(sc); }
+  // a rope swing on the south branch
+  { const sw = new THREE.Group(), rope = mat('#F4EBDD'), L = 5.2;
+    sw.add(cyl(0.015, 0.015, L, 4, rope, -0.35, -L / 2, 0), cyl(0.015, 0.015, L, 4, rope, 0.35, -L / 2, 0), box(0.9, 0.07, 0.3, mat('#B5703E'), 0, -L, 0));
+    sw.position.set(TRUNK.x + 3.4, base + 6.9, TRUNK.z + 2.2); g.add(sw); ftree.swing = sw; }
+  // the journal pages (and the letter)
+  for (let n = 1; n < TPAGES.length; n++) {
+    const p = TPAGES[n], pg = new THREE.Group();
+    const paper = box(0.5, 0.02, 0.38, M(n === LETTER ? '#F4E3C3' : '#F7F2E6', { roughness: 1 }), 0, 0.03, 0); paper.rotation.y = n * 0.9; pg.add(paper);
+    if (n === LETTER) { const seal = cyl(0.07, 0.07, 0.03, 10, M('#C0392B', { roughness: 0.5 }), 0, 0.055, 0); pg.add(seal); }
+    else pg.add(ball(0.08, M('#9197A6', { flatShading: true }), 0.12, 0.08, 0.05, 6));   // a pebble holding it down
+    const spark = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkTex, color: 0xFFF3B0, transparent: true, depthWrite: false })); spark.position.y = 0.9; pg.add(spark);
+    const y = n === 2 ? tHeight(p.x, p.z) + 0.74 : tHeight(p.x, p.z);
+    pg.position.set(p.x, y, p.z); g.add(pg); ftree.pages[n] = { g: pg, spark, n };
+  }
+  // Wick: only ever a little light moving in the top branches at night
+  { const w = new THREE.Group(), glowM = new THREE.MeshBasicMaterial({ color: 0xFFD98A });
+    w.add(new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), glowM));
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkTex, color: 0xFFD98A, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending })); halo.scale.set(1.4, 1.4, 1); w.add(halo);
+    g.add(w); ftree.wick = w; }
+  faders.push({ x: TRUNK.x, z: TRUNK.z, tall: 18, wide: 7, mats: [leafA, leafB, leafC, bark], k: 0.25, canopy: true, area: 'tree' });
+  scene.add(g);
+}
+function farTreeTick(dt) {
+  const night = NIGHT > 0.5;
+  for (const s of ftree.stars) { s.g.rotation.z = Math.sin(T * 0.9 + s.ph) * 0.06; s.g.rotation.x = Math.cos(T * 0.7 + s.ph) * 0.05; }
+  ftree.starMat.emissiveIntensity = (night ? 1.6 : 0.5) + Math.sin(T * 2) * 0.15;
+  if (ftree.swing) ftree.swing.rotation.x = Math.sin(T * 0.8) * (0.08 + WX.wind * 0.2);
+  for (const s of ftree.stones) { s.lit = Math.max(0, s.lit - dt * 0.3); s.m.emissiveIntensity = s.lit * 1.4 + 0.12 * (0.5 + 0.5 * Math.sin(T * 1.3)); }
+  for (const p of ftree.pages) if (p) {
+    const found = away.pages.includes(p.n);
+    p.spark.visible = !found; const s = 0.4 + 0.15 * Math.sin(T * 3 + p.n); p.spark.scale.set(s, s, 1); p.spark.material.rotation = T * 0.7 + p.n;
+  }
+  // Wick, tending the stars after dark
+  const w = ftree.wick; w.visible = night;
+  if (night) { const a = T * 0.13, base = tHeight(TRUNK.x, TRUNK.z); w.position.set(TRUNK.x + Math.cos(a) * 3.6, base + 12.2 + Math.sin(T * 0.4) * 1.2, TRUNK.z + Math.sin(a * 1.7) * 3.2); }
+  // now and then a star drifts down, slow as a feather, into the crown
+  if (Math.random() < dt * (night ? 0.18 : 0.04) && ftree.falling.length < 3) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkTex, color: 0xFFE9A0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const a = Math.random() * Math.PI * 2; s.position.set(TRUNK.x + Math.cos(a) * 3, tHeight(TRUNK.x, TRUNK.z) + 34, TRUNK.z + Math.sin(a) * 3); s.scale.set(0.9, 0.9, 1);
+    ftree.g.add(s); ftree.falling.push({ s, vx: (Math.random() - 0.5) * 0.4, t: 0 });
+  }
+  for (let i = ftree.falling.length - 1; i >= 0; i--) {
+    const f = ftree.falling[i]; f.t += dt; f.s.position.y -= dt * 2.2; f.s.position.x += Math.sin(f.t * 1.5) * dt * 0.6 + f.vx * dt; f.s.material.rotation = f.t;
+    if (f.s.position.y < tHeight(TRUNK.x, TRUNK.z) + 13) { ftree.g.remove(f.s); f.s.material.dispose(); ftree.falling.splice(i, 1); }
+  }
+}
+
+/* travelling through the stones: they light one after another, your bud hops, and with a flash you're at the other ring */
+let beenTree = false;
+function travel(to) {
+  mode = 'busy'; walkTo = null; me.vx = me.vz = 0;
+  const stones = to === 'tree' ? ring.stones : ftree.stones;
+  stones.forEach((s, i) => setTimeout(() => { s.lit = 1; S.play('chime', { gain: 0.5, rate: [1, 1.125, 1.25, 1.5, 1.667, 2][i] }); }, i * 150));
+  say(me, to === 'tree' ? pick(['the stones are singing…', 'ooh, tingly…', 'hold on…']) : pick(['back we go…', 'home stones, please…']), 1300);
+  setTimeout(() => { me.vy = 7; me.y = 0.01; S.play('boing', { gain: 0.6 }); }, 950);
+  setTimeout(() => {
+    const f = $('fade'); f.classList.remove('dark', 'clear'); f.classList.add('flash'); S.play('whoosh', { gain: 0.8, rate: 1.4 }); S.play('sparkle', { gain: 0.8 });
+    setTimeout(() => {
+      setArea(to);
+      if (to === 'tree') { me.x = TRING.x; me.z = TRING.z + 0.2; me.heading = Math.PI; }
+      else { me.x = RING.x + 0.4; me.z = RING.z + 0.4; me.heading = 0.6; }
+      me.y = 0; me.vy = 0; me.landAt = T; snapCam = true;
+      (to === 'tree' ? ftree.stones : ring.stones).forEach((s) => { s.lit = 1; });
+      ring.in = true; ring.at = T;   // don't chime again the moment you arrive
+      setTimeout(() => { f.classList.add('clear'); f.classList.remove('flash'); mode = 'play'; }, 140);
+      if (to === 'tree' && !beenTree) { beenTree = true; setTimeout(() => say(me, away.pages.length ? 'the big tree again!' : 'whoa… it’s the tree from the lighthouse!', 2600), 900); }
+    }, 420);
+  }, 1250);
+}
+
+/* reading a page */
+function openPage(n) {
+  const sealed = n === LETTER && !away.letter;
+  $('pageTitle').textContent = n === LETTER ? 'A sealed letter' : `A page from a journal (${n} of ${PAGES.length - 2})`;
+  $('pageText').textContent = sealed ? 'It’s sealed with red wax, and addressed in shaky handwriting: “for gloam”.' : PAGES[n];
+  $('pageNote').textContent = sealed ? 'Gloam is at the lighthouse.' : n === LETTER ? 'Gloam let you read it.' : TPAGES[n] ? `Found ${TPAGES[n].where}.` : '';
+  $('pageCard').hidden = false; S.play('paint', { gain: 2 });
+}
+function takePage(p) {
+  me.heading = Math.atan2(p.g.position.x - me.x, p.g.position.z - me.z);
+  const first = !away.pages.includes(p.n);
+  if (first) {
+    away.pages = [...away.pages, p.n].sort((a, b) => a - b); updateFindsPill(); S.play('sparkle', { gain: 0.6 });
+    post({ do: 'page', n: p.n }).then((r) => { if (r.away) { away.pages = r.away.pages; away.letter = r.away.letter; } });
+    if (p.n === LETTER) setTimeout(() => say(me, 'a letter… for gloam?!', 2400), 300);
+  }
+  openPage(p.n);
+}
+// handing Gloam the letter: its own little scene, written by hand
+function giveLetter() {
+  mode = 'busy'; walkTo = null; me.vx = me.vz = 0; me.heading = Math.atan2(gloam.x - me.x, gloam.z - me.z);
+  say(me, 'gloam… i found this. at the big tree.', 2600);
+  const lines = [[2400, '…what’s this.'], [5600, '…'], [8200, '…that’s his writing.'], [11600, '“i wave.” the old fool waves.'], [15400, '…go on, then. give me a minute.']];
+  for (const [at, line] of lines) setTimeout(() => gloamSay(line, 3200), at);
+  setTimeout(() => { gloam.mood = null; gloam.happyUntil = T + 2.5; }, 11600);
+  post({ do: 'letter' }).then((r) => { if (r.away) { const lvl = away.level; away = { ...r.away }; updateFindsPill(); if (r.gift) setTimeout(() => toast(`${FINDS.lantern.icon} ${KEEPER} gave you its old lantern. It’s on your porch now.`, 6000), 17000); } });
+  setTimeout(() => { mode = 'play'; away.letter = true; }, 16500);
+}
+
 /* ---------------- sky, time of day, weather ---------------- */
 const DAY = dayKey();
 const now = new Date(), st = sunTimes(now.getMonth(), now.getDate());
@@ -751,6 +962,7 @@ addEventListener('keydown', (e) => {
   if (chat.open) { if (e.code === 'Escape') closeChat(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (!$('findsCard').hidden) { if (e.code === 'Escape' || e.code === 'Enter') $('findsCard').hidden = true; return; }
+  if (!$('pageCard').hidden) { if (e.code === 'Escape' || e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); $('pageCard').hidden = true; } return; }
   if (KEYMAP[e.code]) { keys.add(e.code); walkTo = null; e.preventDefault(); }
   if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyE') && !e.repeat) { e.preventDefault(); doAction(); }
 });
@@ -781,7 +993,7 @@ function tapAt(px, py) {
   if (mode !== 'play' || area === 'top') return;
   ndc.set(px / innerWidth * 2 - 1, -(py / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
   if (area === 'in') { if (ray.ray.intersectPlane(floorPlane, v3) && Math.hypot(v3.x, v3.z) < RR + 1.5) walkTo = { x: v3.x, z: v3.z, t: T + 6 }; return; }
-  const hit = ray.intersectObject(terrain)[0];
+  const hit = ray.intersectObject(area === 'tree' ? ftree.terrain : terrain)[0];
   if (hit) { walkTo = { x: hit.point.x, z: hit.point.z, t: T + 14 }; S.play('tick', { gain: 0.3 }); }
 }
 function inputVec() {
@@ -791,7 +1003,9 @@ function inputVec() {
   return { x, y, d: Math.min(1, d) };
 }
 const SPEED = 5.4;
-const walkable = (x, z) => (area === 'in' ? Math.hypot(x, z) < RR - 0.95 : relAt(x, z) <= 0.962 || onPier(x, z));
+const walkable = (x, z) => (area === 'in' ? Math.hypot(x, z) < RR - 0.95 : area === 'tree' ? tRel(x, z) <= 0.93 : relAt(x, z) <= 0.962 || onPier(x, z));
+// the ground under your bud, wherever it is
+const floorY = (x, z) => (area === 'in' ? ROOM_Y : area === 'top' ? GAL_Y : area === 'tree' ? tHeight(x, z) : groundY(x, z));
 function pushOut(list, p, rad) {
   for (const o of list) { const dx = p.x - o.x, dz = p.z - o.z, d = Math.hypot(dx, dz), min = o.r + rad; if (d < min && d > 1e-4) { p.x = o.x + dx / d * min; p.z = o.z + dz / d * min; } }
 }
@@ -820,7 +1034,7 @@ function steer(dt) {
   me.moving = lerp(me.moving, clamp(sp / SPEED, 0, 1), Math.min(1, dt * 10));
   if (sp > 0.05) {
     const p = { x: me.x + me.vx * dt, z: me.z + me.vz * dt };
-    pushOut(area === 'in' ? roomObstacles : obstacles, p, 0.62);
+    pushOut(area === 'in' ? roomObstacles : area === 'tree' ? treeObstacles : obstacles, p, 0.62);
     if (gloam && gloamAt.area === area) pushOut([{ x: gloam.x, z: gloam.z, r: 0.95 }], p, 0.62);
     if (walkable(p.x, p.z)) { me.x = p.x; me.z = p.z; }
     else if (walkable(p.x, me.z)) me.x = p.x;
@@ -869,9 +1083,15 @@ function openFinds() {
   }
   const left = finds.filter((f) => !f.taken).length;
   $('findsSub').textContent = `${kindsFound()} of ${FIND_KINDS.length} kinds found. ` + (left ? `${left} thing${left === 1 ? '' : 's'} still out there today.` : 'You found everything that turned up today. Tomorrow brings new things.');
+  // Wick's journal, once you've found a page of it
+  const j = $('journal'); j.textContent = ''; $('journalBox').hidden = !away.pages.length;
+  for (const n of away.pages) { const b = document.createElement('button'); b.type = 'button'; b.textContent = n === LETTER ? 'The letter' : `Page ${n}`; b.addEventListener('click', () => { $('findsCard').hidden = true; openPage(n); }); j.appendChild(b); }
+  const loose = away.pages.filter((n) => n !== LETTER).length;
+  $('journalSub').textContent = `${loose} of ${PAGES.length - 2} pages${away.pages.includes(LETTER) ? ', and a letter' : ''}. Found at ${FAR_TREE}.`;
   $('findsCard').hidden = false; S.play('pop', { gain: 0.5 });
 }
 $('findsBtn').addEventListener('click', openFinds);
+$('pageClose').addEventListener('click', () => { $('pageCard').hidden = true; S.play('click', { gain: 0.5 }); });
 $('findsClose').addEventListener('click', () => { $('findsCard').hidden = true; S.play('click', { gain: 0.5 }); });
 
 function pickUp(f) {
@@ -992,14 +1212,14 @@ function fadeThen(fn, dark = false) {
   setTimeout(() => { fn(); snapCam = true; setTimeout(() => { f.classList.add('clear'); mode = 'play'; }, 120); }, 380);
 }
 function setArea(a) {
-  area = a; out.visible = a !== 'in'; room.visible = a === 'in'; boat.g.visible = a !== 'in';
+  area = a; out.visible = a !== 'in'; room.visible = a === 'in'; boat.g.visible = a !== 'in'; ftree.g.visible = a !== 'in';
   for (const c of clouds) c.g.visible = a !== 'in';
   scene.background = a === 'in' ? new THREE.Color(0x15121C) : skyTex;
   hemi.intensity = a === 'in' ? 0.34 : light.hemi; sun.intensity = a === 'in' ? 0.3 : light.sun; fill.intensity = a === 'in' ? 0.08 : 0.2;
   document.body.classList.toggle('inside', a === 'in');
   const fov = a === 'top' ? 56 : 38; if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
   if (gloam) gloam.root.visible = gloamAt.area === (a === 'top' ? 'out' : a);
-  $('place').textContent = a === 'in' ? 'In the lighthouse' : a === 'top' ? 'Up by the lamp' : 'Lighthouse Rock';
+  $('place').textContent = a === 'in' ? 'In the lighthouse' : a === 'top' ? 'Up by the lamp' : a === 'tree' ? FAR_TREE : 'Lighthouse Rock';
 }
 let beenIn = false, beenUp = false;
 function goIn() {
@@ -1018,7 +1238,17 @@ function findAction() {
   if (mode !== 'play') return null;
   const near = (x, z, d) => Math.hypot(me.x - x, me.z - z) < d;
   if (area === 'top') return { label: 'Climb back down', run: goDown };
-  if (gloam && gloamAt.area === area && near(gloam.x, gloam.z, 2.7)) return { label: `Talk to ${away.met ? KEEPER : 'the keeper'}`, run: talk };
+  if (gloam && gloamAt.area === area && near(gloam.x, gloam.z, 2.7)) {
+    if (away.pages.includes(LETTER) && !away.letter) return { label: 'Give Gloam the letter', run: giveLetter };
+    return { label: `Talk to ${away.met ? KEEPER : 'the keeper'}`, run: talk };
+  }
+  if (area === 'tree') {
+    let best = null, bd = 1.6;
+    for (const p of ftree.pages) if (p) { const d = Math.hypot(me.x - p.g.position.x, me.z - p.g.position.z); if (d < bd) { bd = d; best = p; } }
+    if (best) return { label: best.n === LETTER ? (away.pages.includes(LETTER) ? 'Look at the letter' : 'Pick up the letter') : away.pages.includes(best.n) ? 'Read the page again' : 'Read the page', run: () => takePage(best) };
+    if (near(TRING.x, TRING.z, 1.5)) return { label: 'Step back through the stones', run: () => travel('out') };
+    return null;
+  }
   if (area === 'in') {
     if (near(STAIR.x, STAIR.z, 1.45)) return { label: 'Climb the stairs', run: goUp };
     if (near(MAT.x, MAT.z + 0.3, 1.3)) return { label: 'Go outside', run: goOut };
@@ -1028,10 +1258,11 @@ function findAction() {
   for (const f of finds) { if (f.taken) continue; const d = Math.hypot(me.x - f.x, me.z - f.z); if (d < bd) { bd = d; best = f; } }
   if (best) return { label: best.dig ? 'Dig here' : `Pick up the ${FINDS[best.kind].name}`, run: () => pickUp(best) };
   if (near(DOOR.x, DOOR.z, 1.5)) return { label: 'Go inside', run: goIn };
+  if (near(RING.x, RING.z, 1.5)) return { label: 'Step through the stones', run: () => travel('tree') };
   if (onPier(me.x, me.z) && me.z > SHORE + 1.6) return { label: 'Sail home', run: sailHome };
   return null;
 }
-function doAction() { if (action && $('findsCard').hidden) action.run(); }
+function doAction() { if (action && $('findsCard').hidden && $('pageCard').hidden) action.run(); }
 $('act').addEventListener('click', doAction);
 function showAction() {
   const a = findAction(), el = $('act');
@@ -1096,8 +1327,8 @@ function aimCamera(dt) {
     wantPos.set(LH.x - sx * 5, GAL_Y + 11, LH.z - sz * 5);
     wantLook.set(LH.x + sx * 20, GAL_Y - 6, LH.z + sz * 20);
   } else {
-    const D = portrait ? 23 : 17.5, pitch = 0.74, gy = groundY(me.x, me.z), lead = mode === 'arrive' || mode === 'leave' ? 0 : 1.4;
-    wantLook.set(me.x, (cut ? cut.gy : gy) + 1, me.z - lead); wantPos.set(wantLook.x, wantLook.y + Math.sin(pitch) * D, wantLook.z + Math.cos(pitch) * D);
+    const onTree = area === 'tree', D = onTree ? (portrait ? 30 : 23) : portrait ? 23 : 17.5, pitch = onTree ? 0.42 : 0.74, gy = floorY(me.x, me.z), lead = mode === 'arrive' || mode === 'leave' ? 0 : 1.4;
+    wantLook.set(me.x, (cut ? cut.gy : gy) + (onTree ? 4.2 : 1), me.z - lead); wantPos.set(wantLook.x, wantLook.y + Math.sin(pitch) * D, wantLook.z + Math.cos(pitch) * D);
   }
   const k = snapCam ? 1 : 1 - Math.exp(-dt * (area === 'top' ? 7 : 5)); snapCam = false;
   camPos.lerp(wantPos, k); camLook.lerp(wantLook, k);
@@ -1107,7 +1338,7 @@ function aimCamera(dt) {
 function fadeBlockers(dt) {
   for (const f of faders) {
     const dz = f.z - me.z, dx = Math.abs(f.x - me.x);
-    const hide = area === 'out' && (f.behind ? (dz > 0.5 && dz < 9 && dx < f.wide + 0.6) : (dz > 0.4 && dz < f.tall * 1.25 && dx < f.wide + 0.5));
+    const hide = f.canopy ? area === 'tree' && Math.abs(me.x - f.x) < 7.5 && f.z - me.z > 1.5 : area === 'out' && (f.behind ? (dz > 0.5 && dz < 9 && dx < f.wide + 0.6) : (dz > 0.4 && dz < f.tall * 1.25 && dx < f.wide + 0.5));
     const want = hide ? 0.22 : 1; f.o = f.o == null ? 1 : f.o + (want - f.o) * Math.min(1, dt * 8);
     const solid = f.o > 0.98;
     for (const m of f.mats) { if (m.transparent === solid) { m.transparent = !solid; m.needsUpdate = true; } m.opacity = solid ? 1 : f.o; m.depthWrite = solid; }
@@ -1120,7 +1351,7 @@ function frame(ms) {
   const t = ms / 1000, dt = Math.min(0.05, t - last || 0.016); last = t; T += dt;
   if (!me) { renderer.render(scene, camera); return; }
   if (cut) runCut(dt); else steer(dt);
-  const gy = cut ? cut.gy : area === 'in' ? ROOM_Y : area === 'top' ? GAL_Y : groundY(me.x, me.z);
+  const gy = cut ? cut.gy : floorY(me.x, me.z);
   placeBud(me, dt, gy);
 
   // the ferry bobs at its mooring
@@ -1142,6 +1373,7 @@ function frame(ms) {
   }
 
   if (area !== 'in') {
+    farTreeTick(dt);
     // finds glint; one you've picked up flies to your bud
     for (const f of finds) {
       if (!f.g.visible) continue;
@@ -1181,7 +1413,7 @@ function frame(ms) {
         const x = at[i * 3] + (snow ? Math.sin(T * 0.8 + i) * 0.4 : 0), z = at[i * 3 + 2];
         if (snow) p.setXYZ(i, x, y, z); else { p.setXYZ(i * 2, x, y, z); p.setXYZ(i * 2 + 1, x + lean, y + 0.7, z); }
       }
-      p.needsUpdate = true; fall.position.set(camLook.x, (area === 'top' ? GAL_Y : groundY(me.x, me.z)) - 2, camLook.z);
+      p.needsUpdate = true; fall.position.set(camLook.x, floorY(me.x, me.z) - 2, camLook.z);
     }
   } else if (stove.fire) { const f = 1.3 + Math.sin(T * 9) * 0.2 + Math.sin(T * 23) * 0.12; stove.fire.emissiveIntensity = f; stoveLight.intensity = 0.55 + f * 0.3; }
 
@@ -1196,7 +1428,8 @@ function showCenter(title, text, button, href) {
   $('centerTitle').textContent = title; $('centerText').textContent = text; $('centerBtn').textContent = button; $('centerBtn').href = href; $('center').hidden = false; $('fade').classList.add('clear');
 }
 addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
-S.bindToggle($('soundBtn'));
+(S.bindPanel || S.bindToggle)($('soundBtn'));
+if (S.music) S.music(true, { mood: () => (NIGHT > 0.5 ? 'night' : GOLD > 0.3 ? 'golden' : 'morning') });
 if (!window.BudSound) $('soundBtn').hidden = true;
 S.onChange(() => S.ambient(!S.muted)); S.ambient(true);
 
@@ -1211,7 +1444,7 @@ S.onChange(() => S.ambient(!S.muted)); S.ambient(true);
   if (!world.bud) { showCenter('You’ll need a bud for this trip', 'Make your bud first, then catch the ferry from the dock.', 'Make my bud', '/'); return; }
   away = world.away;
   const fond = params.get('fond'); if (fond != null && /^\d+$/.test(fond)) { away.fond = Number(fond); away.level = fondLevel(away.fond); away.met = away.met || away.fond > 0; }   // preview only: nothing is saved
-  buildTerrain(); buildDecor(); buildSky(); buildDock(); buildLighthouse(away.level); buildRoom();
+  buildTerrain(); buildDecor(); buildSky(); buildDock(); buildLighthouse(away.level); buildRoom(); buildFarTree();
   buildFinds(away.taken); buildBirds();
   me = await makeBud(world.bud);
   await makeGloam();

@@ -292,6 +292,11 @@ body { transition: background 2s linear; }
 .share-row .muted { font-size: 13px; }
 .share-row .btn { padding: 7px 12px; font-size: 13px; }
 .dm-row { justify-content: space-between; border-top: 1px solid var(--chip-line); padding-top: 10px; }
+.voice-row { flex-direction: column; align-items: stretch; gap: 6px; }
+.voice-row .muted { font-size: 13px; }
+.voice-pick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.voice-pick .btn { padding: 6px 2px; font-size: 12.5px; min-height: 36px; min-width: 0; justify-content: center; white-space: nowrap; }
+.voice-pick .btn.on { background: var(--me); color: var(--me-ink); border-color: transparent; }
 .dm-row .muted { font-size: 13px; }
 .dm-row .btn { padding: 7px 12px; font-size: 13px; }
 /* ---------- The Island Times ---------- */
@@ -690,7 +695,7 @@ function buildIsland(nBuds) {
     }
     return null;
   };
-  const trees = Math.round(R * 0.55);
+  const trees = Math.round(R * 0.42);   // fewer than before the island spread out (Nov 21): calmer
   for (let i = 0; i < trees; i++) {
     const tr = seeded('tree:' + i), p = place(0.74, 0.92, 2.2, tr); if (!p) continue;
     const s = 0.8 + tr() * 0.55, t = new THREE.Group();
@@ -704,7 +709,7 @@ function buildIsland(nBuds) {
     t.position.set(p.x, 0, p.z); group.add(t); seasonal.trees.push(t); t.userData.ph = tr() * 6;
     obstacles.push({ x: p.x, z: p.z, r: 0.9 * s });
   }
-  for (let i = 0; i < Math.round(R * 0.4); i++) {
+  for (let i = 0; i < Math.round(R * 0.3); i++) {
     const rr = seeded('rock:' + i), p = place(0.35, 0.9, 1.2, rr); if (!p) continue;
     const s = 0.25 + rr() * 0.3, rk = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMat);
     rk.position.set(p.x, s * 0.45, p.z); rk.rotation.set(rr(), rr(), rr()); group.add(rk);
@@ -1056,7 +1061,7 @@ function buildTown() {
   }
   // fruit trees and bushes in the gaps
   const reach = homes.reduce((mx, h) => Math.max(mx, Math.hypot(h.x, h.z)), 8) + 2.5;
-  for (let i = 0, want = Math.round(homes.length * 0.9) + 3; i < want; i++) {
+  for (let i = 0, want = Math.round(homes.length * 0.55) + 2; i < want; i++) {
     const tr = seeded('towntree:' + i);
     for (let tries = 0; tries < 30; tries++) {
       const a = tr() * Math.PI * 2, rr = Math.sqrt(tr()) * Math.min(reach, WALK_R), x = Math.cos(a) * rr, z = Math.sin(a) * rr;
@@ -2294,7 +2299,7 @@ function freeSpot(minDistFromOthers = 2.2, near = null, spread = WALK_R) {
 function say(bud, text, ms = 1800) {
   if (/^z+$/.test(text)) S.play('snore', { gain: near(bud, 0.9), rate: 0.9 + (bud.b.w % 7) / 30 });
   else if (text === '!') S.play('alert', { gain: near(bud, 1.2) });
-  else S.babble(text, bud.data.trueName, { gain: near(bud, bud.data.isMe || bud === cardBud ? 1.2 : 0.9) });
+  else S.babble(text, bud.data.trueName, { gain: near(bud, bud.data.isMe || bud === cardBud ? 1.2 : 0.9), voice: bud.data.voice });
   if (!bud.bubble) { bud.bubble = document.createElement('div'); bud.bubble.className = 'bubble'; labels.appendChild(bud.bubble); }
   bud.bubble.textContent = text; bud.bubble.hidden = false;
   bud.bubble.classList.remove('pop'); void bud.bubble.offsetWidth; bud.bubble.classList.add('pop');
@@ -3307,6 +3312,7 @@ function renderCardBody() {
     if (!inbox.length) {
       if (!diary.length) cardBody.append(el('p', 'muted', `No notes yet. When someone sticks a note on ${nameOf(bud)} asking to be friends, you’ll read it here.`));
       renderAboutMe(bud);
+      renderVoice(bud);
       renderWardrobe(bud);
       renderDoodleBox(bud);
       renderGamesList();
@@ -3327,6 +3333,7 @@ function renderCardBody() {
       cardBody.append(note);
     }
     renderAboutMe(bud);
+    renderVoice(bud);
     renderWardrobe(bud);
     renderDoodleBox(bud);
     renderGamesList();
@@ -3473,6 +3480,27 @@ function renderWardrobe(bud) {
   }
   if (openWardrobe) { det.open = true; openWardrobe = false; }
   cardBody.append(det);
+}
+// how high or low your bud talks, picked from five; everyone hears it the same way
+const VOICES = [[-2, 'Deep'], [-1, 'Low'], [0, 'Its own'], [1, 'High'], [2, 'Squeaky']];
+let voiceSave = 0;
+function renderVoice(bud) {
+  const r = el('div', 'row voice-row');
+  r.append(el('span', 'muted', 'Voice'));
+  const seg = el('div', 'voice-pick'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', `${nameOf(bud)}’s voice`);
+  for (const [v, label] of VOICES) {
+    const b = el('button', 'btn' + ((bud.data.voice || 0) === v ? ' on' : ''), label); b.type = 'button';
+    b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String((bud.data.voice || 0) === v));
+    b.addEventListener('click', () => {
+      bud.data.voice = v;
+      for (const o of seg.children) { const on = o === b; o.classList.toggle('on', on); o.setAttribute('aria-checked', String(on)); }
+      say(bud, pick(v < 0 ? ['hello. this is me now.', 'mmm. deep.', 'hi there.'] : v > 0 ? ['hiii! is this me?!', 'eee! hi!', 'squeak squeak!'] : ['hi! it’s me!', 'back to normal!', 'this is my voice!']), 1800);
+      clearTimeout(voiceSave);
+      voiceSave = setTimeout(() => api('POST', '/api/world', { voice: v }).catch(() => {}), 600);
+    });
+    seg.append(b);
+  }
+  r.append(seg); cardBody.append(r);
 }
 function renderDmToggle(bud) {
   const r = el('div', 'row dm-row');
@@ -5128,10 +5156,17 @@ function showCenter(title, text, linkText, href = '/') {
 
 // coming back with the browser's Back button after sailing off: start the page fresh, not mid-sail
 addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
-S.bindToggle(document.getElementById('soundBtn'));
+// the speaker button opens the sound settings (music, nature and weather, voices)
+(S.bindPanel || S.bindToggle)(document.getElementById('soundBtn'));
 if (!window.BudSound) document.getElementById('soundBtn').hidden = true;
 S.onChange(() => S.ambient(!S.muted));   // wind and birds once sound is allowed, off when muted
 S.ambient(true);
+// music now and then: the piece fits the hour (night, golden hour and dawn, or the day)
+if (S.music) S.music(true, { mood: () => {
+  if (NIGHT > 0.5) return 'night';
+  const sunT = sunNow(), hs = skyHour(localHour(), sunT.rise, sunT.set);
+  return (hs > 16.5 && hs < 20) || (hs > 5 && hs < 7.5) ? 'golden' : 'morning';
+} });
 
 document.getElementById('findMe').addEventListener('click', () => {
   const mine = buds.find((b) => b.data.isMe);

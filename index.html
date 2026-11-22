@@ -474,7 +474,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
   let stroke = null;
   let eyeStyle = 'classic';
   let brushIdx = 3, brushSize = 18;
-  let trueName = '', nickname = '';
+  let trueName = '', nickname = '', voice = 0;   // voice: how high or low it talks, set on the island
   let T = 0, last = performance.now(), acc = 0;
   let blink = 0, thinkUntil = 0;
   const mouse = { x: 0, y: 0, last: -10 };
@@ -1405,7 +1405,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     if (!body) return;
     if (text === '• • •') {}
     else if (mono && ms === 0) { if (++nameTick % 2 === 0) S.play('tick', { gain: 0.35, rate: 1.5 + Math.random() * 0.3 }); }
-    else S.babble(text, trueName || 'newbud');
+    else S.babble(text, trueName || 'newbud', { voice });
     bubble.textContent = text; bubble.hidden = false;
     bubble.classList.toggle('mono', mono);
     bubble.classList.toggle('talk', text.length > 26);
@@ -1915,7 +1915,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     clearTimeout(resetArmed); resetArmed = 0; resetBtn.textContent = 'Start over';
     removeSaved();
     leave3D();
-    body = null; trueName = ''; nickname = ''; nickInput.value = ''; bubble.hidden = true; paintedOnce = false;
+    body = null; trueName = ''; nickname = ''; voice = 0; nickInput.value = ''; bubble.hidden = true; paintedOnce = false;
     pctx.fillStyle = BASE; pctx.fillRect(0, 0, PW, PH); paintDirty = true; undoStack.length = 0; undoBtn.disabled = true;
     updateTone();
     reached = 0; goStep('shape');
@@ -2242,7 +2242,7 @@ body.leaving .dock, body.leaving .prompt, body.leaving .nametag, body.leaving .s
     try {
       if (!d || !Array.isArray(d.r) || d.r.length !== N || !d.trueName) return false;
       if (EYES.some(e => e[0] === d.eyes)) eyeStyle = d.eyes;
-      trueName = String(d.trueName).slice(0, 6); nickname = String(d.nickname || '').slice(0, 16);
+      trueName = String(d.trueName).slice(0, 6); nickname = String(d.nickname || '').slice(0, 16); voice = Number.isInteger(d.voice) ? d.voice : 0;
       const er = d.eyeR || 18;
       body = makeBody(d.r.map(([x, y]) => ({ x, y })), { x: d.fx * W, y: d.fy * H }, { eyeRel: d.eyeRel || { x: 0, y: 0 }, eyeR: er });
       if (!fits(body.r, body.eyeRel, er)) placeEyes(body);

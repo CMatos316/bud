@@ -21,7 +21,7 @@ import { waitUntil } from '@vercel/functions';
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const MAX_BUDS = 200;
 // Everything the world needs except the full-size paint, which is fetched only for buds without a small copy.
-const FIELDS = ['trueName', 'nickname', 'outline', 'eye', 'eyeStyle', 'paintSmallJpeg', 'owner', 'updatedAt', 'createdAt'];
+const FIELDS = ['trueName', 'nickname', 'outline', 'eye', 'eyeStyle', 'paintSmallJpeg', 'owner', 'updatedAt', 'createdAt', 'voice'];
 const DIARY_WINDOW_MS = 12 * 3600e3;   // the diary always covers at least the last 12 hours
 const DIARY_MAX = 8;
 
@@ -205,6 +205,14 @@ export async function POST(request) {
       const r = body.away.do === 'say' ? await gloamTalk(session.id, body.away) : body.away.do === 'forget' ? await gloamForget(session.id) : await awayAct(session.id, body.away);
       return json(r, r.status || 200);
     } catch (err) { console.error('away failed:', err); return json({ error: 'could not save that' }, 500); }
+  }
+  // your bud's voice: how high or low its blub-blub is, -2 to 2
+  if (body && 'voice' in body) {
+    if (!Number.isInteger(body.voice) || Math.abs(body.voice) > 2) return json({ error: 'bad voice' }, 400);
+    const ref = refs.bud(session.id);
+    if (!(await ref.get()).exists) return json({ error: 'make your bud first' }, 404);
+    await ref.update({ voice: body.voice });
+    return json({ saved: true, voice: body.voice });
   }
   if (typeof body?.newsSeen !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.newsSeen)) return json({ error: 'bad issue' }, 400);
   await refs.user(session.id).set({ newsSeen: body.newsSeen }, { merge: true });
