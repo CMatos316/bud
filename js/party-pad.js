@@ -17,7 +17,7 @@ export async function runPad(room, { onAway } = {}) {
   const me = room.uid;
   let meta = null, st = null, sid = null, go = 0, away = null;
   // the controls: these only ever count up, whatever game is on
-  const ctl = { x: 0, y: 0, dash: 0, taps: 0, steps: 0, drift: 0, uses: 0, shake: 0 };
+  const ctl = { x: 0, y: 0, dash: 0, taps: 0, steps: 0, drift: 0, uses: 0, shake: 0, c: 0, hold: 0, str: 100 };
 
   /* ---------- held sideways ---------- */
   // A controller wants two thumbs, so it's laid out wide. A phone standing upright (and most are locked that way)
@@ -51,7 +51,7 @@ export async function runPad(room, { onAway } = {}) {
   let lastSent = '', lastAt = 0, timer = null;
   const wire = () => {
     const k = meta?.game, xy = `${Math.round(ctl.x * 100)},${Math.round(ctl.y * 100)}`;
-    return k === 'tug' ? String(ctl.taps) : k === 'freeze' ? String(Math.floor(ctl.steps)) : k === 'kart' ? `${xy},${ctl.drift},${ctl.uses}` : k === 'heist' ? `${xy},${ctl.dash},${ctl.shake}` : `${xy},${ctl.dash}`;
+    return k === 'tug' ? String(ctl.taps) : k === 'freeze' ? String(Math.floor(ctl.steps)) : k === 'kart' ? `${xy},${ctl.drift},${ctl.uses}` : k === 'heist' ? `${xy},${ctl.dash},${ctl.shake},${ctl.c},${ctl.hold},${ctl.str}` : `${xy},${ctl.dash}`;
   };
   function send(now = false) {
     const due = 70 - (performance.now() - lastAt);
@@ -68,19 +68,22 @@ export async function runPad(room, { onAway } = {}) {
     if (m && m.away && m.away !== away) { away = m.away; if (onAway) onAway(); }   // the TV is off to another game
     render();
   });
-  let hits = 0, wasOut = false, kartHits = 0, hStun = false, hGot = 0, hScore = 0, hSeen = false;
+  let hits = 0, wasOut = false, kartHits = 0, hStun = false, hGot = 0, hScore = 0, hSeen = false, hTick = false, hFrenzy = false, hCarry = 0;
   room.watch('state', (s) => {
     st = s;
     if (s && s.g === 'freeze') { const h = s.hit?.[me] || 0; if (h > hits) buzz([60, 40, 120]); hits = h; } else hits = 0;
     if (s && s.g === 'bumper') { const out = !!s.out?.[me]; if (out && !wasOut) buzz(200); wasOut = out; }
     if (s && s.g === 'kart') { const h = s.hits?.[me] || 0; if (h > kartHits) buzz([50, 30, 90]); kartHits = h; } else kartHits = 0;
     if (s && s.g === 'heist') {
-      const stun = !!s.stun?.[me], got = s.got?.[me] || 0, sc = s.score?.[me] || 0;
-      if (!hSeen) { hSeen = true; hStun = stun; hGot = got; hScore = sc; }   // joined mid-round: nothing to cheer about yet
-      if (stun && !hStun) { buzz([80, 40, 140]); flash('BONK! 💫 Seeing stars…', 1600); }
-      if (got > hGot && s.phase === 'play') { buzz(35); flash(`Banked! +1 🌰`, 900); }
-      if (s.tree === me && sc > hScore && s.phase === 'play') { buzz([30, 30, 30]); flash('BONK! Got one! 🌲', 900); }
-      hStun = stun; hGot = got; hScore = sc;
+      const stun = !!s.stun?.[me], got = s.got?.[me] || 0, sc = s.score?.[me] || 0, tree = s.tree === me, tick = !!s.tick, frenzy = !!s.frenzy, carry = s.carry?.[me] || 0;
+      if (!hSeen) { hSeen = true; hStun = stun; hGot = got; hScore = sc; hTick = tick; hFrenzy = frenzy; hCarry = carry; }   // joined mid-round: nothing to cheer about yet
+      if (stun && !hStun) { buzz([80, 40, 140]); flash('BONK! 💫 Shake your phone to snap out of it!', 1500); }
+      if (got > hGot && s.phase === 'play') { buzz(35); flash(got - hGot >= 3 ? 'GOLD! +3 🌟' : 'Banked! +1 🌰', 900); }
+      if (carry === 2 && hCarry !== 2) { buzz([30, 30, 60]); flash('You have the GOLDEN acorn! 🌟', 1200); }
+      if (tree && sc > hScore && s.phase === 'play') { buzz([30, 30, 30]); flash('Knocked one loose! 🌲', 800); }
+      if (tree && tick && !hTick) { buzz([20, 20, 20, 20, 20, 20, 20]); flash('You’re being tickled! SHAKE them off! 🤣', 1300); }
+      if (frenzy && !hFrenzy && s.phase === 'play') { buzz([60, 40, 60]); flash(tree ? 'FRENZY! It’s raining acorns. Stop them!' : 'FRENZY! Acorns everywhere. Go go go! 🍂', 1500); }
+      hStun = stun; hGot = got; hScore = sc; hTick = tick; hFrenzy = frenzy; hCarry = carry;
     } else hSeen = false;
     render();
   });
@@ -97,12 +100,12 @@ export async function runPad(room, { onAway } = {}) {
     if (!w) return { line: 'Getting you in…', veil: n >= 12 ? 'This game is full. Watch the TV!' : 'Getting you in…' };
     if (k === 'heist') {
       const tree = st.tree === me, tn = nameOf(st.tree), togo = Math.max(0, (st.goal || 0) - (st.banked || 0));
-      if (ph === 'lobby') return { line: 'You’re in the meadow. Grab acorns, take them to a basket!', note: 'Practice for now. Everyone gets a turn as the tree.' };
-      if (ph === 'count') return tree ? { line: 'You’re the TREE! 🌳 Guard your acorns.', note: 'Steer your shadow onto them, DROP a pinecone, SHAKE when they crowd in.' } : { line: `Steal ${st.goal} acorns from ${tn}!`, note: 'Run over an acorn to grab it, carry it to a basket. Watch for shadows!' };
+      if (ph === 'lobby') return { line: 'You’re in the meadow. Grab acorns, toss them in a basket!', note: 'Practice for now. Everyone gets a turn as the tree.' };
+      if (ph === 'count') return tree ? { line: 'You’re the TREE! 🌳 Guard your acorns.', note: 'Tap DROP for a pinecone, hold it for a giant one. ROOTS trip them. Shake your phone to shake the tree!' } : { line: `Steal ${st.goal} acorns from ${tn}!`, note: 'Grab an acorn, then run it to a basket or TOSS it in. Leaf piles hide you from pinecones.' };
       if (ph === 'play') {
-        if (tree) return { line: `${st.banked} of ${st.goal} stolen · ${st.left}s left`, note: togo <= 3 ? 'They’re nearly there! Stop them!' : 'Bonk anyone carrying an acorn.' };
-        if (st.stun?.[me]) return { line: 'BONK! Seeing stars… 💫' };
-        return { line: st.carry?.[me] ? 'Got one! Run it to a basket! 🧺' : `${togo} more to steal · ${st.left}s left`, note: st.carry?.[me] ? 'Carrying slows you down. Dash out of a shadow!' : 'Under the tree is where the acorns are.' };
+        if (tree) return { line: `${st.banked} of ${st.goal} stolen · ${st.left}s left`, note: st.tick ? 'You’re being tickled! Shake them off!' : togo <= 3 ? 'They’re nearly there! Stop them!' : 'Hold DROP for a giant pinecone. Shake your phone to shake!' };
+        if (st.stun?.[me]) return { line: 'Seeing stars… 💫 Shake your phone!' };
+        return { line: st.carry?.[me] ? 'Got one! Run it to a basket! 🧺' : `${togo} more to steal · ${st.left}s left`, note: st.carry?.[me] ? 'Face a basket or a friend and TOSS. Dash out of a shadow!' : st.near?.[me] ? 'You’re by the trunk: TICKLE the tree so it can’t aim!' : 'Under the tree is where the acorns are.' };
       }
       if (ph === 'round') { const won = st.last === 'tree' ? tree : !tree; return { line: '', veil: `${st.last === 'tree' ? `${tree ? 'You' : tn} held on! 🌳` : `Heist complete! 🧺`} ${won ? 'Nice one!' : ''} You have ${st.score?.[me] || 0} ${st.score?.[me] === 1 ? 'point' : 'points'}.` }; }
       if (ph === 'done') { const c = st.champs || []; return { line: c.includes(me) ? 'You won! 🏆' : `${listOf(c.map(nameOf))} won.`, note: `You scored ${st.score?.[me] || 0}. Grab some acorns while you wait.` }; }
@@ -169,20 +172,28 @@ export async function runPad(room, { onAway } = {}) {
   function build(k, role) {
     const main = $('padMain'); main.textContent = '';
     if (k === 'heist' && role === 'tree') {
-      // the tree: steer the shadow on the left; DROP (big) and SHAKE on the right
+      // the tree: steer the shadow on the left; DROP (tap, or hold for a giant one) on top, ROOTS and SHAKE under it
       const wrap = el('div', 'ctl kartpad treepad'), side = el('div', 'kside');
-      const drop = el('button', 'kbtn drop'); drop.type = 'button'; drop.id = 'drop'; drop.append(el('b', null, 'DROP'), el('small', null, 'a pinecone 🌲'));
-      const shake = el('button', 'kbtn shake'); shake.type = 'button'; shake.id = 'shake'; shake.append(el('b', null, 'SHAKE'), el('small', null, 'fling them off 🍃'));
-      side.append(drop, shake); wrap.append(makeStick('move your shadow'), side); main.append(wrap);
-      drop.addEventListener('pointerdown', (e) => { e.preventDefault(); doDrop(); });
-      shake.addEventListener('pointerdown', (e) => { e.preventDefault(); doShake(); });
+      const drop = el('button', 'kbtn drop'); drop.type = 'button'; drop.id = 'drop'; drop.append(el('b', null, 'DROP'), el('small', null, 'tap · hold for a giant one 🌲'));
+      const roots = el('button', 'kbtn roots'); roots.type = 'button'; roots.id = 'roots'; roots.append(el('b', null, 'ROOTS'), el('small', null, 'trip them up 🌱'));
+      const shake = el('button', 'kbtn shake'); shake.type = 'button'; shake.id = 'shake'; shake.append(el('b', null, 'SHAKE'), el('small', null, 'shake your phone! 📳'));
+      side.append(drop, roots, shake); wrap.append(makeStick('move your shadow'), side); main.append(wrap);
+      const down = (e) => { e.preventDefault(); if (e.pointerId != null) try { drop.setPointerCapture(e.pointerId); } catch (x) {} holdDrop(); };
+      drop.addEventListener('pointerdown', down); drop.addEventListener('pointerup', letDrop); drop.addEventListener('pointercancel', letDrop); drop.addEventListener('lostpointercapture', letDrop);
+      roots.addEventListener('pointerdown', (e) => { e.preventDefault(); doRoots(); });
+      shake.addEventListener('pointerdown', (e) => { e.preventDefault(); doShake(70); });
+      heistMotion(wrap);
       return;
     }
     if (k === 'heist') {
-      const wrap = el('div', 'ctl bumper heistpad'), dash = el('button', 'dash', 'DASH');
-      dash.id = 'dash'; dash.type = 'button'; dash.style.setProperty('--cool', `${HEIST.DASH_COOL}s`);
-      wrap.append(makeStick('run'), dash); main.append(wrap);
+      // a collector: run on the left; on the right the second button (toss, tickle or wriggle, whatever fits) over DASH
+      const wrap = el('div', 'ctl kartpad heistpad'), side = el('div', 'kside');
+      const act = el('button', 'kbtn act'); act.type = 'button'; act.id = 'act'; act.append(el('b', null, 'TOSS'), el('small', null, 'grab an acorn first'));
+      const dash = el('button', 'dash', 'DASH'); dash.id = 'dash'; dash.type = 'button'; dash.style.setProperty('--cool', `${HEIST.DASH_COOL}s`);
+      side.append(act, dash); wrap.append(makeStick('run'), side); main.append(wrap);
       dash.addEventListener('pointerdown', (e) => { e.preventDefault(); doDash(dash, HEIST.DASH_COOL); });
+      act.addEventListener('pointerdown', (e) => { e.preventDefault(); doAct(); });
+      heistMotion(wrap);
       return;
     }
     if (k === 'tug') {
@@ -257,16 +268,56 @@ export async function runPad(room, { onAway } = {}) {
     dashReady = performance.now() + cool * 1000; buzz(25);
     btn.classList.remove('cool'); void btn.offsetWidth; btn.classList.add('cool');
   }
-  // the tree's two buttons (the TV decides what happens; this is the look)
-  let dropReady = 0, shakeReady = 0;
-  function doDrop() { ctl.dash++; send(true); const b = $('drop'); if (!b) return; b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 110); if (performance.now() > dropReady) { dropReady = performance.now() + HEIST.DROP_COOL * 1000; buzz(18); } }
-  function doShake() {
-    ctl.shake++; send(true);
+  // Acorn Heist's buttons (the TV decides what happens; this is the look)
+  let dropAt = 0, shakeReady = 0, rootsReady = 0;
+  // DROP: letting go is what drops it. Held for half a second first, it's a giant one.
+  function holdDrop() { if (ctl.hold) return; ctl.hold = 1; dropAt = performance.now(); send(true); const b = $('drop'); if (b) { b.classList.remove('big'); b.classList.add('hold'); clearTimeout(holdDrop.t); holdDrop.t = setTimeout(() => { if (ctl.hold) { b.classList.add('big'); buzz(40); } }, HEIST.BIG_HOLD * 1000 + 80); } }
+  function letDrop() { if (!ctl.hold) return; const big = performance.now() - dropAt >= HEIST.BIG_HOLD * 1000 + 80; ctl.hold = 0; ctl.dash++; send(true); clearTimeout(holdDrop.t); buzz(big ? [30, 20, 60] : 18); const b = $('drop'); if (b) { b.classList.remove('hold', 'big'); b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 110); } }
+  function doRoots() {
+    ctl.c++; send(true);
+    const b = $('roots'); if (!b || performance.now() < rootsReady) return;
+    rootsReady = performance.now() + HEIST.ROOT_COOL * 1000; buzz([15, 20, 45]);
+    b.classList.remove('cool'); void b.offsetWidth; b.classList.add('cool');
+  }
+  // shaking the tree: how hard (0 to 100) comes from how hard the phone was shaken; the button is a middling shake
+  function doShake(power = 70) {
+    ctl.str = Math.round(clamp(power, 0, 100)); ctl.shake++; send(true);
     const b = $('shake'); if (!b || performance.now() < shakeReady) return;
     shakeReady = performance.now() + HEIST.SHAKE_COOL * 1000; buzz([20, 30, 20, 30, 40]);
     b.classList.remove('cool'); void b.offsetWidth; b.classList.add('cool');
   }
-  function heistButtons() { const b = $('shake'); if (b) b.classList.toggle('ready', !st?.shake); }
+  // a collector's second button: the TV works out whether that's a toss, a tickle or a wriggle
+  function doAct() { ctl.shake++; send(true); buzz(st?.stun?.[me] ? 12 : 22); const b = $('act'); if (b) { b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 110); } }
+  function heistButtons() {
+    const sh = $('shake'); if (sh) sh.classList.toggle('ready', !st?.shake);
+    const ro = $('roots'); if (ro) ro.classList.toggle('ready', !st?.root);
+    const dr = $('drop'); if (dr) dr.classList.toggle('off', !!st?.tick);
+    const act = $('act'); if (!act) return;
+    const carry = st?.carry?.[me], mode = st?.stun?.[me] ? 'wriggle' : carry ? 'toss' : st?.near?.[me] && st?.phase === 'play' ? 'tickle' : 'idle';
+    if (act.dataset.mode === mode + (carry || '')) return; act.dataset.mode = mode + (carry || ''); act.classList.remove('wriggle', 'toss', 'tickle', 'idle'); act.classList.add(mode);
+    const [big, small] = mode === 'wriggle' ? ['WRIGGLE', 'or shake your phone 📳'] : mode === 'toss' ? ['TOSS', carry === 2 ? 'the golden acorn! 🌟' : 'at a basket or a friend 🌰'] : mode === 'tickle' ? ['TICKLE', 'the tree 🪶'] : ['TOSS', 'grab an acorn first'];
+    act.querySelector('b').textContent = big; act.querySelector('small').textContent = small;
+  }
+  // feeling the phone shake in Acorn Heist: the tree shakes its crown, a dazed collector shakes it off. iPhones
+  // want asking first, from a tap, so there's a little button for that until it's been allowed.
+  function heistMotion(wrap) {
+    if (typeof DeviceMotionEvent === 'undefined') return;
+    if (typeof DeviceMotionEvent.requestPermission === 'function' && !motionOn) {
+      const b = el('button', 'motionask', 'Turn on shaking 📳'); b.type = 'button'; wrap.append(b);
+      b.addEventListener('click', async () => { try { if (await DeviceMotionEvent.requestPermission() === 'granted') { listen(); b.remove(); flash('Shaking is on! 📳', 1200); } else { b.textContent = 'No shaking allowed. Use the buttons.'; setTimeout(() => b.remove(), 2500); } } catch (e) { b.remove(); } });
+      return;
+    }
+    listen();
+  }
+  let hEnergy = 0, hPeak = 0, hNext = 0, hLast = 0;
+  function heistShake(mag, dt, now) {
+    const gap = Math.min(5, (now - (hLast || now)) / 1000); hLast = now;   // what's been felt fades with real time, sensor or no sensor
+    hEnergy = hEnergy * Math.exp(-gap * 5) + (now < hNext ? 0 : Math.max(0, mag - 7) * dt); hPeak = Math.max(hPeak * Math.exp(-gap * 2.5), mag);
+    if (hEnergy < 1.1 || now < hNext || st?.phase !== 'play') return;
+    hNext = now + 380; hEnergy = 0;
+    if (st.tree === me) doShake(clamp((hPeak - 12) / 20, 0, 1) * 100);
+    else if (st.stun?.[me]) { ctl.c++; send(true); buzz(10); }
+  }
   function pull(btn) { ctl.taps++; send(); btn.classList.add('hit'); clearTimeout(pull.t); pull.t = setTimeout(() => btn.classList.remove('hit'), 70); }
 
   /* ---------- shaking (Freeze) ---------- */
@@ -281,6 +332,7 @@ export async function runPad(room, { onAway } = {}) {
     if (mag == null) return;
     sawMotion = true;
     const now = performance.now(), dt = Math.min(0.1, (now - (lastMotion || now)) / 1000); lastMotion = now;
+    if (meta?.game === 'heist') { heistShake(mag, dt, now); return; }
     if (meta?.game !== 'freeze') return;
     energy += Math.max(0, mag - 3) * dt;              // m/s² over a still hand, times seconds
     if (energy >= 1) { const n = Math.floor(energy); energy -= n; ctl.steps += Math.min(n, 3); send(); }
@@ -304,12 +356,14 @@ export async function runPad(room, { onAway } = {}) {
   const steer = () => { ctl.x = (keys.has('ArrowRight') || keys.has('d') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('a') ? 1 : 0); ctl.y = (keys.has('ArrowDown') || keys.has('s') ? 1 : 0) - (keys.has('ArrowUp') || keys.has('w') ? 1 : 0); send(true); };
   addEventListener('keydown', (e) => {
     if (e.repeat || e.metaKey || e.ctrlKey) return;
-    if (e.key === ' ') { e.preventDefault(); const k = meta?.game; if (k === 'tug') pull($('pull')); else if (k === 'freeze') { ctl.steps += 1.5; send(); } else if (k === 'kart') useItem(); else if ($('drop')) doDrop(); else if ($('dash')) doDash($('dash'), k === 'heist' ? HEIST.DASH_COOL : BUMPER.DASH_COOL); return; }
-    if (meta?.game === 'heist' && (e.key === 'e' || e.key === 'Shift')) { if ($('shake')) doShake(); return; }
+    if (e.key === ' ') { e.preventDefault(); const k = meta?.game; if (k === 'tug') pull($('pull')); else if (k === 'freeze') { ctl.steps += 1.5; send(); } else if (k === 'kart') useItem(); else if ($('drop')) holdDrop(); else if ($('dash')) doDash($('dash'), k === 'heist' ? HEIST.DASH_COOL : BUMPER.DASH_COOL); return; }
+    if (meta?.game === 'heist' && (e.key === 'e' || e.key === 'Shift')) { if ($('shake')) doShake(e.key === 'Shift' ? 100 : 60); else if ($('act')) doAct(); return; }
+    if (meta?.game === 'heist' && e.key === 'r') { if ($('roots')) doRoots(); return; }
     if (meta?.game === 'kart' && (e.key === 'Shift' || e.key === 'x')) { setDrift(1); return; }
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'd', 'w', 's'].includes(e.key)) { keys.add(e.key); if (meta?.game === 'bumper' || meta?.game === 'kart' || meta?.game === 'heist') steer(); }
   });
   addEventListener('keyup', (e) => {
+    if (e.key === ' ' && ctl.hold) { letDrop(); return; }
     if (meta?.game === 'kart' && (e.key === 'Shift' || e.key === 'x')) { setDrift(0); return; }
     if (keys.delete(e.key) && (meta?.game === 'bumper' || meta?.game === 'kart' || meta?.game === 'heist')) steer();
   });

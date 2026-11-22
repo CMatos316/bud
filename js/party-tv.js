@@ -116,7 +116,7 @@ export async function runTv(room, code, firstKind) {
     } else {
       p.append(el('h2', null, info.name), el('p', null, info.how), el('p', 'phones', `On your phone: ${info.pad}`));
       if (kind === 'kart') p.append(el('p', null, `Buds from the island fill the grid up to ${KART.FILL}.`));
-      if (kind === 'heist') p.append(el('p', null, `Points: 1 for every acorn you bank, 2 more when the heist works. The tree gets 1 for every bonk and 3 for holding on. Buds from the island help collect when there are fewer than ${HEIST.PICKERS}.`));
+      if (kind === 'heist') p.append(el('p', null, `Tricks: toss acorns into a basket or to a friend, hide in leaf piles, tickle the trunk. Points: 1 an acorn (3 for gold), 2 more when the heist works. The tree gets 1 for each acorn it knocks loose and 4 for holding on.`));
       p.append(joinCard(code, { small: true }));
     }
     const n = roster.length, row = el('div', 'row'), least = kind === 'kart' || kind === 'heist' ? 1 : MIN_PLAYERS;
@@ -159,7 +159,7 @@ export async function runTv(room, code, firstKind) {
       const c = el('div', 'chip' + (id === st.tree ? ' tree' : '')), d = el('i'); d.style.background = colorFor(id);
       c.append(d, el('b', null, (id === st.tree ? '🌳 ' : '') + nameOf(id)));
       if (!idle) c.append(el('small', null, String(st.score[id] || 0)));
-      if (st.carry[id]) c.append(el('span', 'it', '🌰')); else if (st.stun[id]) c.append(el('span', 'it', '💫'));
+      if (st.carry[id]) c.append(el('span', 'it', st.carry[id] === 2 ? '🌟' : '🌰')); else if (st.stun[id]) c.append(el('span', 'it', '💫'));
       box.append(c);
     }
     $('round').textContent = game.phase === 'lobby' || game.phase === 'done' ? '' : `Round ${game.round} of ${game.trees.length}`;
@@ -170,38 +170,59 @@ export async function runTv(room, code, firstKind) {
     const hud = $('hud'), on = kind === 'heist' && (game.phase === 'count' || game.phase === 'play' || game.phase === 'round');
     hud.hidden = !on; if (!on) { hudKey = ''; return; }
     const left = game.phase === 'play' ? Math.ceil(game.left()) : game.phase === 'count' ? game.playS : 0;
-    const key = [game.tree, game.banked, game.goal, left].join();
+    const key = [game.tree, game.banked, game.goal, left, game.frenzy, !!game.wind, !!game.sq].join();
     if (key === hudKey) return; hudKey = key;
     hud.textContent = '';
     const who = el('span', 'who'); const d = el('i'); d.style.background = colorFor(game.tree); who.append(d, el('b', null, `🌳 ${nameOf(game.tree)}`), el('small', null, 'is the tree'));
     const bar = el('div', 'bar'), fill = el('i'); fill.style.width = `${Math.min(100, game.banked / Math.max(1, game.goal) * 100)}%`; bar.append(fill, el('b', null, `🌰 ${game.banked} / ${game.goal} stolen`));
-    const clock = el('span', 'clock' + (game.phase === 'play' && left <= 10 ? ' hurry' : ''), `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`);
+    const clock = el('span', 'clock' + (game.phase === 'play' && left <= HEIST.FRENZY_S ? ' hurry' : ''), `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`);
     hud.append(who, bar, clock);
+    const now = game.phase !== 'play' ? '' : game.frenzy ? '🍂 FRENZY!' : game.wind ? '💨 Gust!' : game.sq ? '🐿️ Squirrel!' : '';
+    if (now) hud.append(el('span', 'now' + (game.frenzy ? ' hot' : ''), now));
   }
   let heistSaid = 0, tickedAt = -1;
   function say(text, sub = '', secs = 1.4, cls = '') { const now = performance.now(); if (now - heistSaid < 900 && !cls.includes('force')) return; heistSaid = now; banner(text, sub, secs, cls); }
   function onHeist(e) {
     three.heist(e, game);
-    if (e.k === 'drop') S.play('whistle', { gain: 0.5 });
+    if (e.k === 'drop') S.play('whistle', { gain: e.big ? 0.8 : 0.5, rate: e.big ? 0.6 : 1 });
     else if (e.k === 'bonk') {
-      S.play('thump', { gain: 0.9 }); setTimeout(() => S.play('giggle', { gain: 0.5, rate: 0.8 }), 180); dirty = true; renderScore();
+      S.play('thump', { gain: e.big ? 1.2 : 0.9, rate: e.big ? 0.7 : 1 }); setTimeout(() => S.play('giggle', { gain: 0.5, rate: 0.8 }), 180); dirty = true; renderScore();
       if (e.hit.length > 1) say(e.hit.length === 2 ? 'DOUBLE BONK!' : `${e.hit.length}× BONK!`, `${nameOf(game.tree)} is on fire`, 1.6);
     }
-    else if (e.k === 'miss') S.play('thump', { gain: 0.3, rate: 1.2 });
+    else if (e.k === 'miss') S.play('thump', { gain: e.big ? 0.7 : 0.3, rate: e.big ? 0.8 : 1.2 });
     else if (e.k === 'tug') S.play('tick', { gain: 0.25, rate: 1.6 });
-    else if (e.k === 'pick') { S.play('pop', { gain: 0.6, rate: 1.2 }); dirty = true; renderScore(); }
+    else if (e.k === 'pick') { S.play(e.gold ? 'sparkle' : 'pop', { gain: 0.6, rate: 1.2 }); dirty = true; renderScore(); if (e.gold) say(`${nameOf(e.id)} has the golden acorn!`, 'Worth three. Get it home!', 1.5); }
     else if (e.k === 'lose') { S.play('pop', { gain: 0.5, rate: 0.6 }); dirty = true; renderScore(); }
     else if (e.k === 'bank') {
-      S.play('chime', { gain: 0.55, rate: 1 + Math.min(10, e.streak || 0) * 0.04 }); dirty = true; renderScore();
+      S.play('chime', { gain: 0.55, rate: 1 + Math.min(10, e.streak || 0) * 0.04 }); if (e.toss) S.play('boing', { gain: 0.4, rate: 1.5 }); if (e.gold) S.play('sparkle', { gain: 0.9 }); dirty = true; renderScore();
       if (game.phase === 'play') {
         const togo = e.goal - e.banked;
-        if (togo === 1) say('One more!', `${nameOf(game.tree)} has to stop this`, 1.6);
+        if (togo <= 0) { /* the round's over: its own banner follows */ }
+        else if (e.gold) say('GOLD! +3 🌟', `${nameOf(e.id)} banks the golden acorn`, 1.5);
+        else if (togo === 1) say('One more!', `${nameOf(game.tree)} has to stop this`, 1.6);
         else if (togo === 3) say('Three to go!', '', 1.3);
         else if (e.streak === 4 || e.streak === 8) say(`${e.streak} in a row!`, 'The heist is on', 1.4);
       }
     }
-    else if (e.k === 'shake') { S.play('whoosh', { gain: 0.9, rate: 0.55 }); S.play('thump', { gain: 0.4, rate: 0.7 }); if (e.flung.length > 1) say('SHAKE!', `${e.flung.length} buds sent flying`, 1.1); }
+    else if (e.k === 'shake') { S.play('whoosh', { gain: 0.9, rate: 0.55 }); S.play('thump', { gain: 0.4, rate: 0.7 }); if (e.flung.length > 1) say(e.power > 1.15 ? 'MEGA SHAKE!' : 'SHAKE!', `${e.flung.length} buds sent flying`, 1.1); }
     else if (e.k === 'dash') S.play('whoosh', { gain: 0.2, rate: 1.6 });
+    else if (e.k === 'root') S.play('scribble', { gain: 0.9, rate: 0.6 });
+    else if (e.k === 'trip') { S.play('thump', { gain: 0.7, rate: 1.3 }); S.play('boing', { gain: 0.35, rate: 0.7 }); dirty = true; if (e.hit.length > 1) say('ROOTS!', `${e.hit.length} buds tripped up`, 1.2); }
+    else if (e.k === 'rootDown') S.play('squish', { gain: 0.25 });
+    else if (e.k === 'toss') S.play('whoosh', { gain: 0.35, rate: 2 });
+    else if (e.k === 'catch') { S.play('pop', { gain: 0.6, rate: 1.5 }); dirty = true; renderScore(); }
+    else if (e.k === 'plop') S.play('click', { gain: 0.5 });
+    else if (e.k === 'tickle') { S.play('giggle', { gain: 0.8, rate: 0.6 }); setTimeout(() => S.play('giggle', { gain: 0.6, rate: 0.7 }), 260); if (game.tree && game.phase === 'play') say('Tickled!', `${nameOf(game.tree)} can’t aim for laughing`, 1.2); }
+    else if (e.k === 'gold') { S.play('sparkle', { gain: 1 }); say('A golden acorn! 🌟', 'Worth three', 1.6, 'force'); }
+    else if (e.k === 'wind') { S.play('whoosh', { gain: 1, rate: 0.4 }); setTimeout(() => S.play('whoosh', { gain: 0.8, rate: 0.5 }), 900); say('A gust of wind! 💨', 'Hold on to your acorns', 1.5, 'force'); }
+    else if (e.k === 'squirrel') { S.play('alert', { gain: 0.6, rate: 1.4 }); say('Squirrel! 🐿️', 'Run into it before it raids a basket', 1.6, 'force'); }
+    else if (e.k === 'pinch') { S.play('pop', { gain: 0.7, rate: 0.5 }); dirty = true; renderScore(); }
+    else if (e.k === 'shoo') { S.play('boing', { gain: 0.5, rate: 1.8 }); say('Shoo!', `${nameOf(e.id)} chased it off`, 1.1); }
+    else if (e.k === 'sqHome') { if (e.got) say('The squirrel got one back!', '', 1.2); }
+    else if (e.k === 'frenzy') { S.play('alert', { gain: 0.7 }); S.play('whoosh', { gain: 0.9, rate: 0.5 }); say('FRENZY! 🍂', 'It’s raining acorns. Everyone’s faster!', 1.7, 'force'); }
+    else if (e.k === 'burst') S.play('whoosh', { gain: 0.6, rate: 1.2 });
+    else if (e.k === 'rustle') S.play('paint', { gain: 1, rate: 0.7 });
+    else if (e.k === 'wriggle' || e.k === 'windEnd' || e.k === 'roll') { /* nothing to hear */ }
     else if (e.k === 'roundEnd') {
       dirty = urgent = true; renderScore(); S.play('sparkle');
       banner(e.winner === 'tree' ? `${nameOf(e.tree)} holds on! 🌳` : 'Heist complete! 🧺', e.winner === 'tree' ? `Only ${e.banked} of ${e.goal} acorns got away` : `${e.goal} acorns stolen from ${nameOf(e.tree)}`, 3.6, 'force');
@@ -375,7 +396,7 @@ export async function runTv(room, code, firstKind) {
     if (flat) drawTug(T); else { g.clearRect(0, 0, W, H); three.render(kind, game, T, dt, easeView(), roster); }
     freezeSign(); heistHud();
     // the last ten seconds of a heist tick away
-    if (kind === 'heist' && game.phase === 'play') { const l = Math.ceil(game.left()); if (l <= 10 && l !== tickedAt) { tickedAt = l; S.play('tick', { gain: 0.5, rate: l <= 3 ? 1.5 : 1.1 }); if (l === 10) say('10 seconds!', '', 1.1); } } else tickedAt = -1;
+    if (kind === 'heist' && game.phase === 'play') { const l = Math.ceil(game.left()); if (l <= 5 && l !== tickedAt) { tickedAt = l; S.play('tick', { gain: 0.5, rate: l <= 3 ? 1.5 : 1.1 }); } } else tickedAt = -1;
     for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i]; f.t += dt; if (f.t >= f.life) { fx.splice(i, 1); continue; } f.draw(f.t / f.life, f.t); }
     // the race changes all the time (places, items): tell the phones a few times a second, only when it changed
     if ((kind === 'kart' || kind === 'heist') && !dirty && now - lastPub > 250) { const sk = JSON.stringify(game.state()); if (sk !== lastKartState) { lastKartState = sk; dirty = true; } }

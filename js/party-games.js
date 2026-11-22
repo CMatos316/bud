@@ -15,7 +15,7 @@ export const GAME_INFO = {
   bumper: { name: 'Bumper Buds', how: 'Bump everyone else off the island. It shrinks! Three rounds: a point for every bud you outlast, and one more for winning.', pad: 'Hold it sideways. Steer with your left thumb, dash with your right.' },
   tug: { name: 'Tug of War', how: 'Two teams, one rope. Drag the other side into the mud. Best of three.', pad: 'Tap as fast as you can.' },
   kart: { name: 'Island Grand Prix', how: 'Three laps round the island in karts. Drift round corners for a boost, pop gift bubbles for something silly, and stay out of the lagoon.', pad: 'Hold it sideways. Point where you want to go, hold Drift on corners, tap the item to use it.' },
-  heist: { name: 'Acorn Heist', how: 'One of you is the tree. Everyone else sneaks in, grabs acorns from under it and runs them to the baskets. The tree drops pinecones on their heads and shakes them loose. Everyone gets a turn as the tree.', pad: 'Hold it sideways. Collectors: steer and dash. The tree: steer your shadow, drop pinecones, shake.' },
+  heist: { name: 'Acorn Heist', how: 'One of you is the tree. Everyone else steals its acorns and gets them into the baskets. The tree drops pinecones, raises roots and shakes everyone loose. Watch for golden acorns, gusts of wind and a thieving squirrel. Everyone gets a turn as the tree.', pad: 'Collectors: steer, dash, toss. The tree: aim your shadow, drop pinecones, and really shake your phone.' },
   freeze: { name: 'Freeze', how: 'Run while the crab naps. Freeze when it looks, or a wave washes you back to the last sandcastle and leaves you dizzy. First to the campfire wins.', pad: 'Shake your phone to run. Hold still to freeze.' },
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -672,31 +672,52 @@ export function kartBot(game, k) {
 }
 
 /* ============================== Acorn Heist ============================== */
-// One player is the tree; everyone else sneaks in to steal its acorns. Acorns lie under the tree's crown. A
-// collector grabs one by running over it and carries it to any of three baskets round the edge. The tree can't
-// move, but it aims a shadow round the meadow and drops pinecones (a bonk stuns whoever's under it and knocks
-// their acorn loose), and now and then it shakes its whole crown, flinging everyone underneath outwards and
-// shaking the acorns out of their arms. Dropped acorns roll back home to the tree after a few seconds.
-// Collectors win the round by banking enough acorns before time's up; otherwise the tree wins.
-// Everyone takes a turn as the tree. Points: a collector gets one per acorn banked and two more each if they win
-// the round; the tree gets one per bonk and three if it holds on. Buds from the island fill in as collectors
-// when there are fewer than three, and play the tree when someone's playing alone.
+// One player is the tree; everyone else sneaks in to steal its acorns, in an autumn meadow at sunset. Rounds are
+// short (half a minute) and busy.
+//   Collectors grab an acorn by running over it and get it into any of three baskets: carry it there, or TOSS it
+//   (aimed at a basket it goes in; aimed at a friend they catch it). They can dive into leaf piles (pinecones
+//   don't find them there), tickle the tree's trunk so it can't aim for a moment, and shake their phone to snap
+//   out of seeing stars.
+//   The tree can't move, but it aims a shadow round the meadow and drops pinecones (a bonk stuns and knocks the
+//   acorn loose), holds the button for a giant one (wide, bursts leaf piles), raises a ring of roots that trips
+//   whoever's there and blocks the way for a while, and shakes its crown (the player shakes their phone: harder
+//   flings further) to throw everyone underneath outwards.
+//   Surprises: a golden acorn worth three, a gust of wind that pushes everything sideways, a squirrel that
+//   pinches an acorn back out of a basket unless someone runs into it, and for the last seconds a frenzy, when
+//   acorns rain down and everyone speeds up.
+// Dropped acorns roll back home to the tree after a few seconds. Collectors win the round by banking enough
+// before time's up; otherwise the tree wins. Everyone takes a turn as the tree. Points: a collector gets one per
+// acorn banked (three for gold) and two more each if the heist works; the tree gets one for every acorn it
+// knocks out of someone's arms and four if it holds on. Buds from the island fill in as collectors when there
+// are fewer than three, and play the tree when someone's playing alone.
 export const HEIST = {
-  R: 13.5, CANOPY: 4.6, TRUNK: 1.25, BUD: 0.6, SPEED: 5.2, CARRY: 0.64, GRAB: 0.45, ACC: 30, DRAG: 7.5, DASH: 11, DASH_T: 0.22, DASH_COOL: 2.4,
-  STUN: 2.4, AIM: 13, REACH: 12, FALL: 0.62, BONK_R: 1.45, DROP_COOL: 0.6, MAX_AIR: 3, SHAKE_COOL: 7, SHAKE_R: 6, SHAKE_PUSH: 15,
-  PLAY_S: 60, PLAY_S_BIG: 45, PICKERS: 3, BASKET_R: 1.3, BASKET_AT: 11.6, ROLL_AFTER: 3.2, ROLL_SPEED: 3.2, RATE: 0.15, CROWDED: 0.008, CROWD_K: 0.3, AIR_STEP: 3, SPARE: 1.4, END_S: 4.2,
+  R: 13.5, CANOPY: 4.6, TRUNK: 1.25, BUD: 0.6, SPEED: 6.6, CARRY: 0.74, GRAB: 0.28, ACC: 36, DRAG: 7.5, DASH: 12, DASH_T: 0.22, DASH_COOL: 1.8,
+  STUN: 1.5, WRIGGLE: 0.2, AIM: 15, REACH: 12, FALL: 0.55, BONK_R: 1.45, DROP_COOL: 0.5, MAX_AIR: 3,
+  BIG_HOLD: 0.5, BIG_R: 2.7, BIG_FALL: 0.9, BIG_COOL: 1.5, BIG_STUN: 2.1,
+  SHAKE_COOL: 5, SHAKE_R: 6, SHAKE_PUSH: 15,
+  ROOT_COOL: 6, ROOT_WARN: 0.45, ROOT_R: 1.9, ROOT_UP: 3, TRIP: 1.1,
+  TOSS: 4.6, TOSS_T: 0.5, TOSS_AIM: 0.45, CATCH_R: 1.15, ACT_COOL: 0.35,
+  TICKLE_R: 1.5, TICKLE_T: 1.3, TICKLE_COOL: 5,
+  PILE_AT: 7.9, PILE_R: 1.55, PILE_SLOW: 0.62, PILE_GONE: 4.5,
+  GOLD: 3, FRENZY_S: 8, FRENZY_SPEED: 1.18, RAIN: 6, WIND_T: 3.5, WIND: 2.4, SQ_SPEED: 7,
+  PLAY_S: 30, PICKERS: 3, BASKET_R: 1.3, BASKET_AT: 11.6, ROLL_AFTER: 2.6, ROLL_SPEED: 3.6, RATE: 0.268, CROWDED: 0.02, CROWD_K: 0.3, AIR_STEP: 3, SPARE: 1.5, END_S: 3.8,
 };
 export const heistBaskets = () => [0, 1, 2].map((i) => { const a = Math.PI / 2 + i * Math.PI * 2 / 3; return { x: Math.cos(a) * HEIST.BASKET_AT, y: Math.sin(a) * HEIST.BASKET_AT, n: 0 }; });
+// leaf piles to dive into, one between each pair of baskets
+export const heistPiles = () => [0, 1, 2].map((i) => { const a = Math.PI / 2 + Math.PI / 3 + i * Math.PI * 2 / 3; return { x: Math.cos(a) * HEIST.PILE_AT, y: Math.sin(a) * HEIST.PILE_AT, gone: 0 }; });
 const HEIST_NAMES = ['Pebble', 'Kelp', 'Mochi', 'Taro', 'Biscuit', 'Sprout', 'Noodle', 'Puddle'];
 
 export class Heist extends Game {
-  // stick x, stick y, then two running counts: a (dash for a collector, drop for the tree) and b (the tree's shake)
-  static parse(s) { const [x, y, a, b] = String(s || '').split(','); return { x: clamp(num(x) / 100, -1, 1), y: clamp(num(y) / 100, -1, 1), a: num(a), b: num(b) }; }
+  // stick x, stick y, then running counts. A collector: a dash, b toss/tickle, c wriggles (shaking the phone while
+  // seeing stars). The tree: a pinecones let go, b shakes, c roots, then d (1 while the drop button is held, for a
+  // giant pinecone) and e (how hard the last shake was, 0 to 100).
+  static parse(s) { const [x, y, a, b, c, d, e] = String(s || '').split(','); return { x: clamp(num(x) / 100, -1, 1), y: clamp(num(y) / 100, -1, 1), a: num(a), b: num(b), c: num(c), d: num(d) ? 1 : 0, e: e == null || e === '' ? 100 : clamp(num(e), 0, 100) }; }
   constructor(rand) {
     super('heist', rand);
-    this.pool = []; this.cpus = []; this.pickers = new Map(); this.acorns = []; this.cones = []; this.baskets = heistBaskets();
-    this.tree = null; this.trees = []; this.aim = { x: 0, y: 6, seenA: null, seenB: null, cool: 0, shakeCool: 0, shakeT: 0, think: 0 };
+    this.pool = []; this.cpus = []; this.pickers = new Map(); this.acorns = []; this.cones = []; this.roots = []; this.baskets = heistBaskets(); this.piles = heistPiles();
+    this.tree = null; this.trees = []; this.aim = { x: 0, y: 6, seenA: null, seenB: null, seenC: null, cool: 0, shakeCool: 0, rootCool: 0, shakeT: 0, charge: 0, tickle: 0, think: 0 };
     this.score = {}; this.banked = 0; this.goal = 0; this.last = null; this.champs = null; this.playS = HEIST.PLAY_S; this.streak = 0;
+    this.wind = null; this.sq = null; this.frenzy = false; this.plan = [];
     this.scatter(14);
   }
   setPool(list) { this.pool = list.slice(); }
@@ -710,10 +731,16 @@ export class Heist extends Game {
     }
     this.baskets.forEach((b) => { b.n = 0; });
   }
+  // one more acorn, falling out of the sky to somewhere in the meadow (a golden one, or the frenzy's rain)
+  rain(gold = false) {
+    const a = this.rand() * Math.PI * 2, r = 5.2 + this.rand() * 4.6;
+    const o = { i: this.acorns.length, x: Math.cos(a) * r, y: Math.sin(a) * r, by: null, home: false, stay: true, loose: 0, banked: -1, roll: false, fall: 0.55, gold };
+    this.acorns.push(o); return o;
+  }
   newPicker(id, cpu = null) {
     const old = this.pickers.get(id), k = this.pickers.size, b = this.baskets[k % 3], a = this.rand() * Math.PI * 2;
     const p = { id, cpu: !!cpu, name: cpu?.name || null, c: cpu?.c ?? null, x: b.x * 0.92 + Math.cos(a) * 1.4, y: b.y * 0.92 + Math.sin(a) * 1.4, vx: 0, vy: 0, fx: 0, fy: -1,
-      carry: null, grab: null, grabT: 0, stun: 0, cool: 0, dashT: 0, seen: old ? old.seen : null, got: 0, bonked: 0, hit: 0, want: null, think: this.rand() };
+      carry: null, grab: null, grabT: 0, stun: 0, cool: 0, dashT: 0, fling: 0, actCool: 0, tickCool: 0, pile: -1, seen: old ? old.seen : null, seenB: old ? old.seenB : null, seenC: old ? old.seenC : null, got: 0, bonked: 0, hit: 0, want: null, think: this.rand() };
     this.pickers.set(id, p); return p;
   }
   onRoster() {
@@ -738,13 +765,14 @@ export class Heist extends Game {
       this.cpus.push({ id: from.id.startsWith('cpu_') ? from.id : `cpu_${from.id}`, name: from.name, c });
     }
     this.trees = humans.length === 1 ? [humans[0], this.cpus[0].id] : humans.slice();
-    this.playS = humans.length > 6 ? HEIST.PLAY_S_BIG : HEIST.PLAY_S;
+    this.playS = HEIST.PLAY_S;
     this.score = {}; for (const id of [...humans, ...this.cpus.map((c) => c.id)]) this.score[id] = 0;
     this.round = 0; this.champs = null; this.nextRound();
   }
   everyone() { return [...this.roster.map((p) => p.id), ...this.cpus.map((c) => c.id)]; }
   nextRound() {
-    this.round++; this.last = null; this.banked = 0; this.streak = 0; this.cones = [];
+    this.round++; this.last = null; this.banked = 0; this.streak = 0; this.cones = []; this.roots = []; this.wind = null; this.sq = null; this.frenzy = false;
+    this.piles.forEach((p) => { p.gone = 0; });
     this.tree = this.trees[this.round - 1];
     // the collectors: everyone but the tree, topped up with island buds to at least three (more for a big crowd is fine)
     const people = this.roster.map((p) => p.id).filter((id) => id !== this.tree);
@@ -753,13 +781,15 @@ export class Heist extends Game {
     for (const id of people) this.newPicker(id);
     for (const c of help) this.newPicker(c.id, c);
     // how many acorns the collectors must bank grows with how many of them there are; a few spare under the tree
-    // (set from bots playing both sides with no goal: about 0.15 acorns a collector a second, a little less in a
-    // crowd; at that goal the tree and the collectors each won about half the time)
+    // (set from bots playing both sides with no goal, then nudged until each side won about half the time)
     const n = this.pickers.size, goal = Math.round(HEIST.RATE * n * this.playS * (1 - HEIST.CROWDED * (n - 3)));
     this.goal = goal; this.scatter(Math.min(80, Math.ceil(goal * HEIST.SPARE)));
     // a bigger crowd: the tree drops faster and keeps more pinecones in the air
     this.dropCool = HEIST.DROP_COOL * Math.pow(3 / Math.max(3, n), HEIST.CROWD_K); this.maxAir = HEIST.MAX_AIR + Math.floor((n - 3) / HEIST.AIR_STEP);
-    Object.assign(this.aim, { x: 0, y: 6.5, cool: 0, shakeCool: 2.5, shakeT: 0, cpu: this.cpus.some((c) => c.id === this.tree) });
+    Object.assign(this.aim, { x: 0, y: 6.5, cool: 0, shakeCool: 2, rootCool: 1.5, shakeT: 0, charge: 0, tickle: 0, seenA: null, seenB: null, seenC: null, cpu: this.cpus.some((c) => c.id === this.tree) });
+    // the round's surprises: two of the three, in a random order, and a frenzy to finish
+    const kinds = ['gold', 'wind', 'squirrel']; for (let i = kinds.length - 1; i > 0; i--) { const j = Math.floor(this.rand() * (i + 1)); [kinds[i], kinds[j]] = [kinds[j], kinds[i]]; }
+    this.plan = [{ at: 5 + this.rand() * 3, k: kinds[0] }, { at: 13 + this.rand() * 4, k: kinds[1] }, { at: this.playS - HEIST.FRENZY_S, k: 'frenzy' }];
     this.go('count');
   }
   left() { return Math.max(0, this.playS - this.t); }
@@ -768,96 +798,218 @@ export class Heist extends Game {
     this.t += dt;
     const H = HEIST, playing = this.phase === 'play';
     if (this.phase === 'count') { for (const p of this.pickers.values()) this.seen(p, inputs[p.id]); this.seenTree(inputs[this.tree]); if (this.t >= COUNT_S) this.go('play'); return; }
+    if (playing) this.surprises(dt);
     // the tree aims and drops (only in a round)
     if (playing && this.tree) {
-      const inp = this.aim.cpu || !this.here(this.tree) ? heistTreeBot(this, dt) : inputs[this.tree] || { x: 0, y: 0, a: this.aim.seenA ?? 0, b: this.aim.seenB ?? 0 };
+      const A = this.aim, inp = A.cpu || !this.here(this.tree) ? heistTreeBot(this, dt) : inputs[this.tree] || { x: 0, y: 0, a: A.seenA ?? 0, b: A.seenB ?? 0, c: A.seenC ?? 0, d: 0, e: 100 };
       this.treeAct(inp, dt);
     }
     this.aim.shakeT = Math.max(0, this.aim.shakeT - dt);
+    for (const pl of this.piles) pl.gone = Math.max(0, pl.gone - dt);
     // the collectors
     for (const p of this.pickers.values()) {
-      const inp = p.cpu || p.away ? heistBot(this, p, dt) : inputs[p.id] || { x: 0, y: 0, a: p.seen ?? 0, b: 0 };
+      const inp = p.cpu || p.away ? heistBot(this, p, dt) : inputs[p.id] || { x: 0, y: 0, a: p.seen ?? 0, b: p.seenB ?? 0, c: p.seenC ?? 0 };
       this.run(p, inp, dt);
     }
     this.bump();
-    this.cones = this.cones.filter((c) => { c.t += dt; if (c.t < H.FALL) return true; this.land(c); return false; });
+    this.rootsTick(dt);
+    this.cones = this.cones.filter((c) => { c.t += dt; if (this.wind) { c.x += this.wind.x * H.WIND * 0.8 * dt; c.y += this.wind.y * H.WIND * 0.8 * dt; } if (c.t < (c.big ? H.BIG_FALL : H.FALL)) return true; this.land(c); return false; });
     this.acornsTick(dt);
+    if (this.sq) this.squirrel(dt);
     if (playing && this.left() <= 0) this.endRound('tree');
     if (this.phase === 'round' && this.t >= H.END_S) { if (this.round >= this.trees.length) this.finish(); else this.nextRound(); }
   }
-  seen(p, inp) { if (inp && p.seen == null) p.seen = inp.a; }
-  seenTree(inp) { if (inp && this.aim.seenA == null) { this.aim.seenA = inp.a; this.aim.seenB = inp.b; } }
+  seen(p, inp) { if (inp && p.seen == null) { p.seen = inp.a; p.seenB = inp.b; p.seenC = inp.c; } }
+  seenTree(inp) { if (inp && this.aim.seenA == null) { this.aim.seenA = inp.a; this.aim.seenB = inp.b; this.aim.seenC = inp.c; } }
+
+  // the things that just happen: a golden acorn, a gust, a squirrel, and the frenzy at the end
+  surprises(dt) {
+    const H = HEIST;
+    if (this.wind && (this.wind.t -= dt) <= 0) { this.wind = null; this.emit('windEnd'); }
+    while (this.plan.length && this.t >= this.plan[0].at) {
+      let { k } = this.plan.shift();
+      if (k === 'squirrel' && !this.baskets.some((b) => b.n > 0)) k = 'gold';
+      if (k === 'gold') { const a = this.rain(true); this.emit('gold', { x: a.x, y: a.y }); }
+      else if (k === 'wind') { const a = this.rand() * Math.PI * 2; this.wind = { x: Math.cos(a), y: Math.sin(a), t: H.WIND_T }; this.emit('wind', { x: this.wind.x, y: this.wind.y }); }
+      else if (k === 'squirrel') {
+        let bi = 0; this.baskets.forEach((b, i) => { if (b.n > this.baskets[bi].n) bi = i; });
+        const b = this.baskets[bi], a = Math.atan2(b.y, b.x) + (this.rand() < 0.5 ? 1 : -1) * (0.9 + this.rand() * 0.5);
+        this.sq = { x: Math.cos(a) * (H.R + 0.5), y: Math.sin(a) * (H.R + 0.5), fx: 0, fy: 0, basket: bi, state: 'in', has: null, t: 0 };
+        this.emit('squirrel', { basket: bi });
+      }
+      else if (k === 'frenzy') { this.frenzy = true; const at = []; for (let i = 0; i < H.RAIN; i++) { const a = this.rain(false); a.fall += i * 0.12; at.push({ x: a.x, y: a.y }); } this.emit('frenzy', { at }); }
+    }
+  }
+  // the squirrel: in from the hedge to the fullest basket, out again towards the tree with an acorn. Run into it
+  // and it drops the acorn and bolts.
+  squirrel(dt) {
+    const H = HEIST, s = this.sq; s.t += dt;
+    const go = (tx, ty, sp) => { const dx = tx - s.x, dy = ty - s.y, d = Math.hypot(dx, dy) || 1, st = Math.min(d, sp * dt); s.fx = dx / d; s.fy = dy / d; s.x += s.fx * st; s.y += s.fy * st; return d - st; };
+    if (s.state !== 'flee') for (const p of this.pickers.values()) {
+      if (p.stun > 0 || Math.hypot(p.x - s.x, p.y - s.y) > H.BUD + 0.75) continue;
+      if (s.has != null) { const a = this.acorns[s.has]; a.by = null; a.x = s.x; a.y = s.y; a.home = false; a.loose = 0; a.roll = false; s.has = null; }
+      s.state = 'flee'; const d = Math.hypot(s.x, s.y) || 1; s.ex = s.x / d * (H.R + 1.5); s.ey = s.y / d * (H.R + 1.5);
+      this.emit('shoo', { id: p.id, x: s.x, y: s.y }); break;
+    }
+    if (s.state === 'in') {
+      const b = this.baskets[s.basket];
+      if (go(b.x * 0.9, b.y * 0.9, H.SQ_SPEED) < 0.15) {
+        const a = this.acorns.find((o) => o.banked === s.basket && !o.gold);
+        if (a && this.phase === 'play') { a.banked = -1; a.by = 'sq'; a.home = false; a.fly = null; b.n--; this.banked = Math.max(0, this.banked - 1); this.streak = 0; s.has = a.i; this.emit('pinch', { basket: s.basket, banked: this.banked, goal: this.goal }); }
+        s.state = 'out';
+      }
+    } else if (s.state === 'out') {
+      const d = Math.hypot(s.x, s.y) || 1, r = H.TRUNK + 1.4;
+      if (go(s.x / d * r, s.y / d * r, H.SQ_SPEED * 0.72) < 0.15) {
+        if (s.has != null) { const a = this.acorns[s.has]; a.by = null; a.x = s.x; a.y = s.y; a.home = true; }
+        this.emit('sqHome', { got: s.has != null }); this.sq = null; return;
+      }
+      if (s.has != null) { const a = this.acorns[s.has]; a.x = s.x; a.y = s.y; }
+    } else if (go(s.ex, s.ey, H.SQ_SPEED * 1.5) < 0.15) this.sq = null;
+  }
+
   treeAct(inp, dt) {
     const H = HEIST, A = this.aim;
+    A.tickle = Math.max(0, A.tickle - dt);
     let sx = inp.x, sy = inp.y; const m = Math.hypot(sx, sy); if (m > 1) { sx /= m; sy /= m; }
+    // being tickled: it can't aim straight or let anything go (it can still shake them off)
+    if (A.tickle > 0) { sx = sx * 0.3 + (this.rand() - 0.5) * 2.4; sy = sy * 0.3 + (this.rand() - 0.5) * 2.4; }
     A.x += sx * H.AIM * dt; A.y += sy * H.AIM * dt;
     const r = Math.hypot(A.x, A.y); if (r > H.REACH) { A.x *= H.REACH / r; A.y *= H.REACH / r; }
-    A.cool = Math.max(0, A.cool - dt); A.shakeCool = Math.max(0, A.shakeCool - dt);
-    if (A.seenA == null) { A.seenA = inp.a; A.seenB = inp.b; return; }
+    A.cool = Math.max(0, A.cool - dt); A.shakeCool = Math.max(0, A.shakeCool - dt); A.rootCool = Math.max(0, A.rootCool - dt);
+    if (A.seenA == null) { A.seenA = inp.a; A.seenB = inp.b; A.seenC = inp.c; return; }
+    if (inp.d && A.tickle <= 0) A.charge = Math.min(1.2, A.charge + dt);
     if (inp.a !== A.seenA) {
       A.seenA = inp.a;
-      if (A.cool <= 0 && this.cones.length < (this.maxAir || H.MAX_AIR)) { this.cones.push({ x: A.x, y: A.y, t: 0 }); A.cool = this.dropCool || H.DROP_COOL; this.emit('drop', { x: A.x, y: A.y }); }
+      const big = !!inp.g || A.charge >= H.BIG_HOLD; A.charge = 0;
+      if (A.tickle <= 0 && A.cool <= 0 && this.cones.length < (this.maxAir || H.MAX_AIR)) { this.cones.push({ x: A.x, y: A.y, t: 0, big }); A.cool = big ? H.BIG_COOL : (this.dropCool || H.DROP_COOL); this.emit('drop', { x: A.x, y: A.y, big }); }
+    }
+    if (!inp.d) A.charge = 0;
+    if (inp.c !== A.seenC) {
+      A.seenC = inp.c;
+      if (A.tickle <= 0 && A.rootCool <= 0) { A.rootCool = H.ROOT_COOL; this.roots.push({ x: A.x, y: A.y, t: 0, up: false }); this.emit('root', { x: A.x, y: A.y }); }
     }
     if (inp.b !== A.seenB) {
       A.seenB = inp.b;
       if (A.shakeCool <= 0) {
-        A.shakeCool = H.SHAKE_COOL; A.shakeT = 1;
-        const flung = [];
+        A.shakeCool = H.SHAKE_COOL; A.shakeT = 1; A.tickle = 0;
+        const k = 0.7 + clamp((inp.e ?? 100) / 100, 0, 1) * 0.6, flung = []; let knocked = 0;   // a gentle shake 0.7, a wild one 1.3
         for (const p of this.pickers.values()) {
           const d = Math.hypot(p.x, p.y);
           if (d > H.SHAKE_R) continue;
-          const nx = d > 0.01 ? p.x / d : 1, ny = d > 0.01 ? p.y / d : 0, k = 1 - d / H.SHAKE_R * 0.4;
-          p.vx += nx * H.SHAKE_PUSH * k; p.vy += ny * H.SHAKE_PUSH * k; p.dashT = 0.25; p.hit = 1; this.letGo(p);
-          if (p.carry != null) this.loose(p, 'shake');
+          const nx = d > 0.01 ? p.x / d : 1, ny = d > 0.01 ? p.y / d : 0, f = (1 - d / H.SHAKE_R * 0.4) * k;
+          p.vx += nx * H.SHAKE_PUSH * f; p.vy += ny * H.SHAKE_PUSH * f; p.dashT = 0.25 * k; p.fling = 0.2 * k; p.hit = 1; this.letGo(p);
+          if (p.carry != null) { this.loose(p, 'shake'); knocked++; }
           flung.push(p.id);
         }
-        this.emit('shake', { flung });
+        this.saved(knocked);
+        this.emit('shake', { flung, power: k });
       }
     }
   }
+  // the tree's points: one for every acorn it knocks out of someone's arms
+  saved(n) { if (n && this.phase === 'play' && this.tree) { this.score[this.tree] = (this.score[this.tree] || 0) + n; this.streak = 0; } }
+  rootsTick(dt) {
+    const H = HEIST;
+    this.roots = this.roots.filter((r) => {
+      r.t += dt;
+      if (!r.up && r.t >= H.ROOT_WARN) {
+        r.up = true; const hit = []; let knocked = 0;
+        for (const p of this.pickers.values()) {
+          if (p.stun > 0 || p.pile >= 0 || Math.hypot(p.x - r.x, p.y - r.y) > H.ROOT_R + H.BUD * 0.4) continue;
+          p.stun = H.TRIP; p.hit = 1; hit.push(p.id); this.letGo(p);
+          if (p.carry != null) { this.loose(p, 'root'); knocked++; }
+        }
+        this.saved(knocked);
+        this.emit('trip', { x: r.x, y: r.y, hit });
+      }
+      if (r.up) for (const p of this.pickers.values()) {   // while they're up they're in the way
+        const dx = p.x - r.x, dy = p.y - r.y, d = Math.hypot(dx, dy), need = H.ROOT_R * 0.8 + H.BUD;
+        if (d < need) { const k = p.stun > 0 ? Math.min(1, dt * 10) : 1, nx = d > 0.01 ? dx / d : 1, ny = d > 0.01 ? dy / d : 0; p.x += nx * (need - d) * k; p.y += ny * (need - d) * k; }
+      }
+      if (r.t < H.ROOT_WARN + H.ROOT_UP) return true;
+      this.emit('rootDown', { x: r.x, y: r.y }); return false;
+    });
+  }
   run(p, inp, dt) {
     const H = HEIST;
-    p.hit = Math.max(0, p.hit - dt * 3); p.cool = Math.max(0, p.cool - dt); p.dashT = Math.max(0, p.dashT - dt);
-    if (p.stun > 0) { p.stun = Math.max(0, p.stun - dt); inp = { x: 0, y: 0, a: inp.a, b: 0 }; }
+    p.hit = Math.max(0, p.hit - dt * 3); p.cool = Math.max(0, p.cool - dt); p.dashT = Math.max(0, p.dashT - dt); p.actCool = Math.max(0, p.actCool - dt); p.tickCool = Math.max(0, p.tickCool - dt); p.fling = Math.max(0, (p.fling || 0) - dt);
+    if (p.seen == null) { p.seen = inp.a; p.seenB = inp.b; p.seenC = inp.c; }
+    const pressedA = inp.a !== p.seen, pressedB = inp.b !== p.seenB, wrig = inp.c !== p.seenC;
+    p.seen = inp.a; p.seenB = inp.b; p.seenC = inp.c;
+    if (p.stun > 0) {
+      // seeing stars: shaking the phone (or hammering the button) snaps you out of it sooner
+      if (wrig || pressedB) { p.stun = Math.max(0.05, p.stun - H.WRIGGLE); this.emit('wriggle', { id: p.id }); }
+      p.stun = Math.max(0, p.stun - dt); inp = { x: 0, y: 0 };
+    }
+    const stunned = p.stun > 0;
     let sx = inp.x, sy = inp.y; const m = Math.hypot(sx, sy); if (m > 1) { sx /= m; sy /= m; }
     if (m > 0.2) { p.fx = sx / Math.min(1, m); p.fy = sy / Math.min(1, m); }
-    if (p.seen == null) p.seen = inp.a;
-    else if (inp.a !== p.seen) {
-      p.seen = inp.a;
-      if (p.cool <= 0 && p.stun <= 0) { const k = p.carry != null ? 0.8 : 1; p.vx += p.fx * H.DASH * k; p.vy += p.fy * H.DASH * k; p.cool = H.DASH_COOL; p.dashT = H.DASH_T; this.emit('dash', { id: p.id }); }
-    }
-    const top = H.SPEED * (p.carry != null ? H.CARRY : 1) * (p.grab != null ? 0.2 : 1);
-    p.vx += (sx * top - p.vx) * Math.min(1, H.ACC / top * dt) * (p.stun > 0 ? 0 : 1);
-    p.vy += (sy * top - p.vy) * Math.min(1, H.ACC / top * dt) * (p.stun > 0 ? 0 : 1);
-    if (p.dashT <= 0 || p.stun > 0) { const sp = Math.hypot(p.vx, p.vy); if (sp > top) { const k = Math.exp(-H.DRAG * dt); p.vx = p.vx * k + p.vx / sp * top * (1 - k); p.vy = p.vy * k + p.vy / sp * top * (1 - k); } }
-    if (p.stun > 0) { const k = Math.exp(-6 * dt); p.vx *= k; p.vy *= k; }
+    if (pressedA && !stunned && p.cool <= 0) { const k = p.carry != null ? 0.8 : 1; p.vx += p.fx * H.DASH * k; p.vy += p.fy * H.DASH * k; p.cool = H.DASH_COOL; p.dashT = H.DASH_T; this.emit('dash', { id: p.id }); }
+    if (pressedB && !stunned && p.actCool <= 0) this.act(p);
+    // which leaf pile it's in, if any (slow going, but pinecones don't find you)
+    const was = p.pile; p.pile = -1;
+    this.piles.forEach((pl, i) => { if (pl.gone <= 0 && Math.hypot(p.x - pl.x, p.y - pl.y) < H.PILE_R) p.pile = i; });
+    if (p.pile >= 0 && was < 0) this.emit('rustle', { id: p.id, pile: p.pile });
+    const top = H.SPEED * (p.carry != null ? H.CARRY : 1) * (p.grab != null ? 0.2 : 1) * (p.pile >= 0 ? H.PILE_SLOW : 1) * (this.frenzy ? H.FRENZY_SPEED : 1);
+    const grip = stunned ? 0 : p.fling > 0 ? 0.15 : 1;   // flung through the air: no steering till you land
+    p.vx += (sx * top - p.vx) * Math.min(1, H.ACC / top * dt) * grip;
+    p.vy += (sy * top - p.vy) * Math.min(1, H.ACC / top * dt) * grip;
+    if ((p.dashT <= 0 && p.fling <= 0) || stunned) { const sp = Math.hypot(p.vx, p.vy); if (sp > top) { const k = Math.exp(-H.DRAG * dt); p.vx = p.vx * k + p.vx / sp * top * (1 - k); p.vy = p.vy * k + p.vy / sp * top * (1 - k); } }
+    if (stunned) { const k = Math.exp(-6 * dt); p.vx *= k; p.vy *= k; }
     p.x += p.vx * dt; p.y += p.vy * dt;
-    // the trunk is solid, and the meadow has an edge (a fence of flowers you can't cross)
+    if (this.wind) { p.x += this.wind.x * H.WIND * dt; p.y += this.wind.y * H.WIND * dt; }
+    // the trunk is solid, and the meadow has an edge (a hedge you can't cross)
     const d = Math.hypot(p.x, p.y);
     if (d < H.TRUNK + H.BUD) { const k = (H.TRUNK + H.BUD) / Math.max(d, 0.01); p.x *= k; p.y *= k; }
     if (d > H.R - H.BUD) { const k = (H.R - H.BUD) / d; p.x *= k; p.y *= k; const vr = (p.vx * p.x + p.vy * p.y) / (H.R - H.BUD); if (vr > 0) { p.vx -= vr * p.x / (H.R - H.BUD); p.vy -= vr * p.y / (H.R - H.BUD); } }
-    if (p.stun > 0) return;
+    if (stunned) return;
     // grab an acorn by running over it: a little tug (slowed right down) and it's yours
     if (p.grab != null) {
       const a = this.acorns[p.grab];
       if (a.by !== p.id + ':tug' || Math.hypot(a.x - p.x, a.y - p.y) > H.BUD + 0.7) { if (a.by === p.id + ':tug') a.by = null; p.grab = null; }
-      else if ((p.grabT += dt) >= H.GRAB) { a.by = p.id; p.carry = a.i; p.grab = null; this.emit('pick', { id: p.id, x: a.x, y: a.y }); }
-    } else if (p.carry == null) {
-      for (const a of this.acorns) if (a.by == null && a.banked < 0 && Math.hypot(a.x - p.x, a.y - p.y) < H.BUD + 0.35) { a.by = p.id + ':tug'; a.roll = false; p.grab = a.i; p.grabT = 0; this.emit('tug', { id: p.id }); break; }
-    } else {
+      else if ((p.grabT += dt) >= H.GRAB * (a.home ? 1 : 0.4)) { a.by = p.id; p.carry = a.i; p.grab = null; this.emit('pick', { id: p.id, x: a.x, y: a.y, gold: !!a.gold }); }
+    } else if (p.carry == null && p.fling <= 0) {
+      for (const a of this.acorns) if (a.by == null && a.banked < 0 && !a.fly && !(a.fall > 0) && Math.hypot(a.x - p.x, a.y - p.y) < H.BUD + 0.35) { a.by = p.id + ':tug'; a.roll = false; p.grab = a.i; p.grabT = 0; this.emit('tug', { id: p.id }); break; }
+    } else if (p.carry != null) {
       // and bank it in any basket
       for (let i = 0; i < 3; i++) {
         const b = this.baskets[i];
         if (Math.hypot(b.x - p.x, b.y - p.y) > H.BASKET_R + H.BUD) continue;
-        const a = this.acorns[p.carry]; a.by = null; a.banked = i; a.home = false; b.n++; p.carry = null;
-        if (this.phase === 'play') {
-          this.banked++; p.got++; this.score[p.id] = (this.score[p.id] || 0) + 1; this.streak++;
-          this.emit('bank', { id: p.id, basket: i, banked: this.banked, goal: this.goal, streak: this.streak });
-          if (this.banked >= this.goal) this.endRound('pickers');
-        } else { this.emit('bank', { id: p.id, basket: i, banked: 0, goal: 0 }); if (this.acorns.every((x) => x.banked >= 0)) this.scatter(this.acorns.length); }
+        const a = this.acorns[p.carry]; p.carry = null; this.bank(a, i, p.id, false);
         break;
       }
     }
+  }
+  // the second button: toss what you're carrying, or (empty-handed, by the trunk) tickle the tree
+  act(p) {
+    const H = HEIST;
+    if (p.carry != null) {
+      p.actCool = H.ACT_COOL;
+      const a = this.acorns[p.carry], ang = Math.atan2(p.fy, p.fx);
+      const off = (x, y) => { let d = Math.atan2(y - p.y, x - p.x) - ang; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return Math.abs(d); };
+      // where it's going: a basket you're facing, else a friend you're facing, else straight ahead
+      let to = null, best = H.TOSS_AIM, basket = -1, mate = null;
+      this.baskets.forEach((b, i) => { const d = Math.hypot(b.x - p.x, b.y - p.y), o = off(b.x, b.y); if (d <= H.TOSS + 1.2 && o < best) { best = o; to = { x: b.x, y: b.y }; basket = i; } });
+      if (!to) for (const q of this.pickers.values()) { if (q === p || q.carry != null || q.stun > 0) continue; const d = Math.hypot(q.x - p.x, q.y - p.y), o = off(q.x, q.y); if (d <= H.TOSS + 1 && d > 1 && o < best) { best = o; to = { x: q.x + q.vx * H.TOSS_T * 0.6, y: q.y + q.vy * H.TOSS_T * 0.6 }; mate = q.id; } }
+      if (!to) to = { x: p.x + p.fx * H.TOSS, y: p.y + p.fy * H.TOSS };
+      const r = Math.hypot(to.x, to.y); if (r > H.R - 0.6) { to.x *= (H.R - 0.6) / r; to.y *= (H.R - 0.6) / r; }
+      a.by = 'air'; a.home = false; a.roll = false; a.fly = { x0: p.x, y0: p.y, x1: to.x, y1: to.y, t: 0, from: p.id, basket, mate };
+      p.carry = null; this.emit('toss', { id: p.id, basket, mate });
+    } else if (Math.hypot(p.x, p.y) < H.TRUNK + H.BUD + H.TICKLE_R && p.tickCool <= 0) {
+      p.actCool = H.ACT_COOL; p.tickCool = H.TICKLE_COOL;
+      if (this.phase === 'play' && this.tree) this.aim.tickle = H.TICKLE_T;
+      this.emit('tickle', { id: p.id });
+    }
+  }
+  bank(a, i, id, toss) {
+    const b = this.baskets[i], p = this.pickers.get(id), worth = a.gold ? HEIST.GOLD : 1;
+    a.by = null; a.fly = null; a.banked = i; a.home = false; b.n++;
+    if (this.phase === 'play') {
+      this.banked += worth; if (p) p.got += worth; this.score[id] = (this.score[id] || 0) + worth; this.streak++;
+      this.emit('bank', { id, basket: i, banked: this.banked, goal: this.goal, streak: this.streak, toss, gold: !!a.gold });
+      if (this.banked >= this.goal) this.endRound('pickers');
+    } else { this.emit('bank', { id, basket: i, banked: 0, goal: 0, toss, gold: false }); if (this.acorns.every((x) => x.banked >= 0)) this.scatter(this.acorns.length); }
   }
   // the collectors jostle (no bouncing off: just keep apart)
   bump() {
@@ -869,27 +1021,46 @@ export class Heist extends Game {
     }
   }
   land(c) {
-    const H = HEIST, hit = [];
+    const H = HEIST, hit = [], R = c.big ? H.BIG_R : H.BONK_R; let knocked = 0;
+    // a giant one bursts any leaf pile it lands on (and whoever was hiding there gets it too)
+    if (c.big) this.piles.forEach((pl, i) => { if (pl.gone <= 0 && Math.hypot(pl.x - c.x, pl.y - c.y) < R + H.PILE_R * 0.5) { pl.gone = H.PILE_GONE; this.emit('burst', { pile: i }); } });
     for (const p of this.pickers.values()) {
-      if (p.stun > 0 || Math.hypot(p.x - c.x, p.y - c.y) > H.BONK_R + H.BUD * 0.5) continue;
-      p.stun = H.STUN; p.hit = 1; p.bonked++; hit.push(p.id); this.letGo(p);
-      if (p.carry != null) this.loose(p, 'bonk');
+      if (p.stun > 0 || (p.pile >= 0 && !c.big) || Math.hypot(p.x - c.x, p.y - c.y) > R + H.BUD * 0.5) continue;
+      p.stun = c.big ? H.BIG_STUN : H.STUN; p.hit = 1; p.bonked++; hit.push(p.id); this.letGo(p);
+      if (p.carry != null) { this.loose(p, 'bonk'); knocked++; }
     }
-    if (hit.length && this.phase === 'play') { this.score[this.tree] = (this.score[this.tree] || 0) + hit.length; this.streak = 0; }
-    this.emit(hit.length ? 'bonk' : 'miss', { x: c.x, y: c.y, hit });
+    this.saved(knocked);
+    this.emit(hit.length ? 'bonk' : 'miss', { x: c.x, y: c.y, hit, big: !!c.big });
   }
   letGo(p) { if (p.grab != null) { const a = this.acorns[p.grab]; if (a.by === p.id + ':tug') a.by = null; p.grab = null; } }
   // an acorn knocked out of someone's arms lands nearby, and after a while rolls back home to the tree
   loose(p, why) {
     const a = this.acorns[p.carry], ang = this.rand() * Math.PI * 2;
     a.by = null; a.x = p.x + Math.cos(ang) * 0.9; a.y = p.y + Math.sin(ang) * 0.9; a.home = false; a.loose = 0; a.roll = false;
-    if (why === 'shake') { const d = Math.hypot(p.x, p.y) || 1, r = HEIST.TRUNK + 0.8 + this.rand() * 2; a.x = p.x / d * r; a.y = p.y / d * r; a.home = true; }
+    if (why === 'shake' && !a.stay) { const d = Math.hypot(p.x, p.y) || 1, r = HEIST.TRUNK + 0.8 + this.rand() * 2; a.x = p.x / d * r; a.y = p.y / d * r; a.home = true; }
     p.carry = null; this.emit('lose', { id: p.id, why, x: a.x, y: a.y });
   }
   acornsTick(dt) {
     const H = HEIST;
     for (const a of this.acorns) {
+      if (a.fall > 0) { a.fall = Math.max(0, a.fall - dt); continue; }
+      if (a.fly) {
+        // tossed: it sails to where it was thrown, into a basket, into a friend's arms, or onto the grass
+        const f = a.fly; f.t += dt; const k = Math.min(1, f.t / H.TOSS_T);
+        a.x = f.x0 + (f.x1 - f.x0) * k; a.y = f.y0 + (f.y1 - f.y0) * k;
+        if (k < 1) continue;
+        a.fly = null; a.by = null; a.loose = 0;
+        let bi = f.basket; if (bi < 0) bi = this.baskets.findIndex((b) => Math.hypot(b.x - a.x, b.y - a.y) < H.BASKET_R);
+        if (bi >= 0) { this.bank(a, bi, f.from, true); continue; }
+        let who = null, bd = H.CATCH_R + (f.mate ? 0.5 : 0);
+        for (const q of this.pickers.values()) { if (q.id === f.from || q.carry != null || q.stun > 0) continue; const d = Math.hypot(q.x - a.x, q.y - a.y); if (d < bd) { bd = d; who = q; } }
+        if (who) { this.letGo(who); a.by = who.id; who.carry = a.i; this.emit('catch', { id: who.id, from: f.from }); }
+        else this.emit('plop', { x: a.x, y: a.y });
+        continue;
+      }
       if (a.by != null || a.banked >= 0 || a.home) continue;
+      if (this.wind) { a.x += this.wind.x * H.WIND * 1.3 * dt; a.y += this.wind.y * H.WIND * 1.3 * dt; const r = Math.hypot(a.x, a.y); if (r > H.R - 0.8) { a.x *= (H.R - 0.8) / r; a.y *= (H.R - 0.8) / r; } }
+      if (a.stay) continue;
       a.loose += dt;
       if (a.loose < H.ROLL_AFTER) continue;
       if (!a.roll) { a.roll = true; const ang = Math.atan2(a.y, a.x) + (this.rand() - 0.5) * 0.6, r = H.TRUNK + 0.8 + this.rand() * (H.CANOPY - H.TRUNK - 1.2); a.tx = Math.cos(ang) * r; a.ty = Math.sin(ang) * r; this.emit('roll', { x: a.x, y: a.y }); }
@@ -900,78 +1071,99 @@ export class Heist extends Game {
   endRound(winner) {
     if (this.phase !== 'play') return;
     this.last = winner;
-    if (winner === 'tree') this.score[this.tree] = (this.score[this.tree] || 0) + 3;
+    if (winner === 'tree') this.score[this.tree] = (this.score[this.tree] || 0) + 4;
     else for (const p of this.pickers.values()) this.score[p.id] = (this.score[p.id] || 0) + 2;
     this.emit('roundEnd', { winner, tree: this.tree, banked: this.banked, goal: this.goal });
-    this.cones = [];
+    this.cones = []; this.roots = []; this.wind = null; this.sq = null; this.plan = [];
     this.go('round');
   }
   finish() {
     const people = this.roster.map((p) => p.id), cpu = new Set(this.cpus.map((c) => c.id));
     const ids = Object.keys(this.score).filter((id) => people.includes(id) || cpu.has(id)), top = Math.max(0, ...ids.map((id) => this.score[id]));
     this.champs = ids.filter((id) => this.score[id] === top);
-    this.tree = null; this.emit('matchEnd', { champs: this.champs });
+    this.tree = null; this.frenzy = false; this.emit('matchEnd', { champs: this.champs });
     this.go('done');
     this.pickers = new Map(); this.onRoster(); this.scatter(14);
   }
   state() {
-    const who = {}, carry = {}, stun = {}, got = {};
+    const who = {}, carry = {}, stun = {}, got = {}, near = {};
     for (const p of this.roster) who[p.id] = { c: p.c, n: p.name, in: this.phase === 'lobby' || this.phase === 'done' || this.pickers.has(p.id) || this.tree === p.id };
     for (const c of this.cpus) if (this.pickers.has(c.id) || this.tree === c.id) who[c.id] = { c: c.c, n: c.name, in: true, cpu: 1 };
-    for (const p of this.pickers.values()) { if (p.carry != null) carry[p.id] = 1; if (p.stun > 0) stun[p.id] = 1; if (p.got) got[p.id] = p.got; }
+    for (const p of this.pickers.values()) {
+      if (p.carry != null) carry[p.id] = this.acorns[p.carry].gold ? 2 : 1; if (p.stun > 0) stun[p.id] = 1; if (p.got) got[p.id] = p.got;
+      if (!p.cpu && p.carry == null && p.tickCool <= 0 && Math.hypot(p.x, p.y) < HEIST.TRUNK + HEIST.BUD + HEIST.TICKLE_R) near[p.id] = 1;
+    }
     return {
-      g: 'heist', phase: this.phase, round: this.round, rounds: this.trees.length, tree: this.tree, who, carry, stun, got, score: this.score,
-      banked: this.banked, goal: this.goal, left: this.phase === 'play' ? Math.ceil(this.left()) : null, shake: this.aim.shakeCool > 0 ? 1 : 0, last: this.last, champs: this.champs,
+      g: 'heist', phase: this.phase, round: this.round, rounds: this.trees.length, tree: this.tree, who, carry, stun, got, near, score: this.score,
+      banked: this.banked, goal: this.goal, left: this.phase === 'play' ? Math.ceil(this.left()) : null, shake: this.aim.shakeCool > 0 ? 1 : 0, root: this.aim.rootCool > 0 ? 1 : 0, tick: this.aim.tickle > 0 ? 1 : 0,
+      frenzy: this.frenzy ? 1 : 0, last: this.last, champs: this.champs,
     };
   }
 }
 
-// An island bud collecting acorns (and the bots in the tests): go for the nearest acorn nobody else is after,
-// carry it to the nearest basket, step out from under a falling pinecone's shadow, and dash when it helps.
+// An island bud collecting acorns (and the bots in the tests): go for the nearest acorn nobody else is after
+// (golden ones first), get it to the nearest basket (tossing it in from range), step out from under a falling
+// pinecone's shadow, chase off the squirrel, and now and then tickle the tree.
 export function heistBot(game, p, dt = 1 / 60) {
-  const H = HEIST;
+  const H = HEIST, sk = p.skill ?? 1;
   p.think = (p.think || 0) + dt;
-  let tx, ty;
-  if (p.carry != null) { let best = null, bd = 1e9; for (const b of game.baskets) { const d = Math.hypot(b.x - p.x, b.y - p.y); if (d < bd) { bd = d; best = b; } } tx = best.x; ty = best.y; }
-  else {
-    if (p.grab == null && (p.want == null || game.acorns[p.want].by != null || game.acorns[p.want].banked >= 0 || p.think > 2.5)) {
-      p.think = 0; let bd = 1e9; p.want = null;
-      const taken = new Set([...game.pickers.values()].filter((o) => o !== p && o.want != null).map((o) => o.want));
-      for (const a of game.acorns) { if (a.by != null || a.banked >= 0) continue; const d = Math.hypot(a.x - p.x, a.y - p.y) + (taken.has(a.i) ? 4 : 0) + game.rand() * 1.5; if (d < bd) { bd = d; p.want = a.i; } }
+  let tx, ty, act = false;
+  const blocked = (b) => game.roots.some((r) => Math.hypot(r.x - b.x, r.y - b.y) < H.ROOT_R + 1.2);
+  if (p.carry != null) {
+    let best = null, bd = 1e9; for (const b of game.baskets) { const d = Math.hypot(b.x - p.x, b.y - p.y) + (blocked(b) ? 5 : 0); if (d < bd) { bd = d; best = b; } }
+    tx = best.x; ty = best.y;
+    const d = Math.hypot(tx - p.x, ty - p.y), facing = (p.fx * (tx - p.x) + p.fy * (ty - p.y)) / (d || 1);
+    if (d < H.TOSS + 0.6 && d > 2.4 && facing > 0.95 && p.actCool <= 0 && game.rand() < 2.2 * dt * sk) act = true;
+  } else {
+    const sq = game.sq;
+    if (sq && sq.state !== 'flee' && Math.hypot(sq.x - p.x, sq.y - p.y) < 5.5) { tx = sq.x; ty = sq.y; }
+    else {
+      if (p.grab == null && (p.want == null || !game.acorns[p.want] || game.acorns[p.want].by != null || game.acorns[p.want].banked >= 0 || p.think > 2.5)) {
+        p.think = 0; let bd = 1e9; p.want = null;
+        const taken = new Set([...game.pickers.values()].filter((o) => o !== p && o.want != null).map((o) => o.want));
+        for (const a of game.acorns) { if (a.by != null || a.banked >= 0 || a.fly) continue; const d = Math.hypot(a.x - p.x, a.y - p.y) + (taken.has(a.i) ? 4 : 0) + game.rand() * 1.5 - (a.gold ? 6 : 0) - (a.home ? 0 : 1.5); if (d < bd) { bd = d; p.want = a.i; } }
+      }
+      const a = p.want != null ? game.acorns[p.want] : { x: 0, y: 0 }; tx = a.x; ty = a.y;
     }
-    const a = p.want != null ? game.acorns[p.want] : { x: 0, y: 0 }; tx = a.x; ty = a.y;
+    if (game.phase === 'play' && p.tickCool <= 0 && Math.hypot(p.x, p.y) < H.TRUNK + H.BUD + H.TICKLE_R - 0.2 && game.rand() < 0.5 * dt * sk) act = true;
   }
   let x = tx - p.x, y = ty - p.y; const m = Math.hypot(x, y) || 1; x /= m; y /= m;
   // a shadow on the way: step aside
   let dash = false;
-  for (const c of game.cones) {
-    const dx = p.x - c.x, dy = p.y - c.y, d = Math.hypot(dx, dy);
-    if (d < H.BONK_R + 1.1 && c.t > 0.28 / (p.skill ?? 1)) { const k = 2.2 / Math.max(d, 0.2); x += dx / (d || 1) * k; y += dy / (d || 1) * k; if (d < H.BONK_R && game.rand() < 0.4 * (p.skill ?? 1)) dash = true; }
+  if (p.pile < 0) for (const c of game.cones) {
+    const R = c.big ? H.BIG_R : H.BONK_R, dx = p.x - c.x, dy = p.y - c.y, d = Math.hypot(dx, dy);
+    if (d < R + 1.1 && c.t > 0.26 / sk) { const k = 2.2 / Math.max(d, 0.2); x += dx / (d || 1) * k; y += dy / (d || 1) * k; if (d < R && game.rand() < 0.4 * sk) dash = true; }
   }
+  for (const r of game.roots) { const dx = p.x - r.x, dy = p.y - r.y, d = Math.hypot(dx, dy); if (d < H.ROOT_R + 1.4) { x += dx / (d || 1) * 1.6 - dy / (d || 1) * 0.8; y += dy / (d || 1) * 1.6 + dx / (d || 1) * 0.8; } }
   // round the trunk rather than into it
   const dT = Math.hypot(p.x, p.y);
   if (dT < H.TRUNK + 1.3) { x += -p.y / dT * 0.8; y += p.x / dT * 0.8; }
   const mm = Math.hypot(x, y) || 1;
   if (dash) p.fx = x / mm, p.fy = y / mm;
-  return { x: x / mm, y: y / mm, a: (p.seen ?? 0) + (dash && p.cool <= 0 ? 1 : 0), b: 0 };
+  return { x: x / mm, y: y / mm, a: (p.seen ?? 0) + (dash && p.cool <= 0 ? 1 : 0), b: (p.seenB ?? 0) + (act ? 1 : 0), c: p.seenC ?? 0 };
 }
 // An island bud playing the tree: follow whoever's carrying an acorn (or about to grab one), lead them a little,
-// and drop when the shadow's on them; shake when a crowd gathers underneath.
+// and drop when the shadow's on them (a giant one for a bunch, roots across a carrier's path); shake when a crowd
+// gathers underneath.
 export function heistTreeBot(game, dt = 1 / 60) {
   const H = HEIST, A = game.aim;
   A.think = (A.think || 0) + dt;
   const ps = [...game.pickers.values()].filter((p) => p.stun <= 0);
   let best = null, bs = -1e9;
-  for (const p of ps) { const s = (p.carry != null ? 5 : 0) - Math.hypot(p.x - A.x, p.y - A.y) * 0.5 - Math.hypot(p.x, p.y) * 0.25; if (s > bs) { bs = s; best = p; } }
-  let x = 0, y = 0, a = A.seenA ?? 0, b = A.seenB ?? 0;
+  for (const p of ps) { const s = (p.carry != null ? 5 : 0) - (p.pile >= 0 ? 3 : 0) - Math.hypot(p.x - A.x, p.y - A.y) * 0.5 - Math.hypot(p.x, p.y) * 0.25; if (s > bs) { bs = s; best = p; } }
+  let x = 0, y = 0, a = A.seenA ?? 0, b = A.seenB ?? 0, c = A.seenC ?? 0, g = 0;
   if (best) {
     const lead = H.FALL * (A.lead ?? 0.85), px = best.x + best.vx * lead, py = best.y + best.vy * lead, dx = px - A.x, dy = py - A.y, d = Math.hypot(dx, dy);
     if (d > 0.15) { x = dx / d * Math.min(1, d / 1.2); y = dy / d * Math.min(1, d / 1.2); }
-    if (d < 1 && A.cool <= 0 && A.think > (A.wait ?? 0.2)) { a += 1; A.think = 0; }
+    if (d < 1 && A.tickle <= 0 && A.think > (A.wait ?? 0.2)) {
+      const bunch = ps.filter((p) => Math.hypot(p.x - A.x, p.y - A.y) < H.BIG_R - 0.4).length;
+      if (A.rootCool <= 0 && best.carry != null && game.rand() < 0.5) { c += 1; A.think = 0; }
+      else if (A.cool <= 0) { a += 1; g = bunch >= 2 || best.pile >= 0 ? 1 : 0; A.think = 0; }
+    }
   }
   const under = ps.filter((p) => Math.hypot(p.x, p.y) < H.SHAKE_R - 0.8).length;
-  if (under >= 2 && A.shakeCool <= 0) b += 1;
-  return { x, y, a, b };
+  if ((under >= 2 || A.tickle > 0) && A.shakeCool <= 0) b += 1;
+  return { x, y, a, b, c, d: 0, e: 100, g };
 }
 
 export const makeGame = (kind, rand) => (kind === 'tug' ? new Tug(rand) : kind === 'freeze' ? new Freeze(rand) : kind === 'kart' ? new Kart(rand) : kind === 'heist' ? new Heist(rand) : new Bumper(rand));
