@@ -51,7 +51,19 @@ button { font-family: var(--font); }
 .score .chip.out { opacity: .4; }
 .score .chip.team small { font-weight: 500; }
 .score .chip.kart .pos { font-weight: 700; min-width: 1.1em; text-align: right; }
-.score .chip.kart .it { font-size: calc(var(--u) * 1.3); }
+.score .chip.kart .it, .score .chip .it { font-size: calc(var(--u) * 1.3); }
+.score .chip.tree { background: #FFF6DE; box-shadow: 0 0 0 calc(var(--u) * .18) #3E9A58 inset, 0 8px 16px -12px var(--shadow); }
+/* Acorn Heist: whose tree it is, acorns stolen against the goal, and the clock */
+.hud { position: fixed; left: 50%; top: calc(var(--u) * 4.6); transform: translateX(-50%); z-index: 2; display: flex; align-items: center; gap: calc(var(--u) * .8); background: rgba(255,255,255,.92); border-radius: 999px; padding: calc(var(--u) * .4) calc(var(--u) * .5) calc(var(--u) * .4) calc(var(--u) * 1); box-shadow: 0 16px 30px -20px var(--shadow); font-size: calc(var(--u) * 1.3); white-space: nowrap; }
+.hud .who { display: flex; align-items: center; gap: calc(var(--u) * .4); }
+.hud .who i { width: calc(var(--u) * 1.2); height: calc(var(--u) * 1.2); border-radius: 50%; }
+.hud .who small { color: var(--muted); font-weight: 600; }
+.hud .bar { position: relative; width: calc(var(--u) * 18); height: calc(var(--u) * 2.2); border-radius: 999px; background: #EFE6D6; overflow: hidden; display: grid; place-items: center; }
+.hud .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #F2B35A, #E8873A); border-radius: 999px; transition: width .35s cubic-bezier(.3,1.4,.5,1); }
+.hud .bar b { position: relative; font-weight: 700; font-size: calc(var(--u) * 1.2); }
+.hud .clock { font-weight: 700; font-size: calc(var(--u) * 1.6); background: var(--ink); color: #fff; border-radius: 999px; padding: calc(var(--u) * .2) calc(var(--u) * .9); font-variant-numeric: tabular-nums; }
+.hud .clock.hurry { background: #E8394B; animation: hurry .5s ease-in-out infinite alternate; }
+@keyframes hurry { to { transform: scale(1.1); } }
 .light { position: fixed; left: 50%; top: calc(var(--u) * 5); transform: translateX(-50%); z-index: 2; font-weight: 700; font-size: calc(var(--u) * 3.4); color: #fff; padding: calc(var(--u) * .3) calc(var(--u) * 2.2); border-radius: 999px; letter-spacing: .04em; box-shadow: 0 16px 30px -18px var(--shadow); }
 .light.green { background: #2E9E62; } .light.red { background: #E8394B; }
 body.looking::after { content: ""; position: fixed; inset: 0; box-shadow: inset 0 0 0 calc(var(--u) * .9) #E8394B; pointer-events: none; z-index: 2; }
@@ -119,8 +131,18 @@ body.looking::after { content: ""; position: fixed; inset: 0; box-shadow: inset 
 .stick .knob { width: 66px; height: 66px; border-radius: 50%; background: var(--me); box-shadow: 0 8px 16px -8px rgba(0,0,0,.5), inset 0 -6px 0 rgba(0,0,0,.14); }
 .dash { border: 0; border-radius: 26px; background: var(--me); color: #fff; font-weight: 700; font-size: 26px; letter-spacing: .06em; touch-action: none; position: relative; overflow: hidden; box-shadow: inset 0 -10px 0 rgba(0,0,0,.16); text-shadow: 0 2px 0 rgba(0,0,0,.2); }
 .dash:active { transform: translateY(3px); box-shadow: inset 0 -5px 0 rgba(0,0,0,.16); }
-.dash.cool::after { content: ""; position: absolute; inset: 0; background: rgba(255,255,255,.55); transform-origin: bottom; animation: cool 1.7s linear forwards; }
+.dash.cool::after { content: ""; position: absolute; inset: 0; background: rgba(255,255,255,.55); transform-origin: bottom; animation: cool var(--cool, 1.7s) linear forwards; }
 @keyframes cool { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+/* Acorn Heist: the tree's DROP (big, brown) and SHAKE (green, fills back up over its wait) */
+.treepad .kside { grid-template-rows: 3fr 2fr; }
+.kbtn.drop { background: #8A5A3C; }
+.kbtn.drop b { font-size: clamp(30px, 11vmin, 54px); }
+.kbtn.drop.hit { transform: translateY(3px); box-shadow: inset 0 -3px 0 rgba(0,0,0,.16); }
+.kbtn.shake { background: #3E9A58; }
+.kbtn.shake.cool::after { content: ""; position: absolute; inset: 0; background: rgba(255,255,255,.6); transform-origin: bottom; animation: cool 7s linear forwards; }
+.kbtn.shake.ready { animation: ready 1.1s ease-in-out infinite alternate; }
+@keyframes ready { to { filter: brightness(1.15); transform: scale(1.02); } }
+.heistpad .dash { background: var(--me); }
 /* Tug of War: the whole thing is the button */
 /* the kart race: stick on the left, the item and Drift stacked on the right */
 .kartpad { display: grid; grid-template-columns: 56fr 44fr; gap: 8px; }
@@ -173,6 +195,7 @@ body.looking::after { content: ""; position: fixed; inset: 0; box-shadow: inset 
   </header>
   <div class="score" id="score" aria-live="polite"></div>
   <div class="light" id="light" hidden></div>
+  <div class="hud" id="hud" hidden aria-live="polite"></div>
   <div class="banner" id="banner" aria-live="assertive"></div>
   <section class="tvpanel" id="tvPanel" hidden></section>
   <div class="offline" id="offline" hidden>Reconnecting…</div>
@@ -234,12 +257,12 @@ function oops(e) {
     return gate('Couldn’t get in', e.message, [['Try again', () => location.reload()]]);
   }
   if (TV && !party.mine) return gate('This isn’t your party', `${party.hostName} started this one, so their screen is the TV.`, [['Join as a player', () => { location.href = `/join?c=${CODE}`; }]]);
-  if (!party.live) return gate('Not set up yet', 'Island Grand Prix, Bumper Buds, Tug of War and Freeze need the live database switched on first. Island Race and Prankster work now.', TV ? [toPicker] : []);
+  if (!party.live) return gate('Not set up yet', 'Island Grand Prix, Bumper Buds, Tug of War, Freeze and Acorn Heist need the live database switched on first. Island Race and Prankster work now.', TV ? [toPicker] : []);
   if (!TV && placeOf(party) !== 'party') { location.replace(pageFor(party, false)); return; }
   let room;
   try {
     // the TV opened this page some other way than the picker: bring the phones along
-    if (TV && party.game !== 'party') await fetch('/api/game', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'party-set', code: CODE, game: ['kart', 'bumper', 'tug', 'freeze'].includes(params.get('g')) ? params.get('g') : 'bumper' }) });
+    if (TV && party.game !== 'party') await fetch('/api/game', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'party-set', code: CODE, game: ['kart', 'bumper', 'tug', 'freeze', 'heist'].includes(params.get('g')) ? params.get('g') : 'bumper' }) });
     room = await connect(CODE, TV);
   } catch (e) {
     console.error(e);

@@ -1,9 +1,9 @@
-// The TV's picture for Bumper Buds, Freeze and Island Grand Prix, in 3D: the same puffy buds as on the island and
+// The TV's picture for Bumper Buds, Freeze, Island Grand Prix and Acorn Heist, in 3D: the same puffy buds as on the island and
 // in Island Race (built by js/bud-core.js from each bud's outline and paint), on an island you can fall off, a
 // beach with a crab at the end of it, and a kart track round a lagoon. It only draws: js/party-games.js decides what happens, js/party-tv.js runs the show.
 // Needs THREE and Delaunator loaded as globals first (party.html does that on the TV only).
 import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
-import { BUMPER, FREEZE, KART, KART_ITEMS, kartTrack } from '/js/party-games.js';
+import { BUMPER, FREEZE, KART, KART_ITEMS, kartTrack, HEIST, heistBaskets } from '/js/party-games.js';
 
 const FACE_W = 256, FACE_H = 175, BUD_W = BUMPER.BUD * 2 * 1.08, SEA = -3.2;
 const lerp = (a, b, k) => a + (b - a) * k;
@@ -562,13 +562,309 @@ export function make3d(canvas, { colorFor, nameOf, budData }) {
   function puffK(x, z) { bit(sK, new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), puffMat()), { x, y: 0.5, z, vy: 0.8, life: 0.4, grow: 1.4 }); }
   function popK(x, z, color = '#BDEBFF') { for (let i = 0; i < 10; i++) { const a = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 3; bit(sK, new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), new THREE.MeshBasicMaterial({ color: toLinear(color), transparent: true, depthWrite: false })), { x, y: 1, z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 2 + Math.random() * 3, g: 10, life: 0.5 }); } }
 
+  /* ============================== Acorn Heist: a meadow in the sky, one great tree, three baskets ============================== */
+  const sH = newScene(sky('#79B6FF', '#CBE5FF', '#FFE4CC'));
+  const HR = HEIST.R, hz = { landed: [], acorns: [], baskets: [], cones: new Map(), stars: new Map(), held: new Map(), floaters: [], leaves: [], shakeT: 0, camShake: 0, face: { mood: 'sleep', until: 0, look: { x: 0, y: 0 }, key: '' }, treeId: null };
+  {
+    const warm = new THREE.DirectionalLight(0xFFE2B8, 0.35); warm.position.set(10, 8, 12); sH.add(warm);
+    // the meadow: grass with worn paths from the tree out to each basket, and flowers
+    const SZ = 1024, span = (HR + 0.6) * 2;
+    const tex = canvasTex(SZ, SZ, (g) => {
+      const px = (x) => (x / span + 0.5) * SZ;
+      g.fillStyle = '#8FD48C'; g.fillRect(0, 0, SZ, SZ);
+      let s = 3; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 260; i++) { const x = r() * SZ, y = r() * SZ, rr = 20 + r() * 70; const gr = g.createRadialGradient(x, y, 0, x, y, rr); gr.addColorStop(0, r() < 0.5 ? 'rgba(120,196,118,.55)' : 'rgba(170,226,150,.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - rr, y - rr, rr * 2, rr * 2); }
+      // the paths
+      g.lineCap = 'round';
+      for (const b of heistBaskets()) {
+        for (const [w, c] of [[64, 'rgba(214,190,140,.55)'], [38, 'rgba(226,204,156,.75)']]) { g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(px(0), px(0)); const mx = b.x * 0.5 + b.y * 0.08, my = b.y * 0.5 - b.x * 0.08; g.quadraticCurveTo(px(mx), px(my), px(b.x), px(b.y)); g.stroke(); }
+      }
+      // the bare earth under the crown, where the acorns lie
+      const c = px(0), cr = HEIST.CANOPY / span * SZ * 1.15, gr = g.createRadialGradient(c, c, cr * 0.2, c, c, cr);
+      gr.addColorStop(0, 'rgba(150,120,80,.65)'); gr.addColorStop(0.75, 'rgba(160,140,90,.35)'); gr.addColorStop(1, 'rgba(160,140,90,0)'); g.fillStyle = gr; g.beginPath(); g.arc(c, c, cr, 0, Math.PI * 2); g.fill();
+      // flowers
+      const cols = ['#FFFFFF', '#FFE27A', '#FF9EC4', '#C9B8FF', '#FFB07A'];
+      for (let i = 0; i < 520; i++) { const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (HR - 0.4); if (d < HEIST.CANOPY + 0.8) continue; const x = px(Math.cos(a) * d), y = px(Math.sin(a) * d); g.fillStyle = cols[i % cols.length]; for (let k = 0; k < 5; k++) { const aa = k / 5 * Math.PI * 2; g.beginPath(); g.arc(x + Math.cos(aa) * 3.2, y + Math.sin(aa) * 3.2, 2.6, 0, Math.PI * 2); g.fill(); } g.fillStyle = '#F4B63A'; g.beginPath(); g.arc(x, y, 2, 0, Math.PI * 2); g.fill(); }
+    }, false);
+    const top = flat(new THREE.CircleGeometry(HR + 0.6, 96), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }), 0); sH.add(top);
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(HR + 0.6, HR + 0.35, 0.9, 96, 1, true), M('#6DB774')); rim.position.y = -0.45; sH.add(rim);
+    const under = new THREE.Mesh(new THREE.ConeGeometry(HR + 0.35, 10, 24, 4), M('#B98B5E', { flatShading: true })); under.rotation.x = Math.PI; under.position.y = -5.9; sH.add(under);
+    // a hedge of round bushes round the edge, so nobody wanders off
+    const bushA = M('#5FB46E'), bushB = M('#74C47A'), berry = M('#E8394B', { roughness: 0.5 });
+    for (let i = 0; i < 64; i++) {
+      const a = i / 64 * Math.PI * 2, b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62 + (i % 3) * 0.12, 1), i % 2 ? bushA : bushB);
+      b.position.set(Math.cos(a) * (HR + 0.2), 0.35, Math.sin(a) * (HR + 0.2)); b.scale.y = 0.85; sH.add(b);
+      if (i % 5 === 0) { const d = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), berry); d.position.set(Math.cos(a) * (HR + 0.1), 0.85, Math.sin(a) * (HR + 0.1) + 0.3); sH.add(d); }
+    }
+    // a sea of clouds far below, and a few up high
+    for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2 + 0.2, d = HR + 10 + (i % 4) * 6; cloud(sH, Math.cos(a) * d, -9 - (i % 3) * 2, Math.sin(a) * d - 8, 4 + (i % 3) * 1.5); }
+    cloud(sH, -24, 14, -50, 5); cloud(sH, 26, 17, -60, 6);
+  }
+  // shared bits for acorns
+  const nutGeo = new THREE.SphereGeometry(0.22, 14, 10), capGeo = new THREE.SphereGeometry(0.24, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2), stemGeo = new THREE.CylinderGeometry(0.03, 0.035, 0.12, 5);
+  const nutMat = new THREE.MeshPhysicalMaterial({ color: toLinear('#C98B45'), roughness: 0.4, clearcoat: 0.6 }), capMat = M('#6B4A2E', { roughness: 1 });
+  function acornMesh(s = 1.7) {
+    const g = new THREE.Group(), nut = new THREE.Mesh(nutGeo, nutMat), cap = new THREE.Mesh(capGeo, capMat), stem = new THREE.Mesh(stemGeo, capMat);
+    nut.scale.set(1, 1.22, 1); nut.position.y = 0.27; cap.position.y = 0.36; cap.scale.set(1, 0.62, 1); stem.position.y = 0.51; stem.rotation.z = 0.3;
+    g.add(nut, cap, stem); g.scale.setScalar(s); return g;
+  }
+  // the tree
+  const tree = new THREE.Group(); tree.scale.setScalar(1.12); sH.add(tree);
+  const leafMats = [M('#4FAE62', { transparent: true }), M('#6CC474', { transparent: true }), M('#3E9A58', { transparent: true })];
+  const blossomMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, transparent: true });
+  const crown = new THREE.Group(), blossoms = [];
+  let faceTex = null, faceG = null, trunkFace = null;
+  {
+    const barkTex = canvasTex(256, 256, (g) => {
+      g.fillStyle = '#8A5C3A'; g.fillRect(0, 0, 256, 256);
+      let s = 9; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 40; i++) { const x = r() * 256, w = 3 + r() * 6; g.fillStyle = r() < 0.5 ? 'rgba(90,56,32,.55)' : 'rgba(170,120,80,.3)'; g.beginPath(); g.moveTo(x, 0); g.bezierCurveTo(x + (r() - 0.5) * 30, 90, x + (r() - 0.5) * 30, 170, x + (r() - 0.5) * 12, 256); g.lineWidth = w; g.strokeStyle = g.fillStyle; g.stroke(); }
+    });
+    barkTex.repeat.set(3, 1);
+    const bark = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 1 });
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 1.32, 7.4, 22, 6), bark); trunk.position.y = 3.7; tree.add(trunk);
+    const up = new THREE.Vector3(0, 1, 0);
+    const log = (a, b, r0, r1) => { const o = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, a.distanceTo(b), 10), bark); o.position.copy(a).add(b).multiplyScalar(0.5); o.quaternion.setFromUnitVectors(up, b.clone().sub(a).normalize()); tree.add(o); };
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + 0.35; log(new THREE.Vector3(Math.cos(a) * 1.0, 0.9, Math.sin(a) * 1.0), new THREE.Vector3(Math.cos(a) * 2.2, -0.15, Math.sin(a) * 2.2), 0.5, 0.14); }
+    for (const [a, y] of [[0.6, 6.2], [2.6, 6.5], [4.4, 6.0], [1.6, 5.4]]) log(new THREE.Vector3(0, y, 0), new THREE.Vector3(Math.cos(a) * 2.4, y + 1.8, Math.sin(a) * 2.4), 0.4, 0.18);
+    // the face: drawn on a strip of the trunk that faces the camera
+    const fc = document.createElement('canvas'); fc.width = 512; fc.height = 320; faceG = fc.getContext('2d');
+    faceTex = new THREE.CanvasTexture(fc); faceTex.encoding = THREE.sRGBEncoding;
+    const y0 = 0.95, y1 = 4.25, rAt = (y) => 1.32 - (y / 7.4) * 0.5 + 0.025;
+    trunkFace = new THREE.Mesh(new THREE.CylinderGeometry(rAt(y1), rAt(y0), y1 - y0, 24, 1, true, -1.15, 2.3), new THREE.MeshStandardMaterial({ map: faceTex, transparent: true, depthWrite: false, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2 }));
+    trunkFace.position.y = (y0 + y1) / 2; tree.add(trunkFace);
+    // the crown: big soft puffs, see-through while a round is on so you can see the acorns under it
+    for (const [x, y, z, r, k] of [[0, 0.7, 0, 3.0, 0], [2.3, 0, 0.5, 2.3, 1], [-2.3, 0.1, 0.3, 2.4, 2], [0.4, 0.2, 2.1, 2.2, 1], [-0.5, 0.35, -2.2, 2.3, 0], [1.5, 1.3, -1.3, 2.0, 2], [-1.4, 1.5, 1.3, 1.9, 1], [0, 2.1, 0, 1.9, 0]]) {
+      const p = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 2), leafMats[k]); p.position.set(x, y, z); p.scale.y = 0.82; crown.add(p);
+    }
+    let s = 21; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 44; i++) {
+      const a = r() * Math.PI * 2, e = r() * 1.1, rr = 3.05 + r() * 0.45, b = new THREE.Mesh(new THREE.SphereGeometry(0.13 + r() * 0.05, 8, 6), blossomMat);
+      b.position.set(Math.cos(a) * Math.cos(e) * rr, 0.7 + Math.sin(e) * rr * 0.82, Math.sin(a) * Math.cos(e) * rr); crown.add(b); blossoms.push(b);
+    }
+    // a few acorns still hanging in the crown
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + 0.3, h = acornMesh(1.2); h.position.set(Math.cos(a) * 2.6, -2.05, Math.sin(a) * 2.6); crown.add(h); }
+    crown.position.y = 8.9; tree.add(crown);
+  }
+  function drawTreeFace(face, eyes, T, look) {
+    const g = faceG, W2 = 512, H2 = 320, cx = W2 / 2, cy = 120, m = face.mood;
+    const blink = m === 'sleep' ? 1 : (T % 4.2 < 0.13 ? Math.sin(T % 4.2 / 0.13 * Math.PI) : 0);
+    const key = [m, blink.toFixed(1), eyes, look.x.toFixed(1), look.y.toFixed(1)].join();
+    if (key === face.key) return; face.key = key;
+    g.clearRect(0, 0, W2, H2);
+    const ink = '#2B1A10';
+    // eyes: the tree player's own eye style, glaring while aiming, squeezed shut laughing
+    const mood = m === 'aim' ? 'angry' : m === 'lose' ? 'dizzy' : m === 'shock' ? null : null;
+    drawEyeStyle(g, eyes || 'classic', cx, cy, 52, blink, m === 'laugh' || m === 'win', ink, look, mood);
+    if (m === 'aim') {   // brows down
+      g.strokeStyle = ink; g.lineWidth = 12; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(cx - 105, cy - 62); g.lineTo(cx - 30, cy - 40); g.stroke(); g.beginPath(); g.moveTo(cx + 105, cy - 62); g.lineTo(cx + 30, cy - 40); g.stroke();
+    }
+    if (m === 'laugh' || m === 'win') { g.fillStyle = 'rgba(255,120,150,.45)'; for (const s of [-1, 1]) { g.beginPath(); g.ellipse(cx + s * 120, cy + 52, 34, 20, 0, 0, Math.PI * 2); g.fill(); } }
+    // the mouth
+    g.fillStyle = ink; g.strokeStyle = ink; g.lineWidth = 11; g.lineCap = 'round';
+    const my = 238;
+    if (m === 'laugh' || m === 'win') { g.beginPath(); g.moveTo(cx - 70, my - 18); g.quadraticCurveTo(cx, my + 70, cx + 70, my - 18); g.closePath(); g.fill(); g.fillStyle = '#E86A6A'; g.beginPath(); g.ellipse(cx, my + 22, 30, 14, 0, 0, Math.PI * 2); g.fill(); }
+    else if (m === 'shock' || m === 'lose') { g.beginPath(); g.ellipse(cx, my, 26, 36, 0, 0, Math.PI * 2); g.fill(); }
+    else if (m === 'sleep') { g.beginPath(); g.ellipse(cx, my, 16, 12, 0, 0, Math.PI * 2); g.fill(); }
+    else if (m === 'aim') { g.beginPath(); g.moveTo(cx - 52, my + 6); g.quadraticCurveTo(cx, my - 14, cx + 52, my + 6); g.stroke(); }
+    else { g.beginPath(); g.moveTo(cx - 55, my - 10); g.quadraticCurveTo(cx, my + 32, cx + 55, my - 10); g.stroke(); }
+    faceTex.needsUpdate = true;
+  }
+  // the baskets
+  const weave = canvasTex(256, 64, (g) => {
+    g.fillStyle = '#C8955A'; g.fillRect(0, 0, 256, 64);
+    for (let y = 0; y < 64; y += 16) for (let x = 0; x < 256; x += 32) { g.fillStyle = ((x + y) / 16) % 2 ? '#B07A43' : '#DDAA6C'; g.beginPath(); g.roundRect(x + 2 + ((y / 16) % 2) * 16, y + 2, 26, 12, 6); g.fill(); }
+  });
+  weave.repeat.set(4, 1);
+  for (const b of heistBaskets()) {
+    const g = new THREE.Group(), wm = new THREE.MeshStandardMaterial({ map: weave, roughness: 0.95, side: THREE.DoubleSide });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 0.9, 1.0, 24, 1, true), wm); body.position.y = 0.5; g.add(body);
+    const floor = flat(new THREE.CircleGeometry(0.9, 24), M('#9A6A3A'), 0.06); g.add(floor);
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.09, 8, 32), M('#9A6A3A')); lip.rotation.x = Math.PI / 2; lip.position.y = 1.0; g.add(lip);
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.07, 8, 24, Math.PI), M('#9A6A3A')); handle.position.y = 1.0; g.add(handle);
+    const ribbon = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.06, 6, 32), M('#E8394B')); ribbon.rotation.x = Math.PI / 2; ribbon.position.y = 0.72; g.add(ribbon);
+    const pile = new THREE.Group(); g.add(pile);
+    g.position.set(b.x, 0, b.y); g.rotation.y = Math.atan2(b.x, b.y); g.scale.setScalar(1.25); sH.add(g);
+    hz.baskets.push({ g, pile, n: 0, jiggle: 0 });
+  }
+  // a basket's pile: acorns heaped up inside, more as it fills
+  function fillPile(k, n) {
+    const B = hz.baskets[k]; if (B.n === n) return;
+    while (B.pile.children.length) B.pile.remove(B.pile.children[0]);
+    const show = Math.min(n, 24);
+    for (let i = 0; i < show; i++) { const layer = Math.floor(i / 8), a = i * 2.4 + layer, r = layer < 2 ? 0.55 - layer * 0.18 : 0.1, m = acornMesh(1.05); m.position.set(Math.cos(a) * r, 0.25 + layer * 0.26 + (n > 24 ? 0.1 : 0), Math.sin(a) * r); m.rotation.set(a, a * 2, a * 0.5); B.pile.add(m); }
+    B.n = n;
+  }
+  // the tree's aim: a ring on the ground in its player's color, and the pinecones it drops
+  const aimRing = new THREE.Group(), aimMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false });
+  { const white = new THREE.MeshBasicMaterial({ color: 0xffffff, depthWrite: false }), dark = new THREE.MeshBasicMaterial({ color: 0x1D1C2B, transparent: true, opacity: 0.28, depthWrite: false });
+    const shade = new THREE.Mesh(new THREE.CircleGeometry(1.3, 40), dark); shade.rotation.x = -Math.PI / 2; aimRing.add(shade);
+    const outer = new THREE.Mesh(new THREE.RingGeometry(1.15, 1.42, 48), white); outer.rotation.x = -Math.PI / 2; outer.position.y = 0.01; aimRing.add(outer);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.19, 1.38, 48), aimMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.02; aimRing.add(ring);
+    for (let i = 0; i < 4; i++) { const t = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.6), white); t.rotation.x = -Math.PI / 2; t.rotation.z = i * Math.PI / 2; t.position.set(Math.cos(i * Math.PI / 2) * 0.7, 0.02, Math.sin(i * Math.PI / 2) * 0.7); aimRing.add(t); }
+    aimRing.position.y = 0.06; sH.add(aimRing); }
+  const coneMat = M('#7A4E2D', { flatShading: true, roughness: 1 });
+  function pineconeMesh() { const g = new THREE.Group(); for (let i = 0; i < 4; i++) { const c = new THREE.Mesh(new THREE.ConeGeometry(0.42 - i * 0.08, 0.36, 8), coneMat); c.position.y = -0.2 + i * 0.2; c.rotation.x = Math.PI; g.add(c); } g.scale.setScalar(1.2); return g; }
+  // words that pop up and float away (BONK!, +1)
+  function floater(text, x, y, z, color = '#FFE08A', size = 1) {
+    const c = document.createElement('canvas'), g = c.getContext('2d'), fs = 96;
+    g.font = `700 ${fs}px Fredoka, Nunito, ui-rounded, system-ui, sans-serif`; const w = Math.ceil(g.measureText(text).width) + 40; c.width = w; c.height = fs * 1.4;
+    g.font = `700 ${fs}px Fredoka, Nunito, ui-rounded, system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    g.lineWidth = 16; g.strokeStyle = '#1D1C2B'; g.strokeText(text, w / 2, c.height / 2); g.fillStyle = color; g.fillText(text, w / 2, c.height / 2);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false })); s.renderOrder = 12;
+    const h = 1.7 * size; s.scale.set(h * w / c.height, h, 1); s.position.set(x, y, z); sH.add(s);
+    hz.floaters.push({ s, t: 0, life: 1.1, y0: y, base: s.scale.clone() });
+  }
+  function dust(x, z, n = 10, color = '#E9D9B0') {
+    for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 2.5; bit(sH, new THREE.Mesh(new THREE.SphereGeometry(0.16 + Math.random() * 0.12, 6, 5), new THREE.MeshBasicMaterial({ color: toLinear(color), transparent: true, depthWrite: false })), { x, y: 0.2, z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 1 + Math.random() * 1.5, g: 5, life: 0.55, grow: 0.8 }); }
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.85, 28), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false })); ring.rotation.x = -Math.PI / 2; bit(sH, ring, { x, y: 0.08, z, life: 0.5, grow: 2.5 });
+  }
+  function leafBurst(n = 34) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, r = 1 + Math.random() * 3, sp = 2 + Math.random() * 4, m = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.16), new THREE.MeshBasicMaterial({ color: toLinear(['#4FAE62', '#6CC474', '#A6E08A', '#E8A33C'][i % 4]), transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+      m.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      bit(sH, m, { x: Math.cos(a) * r, y: 8 + Math.random() * 3.5, z: Math.sin(a) * r, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 1 + Math.random() * 2, g: 4, life: 1.6 });
+      hz.leaves.push({ m, spin: (Math.random() - 0.5) * 12 });
+    }
+  }
+  function starsFor(id) {
+    let s = hz.stars.get(id);
+    if (!s) { s = new THREE.Group(); const mat = new THREE.MeshBasicMaterial({ color: toLinear('#FFD23F') }); for (let i = 0; i < 3; i++) { const st = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), mat); st.scale.set(1, 1, 0.45); s.add(st); } sH.add(s); hz.stars.set(id, s); }
+    return s;
+  }
+  function heldFor(id) { let h = hz.held.get(id); if (!h) { h = acornMesh(1.25); sH.add(h); hz.held.set(id, h); } return h; }
+  const viewH = { pitch: 0.86 };
+
+  function drawHeist(game, T, dt, aside) {
+    hz.T = T;
+    const playing = game.phase === 'play', treeId = game.tree;
+    // who's the tree: its blossoms take their color, their bud rides on top, and the face wears their eyes
+    if (treeId !== hz.treeId) { hz.treeId = treeId; blossomMat.color.copy(treeId ? toLinear(colorFor(treeId)) : toLinear('#FFFFFF')); hz.face.key = ''; }
+    const fm = hz.face;
+    if (T > fm.until) fm.mood = !treeId ? 'sleep' : game.phase === 'round' ? (game.last === 'tree' ? 'win' : 'lose') : playing ? (game.cones.length ? 'aim' : 'idle') : 'idle';
+    const A = game.aim, look = treeId ? { x: clamp(A.x / 7, -1, 1), y: clamp(A.y / 9, -1, 1) } : { x: 0, y: 0.2 };
+    fm.look.x += (look.x - fm.look.x) * Math.min(1, dt * 8); fm.look.y += (look.y - fm.look.y) * Math.min(1, dt * 8);
+    const eyes = treeId ? (budData(treeId)?.eyes || 'classic') : 'classic';
+    drawTreeFace(fm, eyes, T, fm.look);
+    // the crown sways, shakes hard on a shake, and goes see-through during a round so the acorns show
+    hz.shakeT = Math.max(0, hz.shakeT - dt);
+    const sh = hz.shakeT, wob = Math.sin(T * 0.9) * 0.025 + sh * Math.sin(T * 38) * 0.12;
+    crown.rotation.z = wob; crown.rotation.x = Math.cos(T * 0.7) * 0.02 + sh * Math.cos(T * 33) * 0.1; crown.scale.setScalar(1 + sh * Math.sin(T * 30) * 0.05);
+    const op = playing || game.phase === 'count' ? 0.86 : 1;
+    for (const m of leafMats) { m.opacity += (op - m.opacity) * Math.min(1, dt * 4); m.depthWrite = true; }
+    blossomMat.opacity = leafMats[0].opacity + 0.1;
+    // the tree's own bud sits up top
+    if (treeId) {
+      const p = piece(treeId, sH), y = 13.2 + Math.abs(Math.sin(T * 2.2)) * 0.25 + sh * Math.abs(Math.sin(T * 30)) * 0.6;
+      p.root.visible = p.tag.visible = true; p.stand.visible = false; p.root.scale.setScalar(1.15); p.root.position.set(0, y, 0); faceCamera(p, 0, 0);
+      p.root.rotation.z = Math.sin(T * 1.6) * 0.08 + wob * 3; p.squash.scale.set(1, 1, 1);
+      p.tag.position.set(0, y + p.height * 1.15 + 0.55, 0); p.tag.scale.set(p.tag.userData.w * 1.2, 0.52 * 1.2, 1);
+      p.happy = fm.mood === 'laugh' || fm.mood === 'win'; p.sleepy = false; drawFace(p, T);
+    }
+    // the aim, and the pinecones falling on it
+    aimRing.visible = playing && !!treeId;
+    if (aimRing.visible) { aimMat.color.copy(toLinear(colorFor(treeId))); aimRing.position.set(A.x, 0.06, A.y); aimRing.rotation.y = T * 1.2; aimRing.scale.setScalar(1 + Math.sin(T * 6) * 0.05); }
+    const seenCones = new Set();
+    for (const c of game.cones) {
+      let v = hz.cones.get(c);
+      if (!v) {
+        v = { cone: pineconeMesh(), shadow: flat(new THREE.CircleGeometry(1, 32), new THREE.MeshBasicMaterial({ color: 0x1E193C, transparent: true, depthWrite: false }), 0.05), danger: flat(new THREE.RingGeometry(0.86, 1, 48), new THREE.MeshBasicMaterial({ color: toLinear('#FF3B3B'), transparent: true, depthWrite: false }), 0.07), fill: flat(new THREE.CircleGeometry(1, 32), new THREE.MeshBasicMaterial({ color: toLinear('#FF3B3B'), transparent: true, opacity: 0.38, depthWrite: false }), 0.06) };
+        sH.add(v.cone, v.shadow, v.danger, v.fill); hz.cones.set(c, v);
+      }
+      seenCones.add(c);
+      const k = clamp(c.t / HEIST.FALL, 0, 1), R = HEIST.BONK_R;
+      v.cone.position.set(c.x, 0.4 + (1 - k * k) * 11, c.y); v.cone.rotation.set(k * 7, k * 4, 0);
+      v.shadow.position.set(c.x, 0.05, c.y); v.shadow.scale.setScalar(0.35 + k * 0.7); v.shadow.material.opacity = 0.15 + k * 0.3;
+      v.danger.position.set(c.x, 0.07, c.y); v.danger.scale.setScalar(R); v.danger.material.opacity = 0.35 + k * 0.65;
+      v.fill.position.set(c.x, 0.06, c.y); v.fill.scale.setScalar(R * k);
+    }
+    for (const [c, v] of hz.cones) if (!seenCones.has(c)) {
+      // it landed: leave the pinecone a moment where it fell, then let it fade
+      sH.remove(v.shadow, v.danger, v.fill);
+      v.cone.rotation.set(0.4, Math.random() * 6, 0.9);
+      hz.landed.push({ g: v.cone, t: 0, vy: 3.2, y: 0.45 });
+      hz.cones.delete(c);
+    }
+    // acorns on the ground (and rolling home)
+    while (hz.acorns.length < game.acorns.length) { const m = acornMesh(); sH.add(m); hz.acorns.push({ m, rot: 0, px: 0, py: 0 }); }
+    hz.acorns.forEach((v, i) => {
+      const a = game.acorns[i];
+      v.m.visible = !!a && a.banked < 0 && (a.by == null || String(a.by).endsWith(':tug'));
+      if (!v.m.visible) return;
+      const tug = String(a.by).endsWith(':tug'), moved = Math.hypot(a.x - v.px, a.y - v.py);
+      if (a.roll && moved > 0) { v.rot += moved / 0.3; v.m.rotation.set(0, Math.atan2(a.x - v.px, a.y - v.py), 0); v.m.children.forEach((c) => { c.rotation.x = v.rot; }); } else v.m.children.forEach((c) => { c.rotation.x = 0; });
+      v.px = a.x; v.py = a.y;
+      v.m.position.set(a.x + (tug ? Math.sin(T * 40) * 0.08 : 0), (a.home ? 0 : Math.abs(Math.sin(T * 5 + i)) * 0.08), a.y);
+      if (!a.roll) v.m.rotation.set(0, i * 1.7, tug ? Math.sin(T * 30) * 0.3 : 0);
+    });
+    game.baskets.forEach((b, k) => { fillPile(k, b.n); const B = hz.baskets[k]; B.jiggle = Math.max(0, B.jiggle - dt * 2.5); const j = B.jiggle; B.g.scale.set(1 + j * 0.25 * Math.sin(T * 30), 1 - j * 0.2 * Math.sin(T * 30), 1 + j * 0.25 * Math.sin(T * 30)); });
+    // the collectors
+    const seen = new Set(treeId ? [treeId] : []);
+    for (const p of game.pickers.values()) {
+      const v = piece(p.id, sH); seen.add(p.id);
+      v.root.visible = v.tag.visible = v.stand.visible = true; v.ring.visible = true; v.aim.visible = false;
+      const sp = Math.hypot(p.vx, p.vy), stunned = p.stun > 0, tug = p.grab != null;
+      const hop = stunned ? 0 : Math.abs(Math.sin(T * 13 + p.x)) * Math.min(0.28, sp * 0.05);
+      v.root.scale.setScalar(0.92); v.stand.scale.setScalar(0.85);
+      v.root.position.set(p.x, 0.04 + hop, p.y); faceCamera(v, p.x, p.y);
+      v.root.rotation.z = stunned ? Math.sin(T * 6) * 0.25 : tug ? Math.sin(T * 22) * 0.12 : clamp(-p.vx * 0.035, -0.35, 0.35);
+      const sq = tug ? 0.88 + Math.sin(T * 22) * 0.06 : 1 - p.hit * 0.25; v.squash.scale.set(2 - sq, sq, 1);
+      v.stand.position.set(p.x, 0.04, p.y);
+      v.tag.position.set(p.x, 0.04 + hop + v.height * 0.92 + (p.carry != null ? 1.3 : 0.45), p.y);
+      v.happy = (game.phase === 'round' && game.last === 'pickers') || (game.phase === 'done' && !!game.champs?.includes(p.id)); v.sleepy = stunned;
+      drawFace(v, T);
+      if (p.dashT > 0 && Math.random() < 0.6) bit(sH, new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), puffMat()), { x: p.x - p.vx * 0.05, y: 0.3, z: p.y - p.vy * 0.05, vy: 0.6, life: 0.4, grow: 1.2 });
+      // what it's carrying, held up over its head
+      const h = heldFor(p.id); h.visible = p.carry != null;
+      if (h.visible) { h.position.set(p.x, 0.04 + hop + v.height * 0.92 + 0.1 + Math.sin(T * 9) * 0.05, p.y); h.rotation.set(0, T * 2, Math.sin(T * 7) * 0.15); }
+      // seeing stars
+      const st = starsFor(p.id); st.visible = stunned;
+      if (stunned) st.children.forEach((s, i) => { const a = T * 5 + i * Math.PI * 2 / 3; s.position.set(p.x + Math.cos(a) * 0.6, v.height * 0.92 + 0.25 + Math.sin(a * 2) * 0.06, p.y + Math.sin(a) * 0.3); s.rotation.y = T * 6; });
+    }
+    for (const [id, h] of hz.held) if (!game.pickers.has(id)) h.visible = false;
+    for (const [id, s] of hz.stars) if (!game.pickers.has(id)) s.visible = false;
+    showOnly(sH, seen);
+    // words floating up
+    for (let i = hz.floaters.length - 1; i >= 0; i--) {
+      const f = hz.floaters[i]; f.t += dt; const k = f.t / f.life;
+      if (k >= 1) { sH.remove(f.s); f.s.material.map.dispose(); f.s.material.dispose(); hz.floaters.splice(i, 1); continue; }
+      const pop = k < 0.15 ? 0.6 + k / 0.15 * 0.55 : 1.15 - (k - 0.15) * 0.18;
+      f.s.position.y = f.y0 + k * 1.6; f.s.scale.set(f.base.x * pop, f.base.y * pop, 1); f.s.material.opacity = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
+    }
+    // pinecones that landed: a bounce, a moment on the grass, then they shrink away
+    for (let i = hz.landed.length - 1; i >= 0; i--) {
+      const l = hz.landed[i]; l.t += dt; l.vy -= 16 * dt; l.y = Math.max(0.3, l.y + l.vy * dt); l.g.position.y = l.y;
+      if (l.t > 1.1) l.g.scale.setScalar(Math.max(0.01, 1.2 * (1 - (l.t - 1.1) / 0.4)));
+      if (l.t > 1.5) { sH.remove(l.g); hz.landed.splice(i, 1); }
+    }
+    for (let i = hz.leaves.length - 1; i >= 0; i--) { const l = hz.leaves[i]; if (!l.m.parent) { hz.leaves.splice(i, 1); continue; } l.m.rotation.x += l.spin * dt; l.m.rotation.y += l.spin * 0.7 * dt; }
+    // the camera: the whole meadow from the south, a little above; it shudders when a pinecone lands
+    lens(30);
+    hz.camShake = Math.max(0, hz.camShake - dt * 3);
+    const pitch = viewH.pitch, d = fitDist(HR + 0.8, (HR + 0.8) * Math.sin(pitch) * 0.86 + 6.2) * (1 + aside * 0.2), jx = (Math.random() - 0.5) * hz.camShake * 0.5, jy = (Math.random() - 0.5) * hz.camShake * 0.5;
+    camera.position.set(jx, Math.sin(pitch) * d + jy, Math.cos(pitch) * d + 0.6); camera.lookAt(jx * 0.5, 4.3, 0.6);
+    camera.setViewOffset(W, H, -W * 0.17 * aside, H * 0.02, W, H);
+    return sH;
+  }
+  // what happened, from js/party-tv.js: the bits that only the picture needs
+  function heistFx(e, game) {
+    if (e.k === 'bonk') { dust(e.x, e.y, 14); floater(e.hit.length > 1 ? `${e.hit.length}× BONK!` : 'BONK!', e.x, 2.6, e.y, '#FFE08A', e.hit.length > 1 ? 1.3 : 1); hz.camShake = Math.min(1, 0.5 + e.hit.length * 0.25); hz.face.mood = 'laugh'; hz.face.until = hz.T + 1.3; }
+    else if (e.k === 'miss') dust(e.x, e.y, 7);
+    else if (e.k === 'bank') { const B = hz.baskets[e.basket]; B.jiggle = 1; const b = game.baskets[e.basket]; floater(e.streak >= 3 ? `+1 ×${e.streak}` : '+1', b.x, 2.4, b.y, '#B6F0A0', 0.9); for (let i = 0; i < 8; i++) { const a = Math.random() * Math.PI * 2; bit(sH, new THREE.Mesh(new THREE.OctahedronGeometry(0.12), new THREE.MeshBasicMaterial({ color: toLinear('#FFE08A'), transparent: true })), { x: b.x, y: 1.2, z: b.y, vx: Math.cos(a) * 3, vz: Math.sin(a) * 3, vy: 4, g: 10, life: 0.6 }); } if (game.phase === 'play') { hz.face.mood = 'shock'; hz.face.until = hz.T + 0.9; } }
+    else if (e.k === 'shake') { hz.shakeT = 1; leafBurst(); }
+    else if (e.k === 'pick') { for (let i = 0; i < 5; i++) { const a = Math.random() * Math.PI * 2; bit(sH, new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), puffMat()), { x: e.x, y: 0.5, z: e.y, vx: Math.cos(a) * 2, vz: Math.sin(a) * 2, vy: 3, g: 9, life: 0.4 }); } }
+    else if (e.k === 'lose') dust(e.x, e.y, 5, '#C98B45');
+  }
+
   // back on the island after a round on the beach: stand up straight, full size, ring and all
   function reset(p) { p.root.scale.setScalar(1); p.stand.scale.setScalar(1); p.ring.visible = true; p.aim.visible = true; p.root.rotation.z = 0; p.squash.scale.set(1, 1, 1); p.tag.scale.set(p.tag.userData.w, 0.52, 1); }
 
   let lastKind = null;
   function render(kind, game, T, dt, aside, roster) {
     if (kind !== lastKind) { lastKind = kind; for (const p of pieces.values()) reset(p); for (const [id, w] of waves) { sF.remove(w); waves.delete(id); } shown.clear(); }
-    const scene = kind === 'freeze' ? drawFreeze(game, T, dt, aside, roster) : kind === 'kart' ? drawKart(game, T, dt, aside) : drawBumper(game, T, dt, aside);
+    const scene = kind === 'freeze' ? drawFreeze(game, T, dt, aside, roster) : kind === 'kart' ? drawKart(game, T, dt, aside) : kind === 'heist' ? drawHeist(game, T, dt, aside) : drawBumper(game, T, dt, aside);
     bitsTick(dt);
     if (!skip) renderer.render(scene, camera);
   }
@@ -578,6 +874,7 @@ export function make3d(canvas, { colorFor, nameOf, budData }) {
     spark: (x, z, power) => spark(x, z, power, lastKind === 'kart' ? sK : sB),
     // kart race effects: a popped bubble or shield, a jelly splat, a splash
     pop: (x, z, color) => popK(x, z, color), splashK: (x, z) => splash(sK, x, z, -0.65),
+    heist: (e, game) => heistFx(e, game),
     forget(ids) { for (const id of [...pieces.keys()]) if (!ids.has(id)) drop(id); },     // people who've left
     refresh(id) { drop(id); },                                                            // their bud's drawing arrived: build it again
     set skip(v) { skip = !!v; },

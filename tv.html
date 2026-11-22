@@ -106,6 +106,7 @@ const GAMES = [
   { id: 'kart', name: 'Island Grand Prix', icon: '🏎️', tint: '#FFE0EC', n: '1 to 12', live: true, pitch: 'Kart races round the island. Drift round corners for a boost, pop gift bubbles, stay out of the lagoon.', phone: 'Phones are a stick, a Drift button and an item button.' },
   { id: 'bumper', name: 'Bumper Buds', icon: '💥', tint: '#D6ECFF', n: '2 to 12', live: true, pitch: 'Bump everyone else off the island while it shrinks. Last bud standing.', phone: 'Phones are a thumbstick and a dash button.' },
   { id: 'tug', name: 'Tug of War', icon: '🪢', tint: '#DDF3DF', n: '2 to 12', live: true, pitch: 'Two teams, one rope, one very muddy puddle in the middle.', phone: 'Phones are one big button. Tap fast.' },
+  { id: 'heist', name: 'Acorn Heist', icon: '🌰', tint: '#E3F2D2', n: '1 to 12', live: true, pitch: 'One of you is the tree. Everyone else steals its acorns while it drops pinecones on their heads. Everyone gets a turn as the tree.', phone: 'Phones are a stick and a button or two.' },
   { id: 'freeze', name: 'Freeze', icon: '🦀', tint: '#FFF0C2', n: '2 to 12', live: true, pitch: 'Run while the crab naps. Freeze when it looks, or a wave takes you back.', phone: 'Shake your phone to run. Hold still to freeze.' },
 ];
 let party = null, busy = false;
@@ -147,7 +148,7 @@ function renderGames() {
   });
   const note = $('note');
   note.hidden = party.live;
-  note.textContent = 'Island Grand Prix, Bumper Buds, Tug of War and Freeze need the live database switched on once (two values in Vercel). Island Race and Prankster are ready now.';
+  note.textContent = 'Island Grand Prix, Bumper Buds, Tug of War, Freeze and Acorn Heist need the live database switched on once (two values in Vercel). Island Race and Prankster are ready now.';
 }
 async function pick(game) {
   if (busy) return;

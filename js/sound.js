@@ -98,6 +98,8 @@
     sparkle: (v) => [0, 0.06, 0.12, 0.2].forEach((at, i) => tone({ f0: [1319, 1568, 1976, 2637][i] * v.rate, dur: 0.18, gain: 0.07 * v.gain, at })),
     scribble: (v) => [0, 0.07, 0.15, 0.24, 0.31, 0.4].forEach((at, i) => noise({ dur: 0.05, gain: 0.05 * v.gain, f0: 2800 + (i % 3) * 500, q: 3, at })),
     alert: (v) => { tone({ f0: 700 * v.rate, f1: 1200 * v.rate, dur: 0.08, gain: 0.16 * v.gain }); tone({ f0: 900 * v.rate, f1: 1500 * v.rate, dur: 0.1, gain: 0.14 * v.gain, at: 0.09 }); },
+    // something falling from high up: a whistle sliding down
+    whistle: (v) => { tone({ type: 'triangle', f0: 1500 * v.rate, f1: 520 * v.rate, dur: 0.6, gain: 0.07 * v.gain, attack: 0.05, filter: 3000 }); tone({ f0: 1520 * v.rate, f1: 540 * v.rate, dur: 0.6, gain: 0.04 * v.gain, attack: 0.05 }); },
     // a far-off rumble: low noise that rolls in and dies away
     thunder: (v) => { noise({ dur: 3.2, gain: 0.3 * v.gain, type: 'lowpass', f0: 320, f1: 70, attack: 0.15 }); noise({ dur: 1.4, gain: 0.18 * v.gain, type: 'lowpass', f0: 600, f1: 120, attack: 0.05, at: 0.25 }); tone({ f0: 55, f1: 38, dur: 2.2, gain: 0.12 * v.gain, attack: 0.3 }); },
   };

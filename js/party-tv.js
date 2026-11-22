@@ -1,8 +1,8 @@
-// The TV's side of Bumper Buds, Tug of War, Freeze and Island Grand Prix. This page runs the game (js/party-games.js), draws it,
+// The TV's side of Bumper Buds, Tug of War, Freeze, Island Grand Prix and Acorn Heist. This page runs the game (js/party-games.js), draws it,
 // makes the noises, and tells the phones the score. Phones only send their controls (js/party-pad.js).
 // One room for all of them: switching games here doesn't move anyone to another page.
 // Bumper Buds, Freeze and the kart race are drawn in 3D (js/party-3d.js); Tug of War is a flat picture drawn here.
-import { makeGame, parseInput, GAME_INFO, COLORS, MIN_PLAYERS, MAX_PLAYERS, BUMPER, TUG, COUNT_S, KART, KART_ITEMS } from '/js/party-games.js';
+import { makeGame, parseInput, GAME_INFO, COLORS, MIN_PLAYERS, MAX_PLAYERS, BUMPER, TUG, COUNT_S, KART, KART_ITEMS, HEIST } from '/js/party-games.js';
 import { drawBud } from '/js/bud-flat.js';
 import { joinCard, joinChip, backToPicker, keepAwake } from '/js/party-kit.js';
 import { make3d } from '/js/party-3d.js';
@@ -15,7 +15,7 @@ const lerp = (a, b, k) => a + (b - a) * k;
 const listOf = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a.at(-1)}`);
 const HERE_MS = 11000;                 // no heartbeat for this long: they've left
 const TEAMS = [{ name: 'Sunrise', color: '#FF7A59', side: 'left' }, { name: 'Tide', color: '#4FB3FF', side: 'right' }];
-const KINDS = ['kart', 'bumper', 'tug', 'freeze'];
+const KINDS = ['kart', 'bumper', 'tug', 'freeze', 'heist'];
 const ORD = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
 
 export async function runTv(room, code, firstKind) {
@@ -57,7 +57,7 @@ export async function runTv(room, code, firstKind) {
     if (JSON.stringify(next) !== JSON.stringify(roster)) {
       if (next.length > roster.length) S.play('pop', { rate: 1 + next.length * 0.06 });
       roster = next; game.setRoster(roster); dirty = true; renderPanel(); renderScore();
-      three.forget(new Set([...roster.map((p) => p.id), ...(game.buds?.keys() || []), ...(game.runners?.keys() || []), ...(game.karts?.keys() || [])]));
+      three.forget(new Set([...roster.map((p) => p.id), ...(game.buds?.keys() || []), ...(game.runners?.keys() || []), ...(game.karts?.keys() || []), ...(game.pickers?.keys() || []), ...(game.tree ? [game.tree] : [])]));
       const want = roster.map((p) => p.id).filter((id) => !(id in buds) && !asking.has(id));
       if (want.length) fetchBuds(want);
     }
@@ -77,7 +77,7 @@ export async function runTv(room, code, firstKind) {
   function setKind(k) {
     if (k === kind || !KINDS.includes(k)) return;
     kind = k; game = makeGame(kind); game.setRoster(roster); fx.length = 0; bannerOff();
-    if (kind === 'kart') { if (pool) game.setPool(pool); else loadPool(); }
+    if (kind === 'kart' || kind === 'heist') { if (pool) game.setPool(pool); else loadPool(); }
     room.update('meta', { game: kind }); dirty = urgent = true;
     $('gameName').textContent = GAME_INFO[kind].name; document.title = `${GAME_INFO[kind].name} · the buddie system`;
     history.replaceState(null, '', `/party?code=${code}&tv=1&g=${kind}`);
@@ -105,9 +105,10 @@ export async function runTv(room, code, firstKind) {
     if (!idle) return;
     const info = GAME_INFO[kind];
     if (game.phase === 'done') {
-      p.append(el('h2', null, kind === 'kart' ? `${nameOf(game.champs[0])} wins! 🏆` : kind === 'tug' ? `${TEAMS[game.champ].name} wins!` : kind === 'freeze' ? `${nameOf(game.winner)} wins!` : `${listOf(game.champs.map(nameOf))} ${game.champs.length > 1 ? 'win' : 'wins'}!`));
+      p.append(el('h2', null, kind === 'heist' ? `${listOf(game.champs.map(nameOf))} ${game.champs.length > 1 ? 'win' : 'wins'}! 🌰` : kind === 'kart' ? `${nameOf(game.champs[0])} wins! 🏆` : kind === 'tug' ? `${TEAMS[game.champ].name} wins!` : kind === 'freeze' ? `${nameOf(game.winner)} wins!` : `${listOf(game.champs.map(nameOf))} ${game.champs.length > 1 ? 'win' : 'wins'}!`));
       const ol = el('ol', 'places');
       if (kind === 'kart') (game.order || []).slice(0, 8).forEach((id) => { const k = game.karts.get(id); ol.append(el('li', null, `${nameOf(id)}${k?.cpu ? ' (island bud)' : ''}${k?.fin != null ? ` · ${k.fin.toFixed(1)}s` : ''}`)); });
+      else if (kind === 'heist') Object.entries(game.score).sort((a, b) => b[1] - a[1]).slice(0, 8).forEach(([id, n]) => ol.append(el('li', null, `${nameOf(id)}${cpuOf(id) ? ' (island bud)' : ''} · ${n} ${n === 1 ? 'point' : 'points'}`)));
       else if (kind === 'bumper') Object.entries(game.score).sort((a, b) => b[1] - a[1]).slice(0, 6).forEach(([id, n]) => ol.append(el('li', null, `${nameOf(id)} · ${n} ${n === 1 ? 'point' : 'points'}`)));
       else if (kind === 'freeze') (game.place || []).slice(0, 6).forEach((id) => { const r = game.runners.get(id); ol.append(el('li', null, `${nameOf(id)}${r && r.caught ? ` · caught ${r.caught}×` : ''}`)); });
       else for (const t of [game.champ, 1 - game.champ]) ol.append(el('li', null, `${TEAMS[t].name} (${game.score[t]}): ${listOf(roster.filter((x) => game.team[x.id] === t).map((x) => x.name)) || 'nobody'}`));
@@ -115,9 +116,10 @@ export async function runTv(room, code, firstKind) {
     } else {
       p.append(el('h2', null, info.name), el('p', null, info.how), el('p', 'phones', `On your phone: ${info.pad}`));
       if (kind === 'kart') p.append(el('p', null, `Buds from the island fill the grid up to ${KART.FILL}.`));
+      if (kind === 'heist') p.append(el('p', null, `Points: 1 for every acorn you bank, 2 more when the heist works. The tree gets 1 for every bonk and 3 for holding on. Buds from the island help collect when there are fewer than ${HEIST.PICKERS}.`));
       p.append(joinCard(code, { small: true }));
     }
-    const n = roster.length, row = el('div', 'row'), least = kind === 'kart' ? 1 : MIN_PLAYERS;
+    const n = roster.length, row = el('div', 'row'), least = kind === 'kart' || kind === 'heist' ? 1 : MIN_PLAYERS;
     const go = el('button', 'btn primary', n < least ? (n ? 'Waiting for one more…' : 'Waiting for players…') : game.phase === 'done' ? `Play again (${n})` : `Start (${n})`); go.type = 'button'; go.id = 'startBtn';
     go.disabled = !game.canStart(); go.addEventListener('click', primary);
     row.append(go);
@@ -131,6 +133,7 @@ export async function runTv(room, code, firstKind) {
     const key = JSON.stringify([kind, game.phase, roster, st.score, st.out, st.hit, st.place, st.who, st.lap, st.item, st.fin]);
     if (key === scoreKey) return; scoreKey = key;
     if (kind === 'kart') return kartScore(st, box);
+    if (kind === 'heist') return heistScore(st, box);
     box.textContent = ''; box.hidden = kind === 'freeze';   // Freeze has everyone's name in their lane
     const chip = (color, text, small, cls = '') => { const c = el('div', 'chip ' + cls), d = el('i'); d.style.background = color; c.append(d, el('b', null, text)); if (small != null) c.append(el('small', null, small)); return c; };
     if (kind === 'tug' && game.phase !== 'lobby') {
@@ -146,6 +149,68 @@ export async function runTv(room, code, firstKind) {
     }
     $('round').textContent = game.phase === 'lobby' || game.phase === 'done' ? '' : kind === 'bumper' ? `Round ${game.round} of ${BUMPER.ROUNDS}` : kind === 'tug' ? `Round ${game.round} · first to ${TUG.WINS}` : '';
   }
+
+  // Acorn Heist: the tree on top, then the collectors by points (with an acorn if they're carrying one)
+  function heistScore(st, box) {
+    box.textContent = ''; box.hidden = false;
+    const idle = game.phase === 'lobby';
+    const ids = idle ? roster.map((p) => p.id) : [...(st.tree ? [st.tree] : []), ...[...game.pickers.keys()].sort((a, b) => (st.score[b] || 0) - (st.score[a] || 0))];
+    for (const id of ids) {
+      const c = el('div', 'chip' + (id === st.tree ? ' tree' : '')), d = el('i'); d.style.background = colorFor(id);
+      c.append(d, el('b', null, (id === st.tree ? '🌳 ' : '') + nameOf(id)));
+      if (!idle) c.append(el('small', null, String(st.score[id] || 0)));
+      if (st.carry[id]) c.append(el('span', 'it', '🌰')); else if (st.stun[id]) c.append(el('span', 'it', '💫'));
+      box.append(c);
+    }
+    $('round').textContent = game.phase === 'lobby' || game.phase === 'done' ? '' : `Round ${game.round} of ${game.trees.length}`;
+  }
+  // the bar along the top in a round: whose tree it is, acorns stolen out of the goal, and the clock
+  let hudKey = '';
+  function heistHud() {
+    const hud = $('hud'), on = kind === 'heist' && (game.phase === 'count' || game.phase === 'play' || game.phase === 'round');
+    hud.hidden = !on; if (!on) { hudKey = ''; return; }
+    const left = game.phase === 'play' ? Math.ceil(game.left()) : game.phase === 'count' ? game.playS : 0;
+    const key = [game.tree, game.banked, game.goal, left].join();
+    if (key === hudKey) return; hudKey = key;
+    hud.textContent = '';
+    const who = el('span', 'who'); const d = el('i'); d.style.background = colorFor(game.tree); who.append(d, el('b', null, `🌳 ${nameOf(game.tree)}`), el('small', null, 'is the tree'));
+    const bar = el('div', 'bar'), fill = el('i'); fill.style.width = `${Math.min(100, game.banked / Math.max(1, game.goal) * 100)}%`; bar.append(fill, el('b', null, `🌰 ${game.banked} / ${game.goal} stolen`));
+    const clock = el('span', 'clock' + (game.phase === 'play' && left <= 10 ? ' hurry' : ''), `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`);
+    hud.append(who, bar, clock);
+  }
+  let heistSaid = 0, tickedAt = -1;
+  function say(text, sub = '', secs = 1.4, cls = '') { const now = performance.now(); if (now - heistSaid < 900 && !cls.includes('force')) return; heistSaid = now; banner(text, sub, secs, cls); }
+  function onHeist(e) {
+    three.heist(e, game);
+    if (e.k === 'drop') S.play('whistle', { gain: 0.5 });
+    else if (e.k === 'bonk') {
+      S.play('thump', { gain: 0.9 }); setTimeout(() => S.play('giggle', { gain: 0.5, rate: 0.8 }), 180); dirty = true; renderScore();
+      if (e.hit.length > 1) say(e.hit.length === 2 ? 'DOUBLE BONK!' : `${e.hit.length}× BONK!`, `${nameOf(game.tree)} is on fire`, 1.6);
+    }
+    else if (e.k === 'miss') S.play('thump', { gain: 0.3, rate: 1.2 });
+    else if (e.k === 'tug') S.play('tick', { gain: 0.25, rate: 1.6 });
+    else if (e.k === 'pick') { S.play('pop', { gain: 0.6, rate: 1.2 }); dirty = true; renderScore(); }
+    else if (e.k === 'lose') { S.play('pop', { gain: 0.5, rate: 0.6 }); dirty = true; renderScore(); }
+    else if (e.k === 'bank') {
+      S.play('chime', { gain: 0.55, rate: 1 + Math.min(10, e.streak || 0) * 0.04 }); dirty = true; renderScore();
+      if (game.phase === 'play') {
+        const togo = e.goal - e.banked;
+        if (togo === 1) say('One more!', `${nameOf(game.tree)} has to stop this`, 1.6);
+        else if (togo === 3) say('Three to go!', '', 1.3);
+        else if (e.streak === 4 || e.streak === 8) say(`${e.streak} in a row!`, 'The heist is on', 1.4);
+      }
+    }
+    else if (e.k === 'shake') { S.play('whoosh', { gain: 0.9, rate: 0.55 }); S.play('thump', { gain: 0.4, rate: 0.7 }); if (e.flung.length > 1) say('SHAKE!', `${e.flung.length} buds sent flying`, 1.1); }
+    else if (e.k === 'dash') S.play('whoosh', { gain: 0.2, rate: 1.6 });
+    else if (e.k === 'roundEnd') {
+      dirty = urgent = true; renderScore(); S.play('sparkle');
+      banner(e.winner === 'tree' ? `${nameOf(e.tree)} holds on! 🌳` : 'Heist complete! 🧺', e.winner === 'tree' ? `Only ${e.banked} of ${e.goal} acorns got away` : `${e.goal} acorns stolen from ${nameOf(e.tree)}`, 3.6, 'force');
+      if (e.winner === 'pickers') confettiBurst();
+    }
+    else return false;
+    return true;
+  }
+  function confettiBurst() { for (let i = 0; i < 40; i++) { const x = W * (0.3 + Math.random() * 0.4), c = COLORS[i % COLORS.length], vx = (Math.random() - 0.5) * 260, vy = -260 - Math.random() * 260, r = Math.random() * 6; addFx(1.6, (k, t) => { g.save(); g.translate(x + vx * t, H * 0.35 + vy * t + 420 * t * t); g.rotate(r + t * 8); g.fillStyle = c; g.globalAlpha = 1 - k * k; g.fillRect(-6, -3, 12, 6); g.restore(); }); } }
 
   // the kart race: everyone in race order, with their lap and what they're holding
   function kartScore(st, box) {
@@ -185,9 +250,10 @@ export async function runTv(room, code, firstKind) {
   }
   function onEvent(e, t) {
     if (kind === 'kart' && e.k !== 'phase' && e.k !== 'matchEnd' && onKart(e)) return;
+    if (kind === 'heist' && e.k !== 'phase' && e.k !== 'matchEnd' && onHeist(e)) return;
     if (e.k === 'phase') {
       dirty = urgent = true; renderPanel(); renderScore();
-      if (e.phase === 'play') { banner(kind === 'freeze' ? 'RUN!' : kind === 'tug' ? 'PULL!' : 'GO!', '', 0.9, 'go'); S.play('ding'); }
+      if (e.phase === 'play') { banner(kind === 'freeze' ? 'RUN!' : kind === 'tug' ? 'PULL!' : kind === 'heist' ? 'STEAL!' : 'GO!', '', 0.9, 'go'); S.play('ding'); }
       if (e.phase === 'done' && kind === 'kart') bannerOff();
       if (e.phase === 'count') mud = null;
     } else if (e.k === 'bump') { if (t - (onEvent.lastBump || 0) > 0.06) { onEvent.lastBump = t; S.play(e.power > 0.6 ? 'thump' : 'pop', { gain: 0.3 + e.power * 0.6, rate: 0.9 + Math.random() * 0.3 }); } const a = game.buds.get(e.a), b = game.buds.get(e.b); if (a && b) three.spark((a.x + b.x) / 2, (a.y + b.y) / 2, e.power); }
@@ -302,15 +368,17 @@ export async function runTv(room, code, firstKind) {
     for (const p of roster) inputs[p.id] = parseInput(kind, raw.get(p.id));
     for (let left = dt; left > 1e-6;) { const h = Math.min(1 / 60, left); left -= h; T += h; game.step(h, inputs, T); }
     for (const e of game.drain()) onEvent(e, T);
-    if (game.phase === 'count') { const n = Math.max(1, Math.min(3, Math.ceil(COUNT_S - game.t))); if (n !== lastCount) { lastCount = n; banner(String(n), n === 3 ? (kind === 'kart' ? 'Three laps. Drift on the corners!' : kind === 'bumper' ? `Round ${game.round}` : kind === 'tug' ? `Round ${game.round}: ${TEAMS[0].name} against ${TEAMS[1].name}` : 'Run while it naps. Freeze when it looks!') : '', 1.05, 'count'); S.play('tick'); } } else lastCount = 0;
+    if (game.phase === 'count') { const n = Math.max(1, Math.min(3, Math.ceil(COUNT_S - game.t))); if (n !== lastCount) { lastCount = n; banner(String(n), n === 3 ? (kind === 'heist' ? `${nameOf(game.tree)} is the tree! Steal ${game.goal} acorns.` : kind === 'kart' ? 'Three laps. Drift on the corners!' : kind === 'bumper' ? `Round ${game.round}` : kind === 'tug' ? `Round ${game.round}: ${TEAMS[0].name} against ${TEAMS[1].name}` : 'Run while it naps. Freeze when it looks!') : '', 1.05, 'count'); S.play('tick'); } } else lastCount = 0;
     g.setTransform(DPR, 0, 0, DPR, 0, 0);
     const flat = kind === 'tug';
     if ($('scene3d').hidden !== flat) $('scene3d').hidden = flat;
     if (flat) drawTug(T); else { g.clearRect(0, 0, W, H); three.render(kind, game, T, dt, easeView(), roster); }
-    freezeSign();
+    freezeSign(); heistHud();
+    // the last ten seconds of a heist tick away
+    if (kind === 'heist' && game.phase === 'play') { const l = Math.ceil(game.left()); if (l <= 10 && l !== tickedAt) { tickedAt = l; S.play('tick', { gain: 0.5, rate: l <= 3 ? 1.5 : 1.1 }); if (l === 10) say('10 seconds!', '', 1.1); } } else tickedAt = -1;
     for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i]; f.t += dt; if (f.t >= f.life) { fx.splice(i, 1); continue; } f.draw(f.t / f.life, f.t); }
     // the race changes all the time (places, items): tell the phones a few times a second, only when it changed
-    if (kind === 'kart' && !dirty && now - lastPub > 250) { const sk = JSON.stringify(game.state()); if (sk !== lastKartState) { lastKartState = sk; dirty = true; } }
+    if ((kind === 'kart' || kind === 'heist') && !dirty && now - lastPub > 250) { const sk = JSON.stringify(game.state()); if (sk !== lastKartState) { lastKartState = sk; dirty = true; } }
     if (dirty && (urgent || now - lastPub > (kind === 'kart' ? 200 : 120))) publish(now);
     requestAnimationFrame(frame);
   }
@@ -324,10 +392,10 @@ export async function runTv(room, code, firstKind) {
   addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
     if (e.key === ' ' || e.key === 'Enter') { if (document.activeElement?.tagName !== 'BUTTON') { e.preventDefault(); primary(); } }
-    else if (['1', '2', '3', '4'].includes(e.key) && (game.phase === 'lobby' || game.phase === 'done')) setKind(KINDS[Number(e.key) - 1]);
+    else if (['1', '2', '3', '4', '5'].includes(e.key) && (game.phase === 'lobby' || game.phase === 'done')) setKind(KINDS[Number(e.key) - 1]);
   });
   keepAwake();
-  if (kind === 'kart') loadPool();
+  if (kind === 'kart' || kind === 'heist') loadPool();
   refreshRoster(); renderPanel(); renderScore();
   requestAnimationFrame(frame);
   // for the tests: a look inside
