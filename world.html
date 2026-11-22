@@ -2472,7 +2472,7 @@ function startActivity(bud) {
   const wetOut = Math.max(wx.rain, wx.snow);
   const weights = ACTS.map((k) => {
     if (k === 'fire') return NIGHT > 0.5 ? 6 * (1 - wx.rain * 0.6) : 0;
-    if (k === 'koi') return pond.group ? (pond.frozen ? (NIGHT > 0.5 ? 0.6 : 2.2) : NIGHT > 0.5 ? 0.4 : 1.2) : 0;
+    if (k === 'koi') return pond.group && pond.group.visible ? (pond.frozen ? (NIGHT > 0.5 ? 0.6 : 2.2) : NIGHT > 0.5 ? 0.4 : 1.2) : 0;
     if (k === 'shelter') return wx.rain > 0.3 && !bud.leafy ? 6 * wx.rain : 0;   // buds without a leaf look for cover
     if (k === 'snowbud') return wx.cover > 0.5 && wx.rain < 0.2 ? 1.6 : 0;
     let w = (k === fav ? 4 : 1) * (k === 'tag' ? 1.2 : 1);
@@ -4098,6 +4098,10 @@ async function enterGame(id) {
   try { v = await api('GET', '/api/game?id=' + encodeURIComponent(id)); }
   catch (e) { const m = myBud(); if (m) say(m, 'hmm, I can’t find that game', 2200); return; }
   if (ftree.group) ftree.group.visible = false;   // keep the Peekaboo board clear
+  if (pond.group) {   // and the koi pond: hidden, and no longer in the way
+    pond.group.visible = false;
+    const i = obstacles.indexOf(pond.obs); if (i >= 0) obstacles.splice(i, 1);
+  }
   if (town.group) {   // the town steps aside too: out of sight, and nothing of it left to bump into
     town.group.visible = false;
     town.solid = obstacles.filter((o) => o.town);
@@ -4133,6 +4137,7 @@ function gameDist() {
 function exitGame() {
   if (!game) return;
   if (ftree.group) ftree.group.visible = true;
+  if (pond.group) { pond.group.visible = true; if (!obstacles.includes(pond.obs)) obstacles.push(pond.obs); }
   if (town.group) { town.group.visible = true; obstacles.push(...(town.solid || [])); town.solid = []; }
   clearInterval(game.poll);
   clearTimeout(game.flip);
@@ -4923,7 +4928,7 @@ function pondTick(dt) {
 }
 // a tap on the water: ripples, a plip, and the koi dart off
 function pondAt(x, y) {
-  if (!pond.group) return null;
+  if (!pond.group || !pond.group.visible) return null;
   ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
   const p = new THREE.Vector3(); if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.06), p)) return null;
   const lx = p.x - pond.x, lz = p.z - pond.z, a = Math.atan2(lz, lx);
