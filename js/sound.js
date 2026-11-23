@@ -100,6 +100,38 @@
     alert: (v) => { tone({ f0: 700 * v.rate, f1: 1200 * v.rate, dur: 0.08, gain: 0.16 * v.gain }); tone({ f0: 900 * v.rate, f1: 1500 * v.rate, dur: 0.1, gain: 0.14 * v.gain, at: 0.09 }); },
     // something falling from high up: a whistle sliding down
     whistle: (v) => { tone({ type: 'triangle', f0: 1500 * v.rate, f1: 520 * v.rate, dur: 0.6, gain: 0.07 * v.gain, attack: 0.05, filter: 3000 }); tone({ f0: 1520 * v.rate, f1: 540 * v.rate, dur: 0.6, gain: 0.04 * v.gain, attack: 0.05 }); },
+    // --- Bud Royal: cartoon sounds for a cartoon fight ---
+    bonk: (v) => { tone({ type: 'triangle', f0: 720 * v.rate, f1: 260 * v.rate, dur: 0.11, gain: 0.3 * v.gain }); tone({ type: 'square', f0: 180 * v.rate, f1: 120 * v.rate, dur: 0.06, gain: 0.08 * v.gain, filter: 900 }); },
+    boop: (v) => tone({ type: 'sine', f0: 420 * v.rate, f1: 760 * v.rate, dur: 0.09, gain: 0.2 * v.gain }),
+    thwip: (v) => { noise({ dur: 0.1, gain: 0.1 * v.gain, f0: 900, f1: 4200, q: 1.2 }); tone({ type: 'triangle', f0: 500 * v.rate, f1: 1300 * v.rate, dur: 0.09, gain: 0.07 * v.gain }); },
+    flap: (v) => [0, 0.05].forEach((at) => noise({ dur: 0.05, gain: 0.11 * v.gain, f0: 1500 * v.rate, q: 2, at })),                              // a book in the air
+    whee: (v) => tone({ type: 'triangle', f0: 380 * v.rate, f1: 1250 * v.rate, dur: 0.28, gain: 0.11 * v.gain, attack: 0.03 }),             // a slide whistle up: here I come
+    plop: (v) => { tone({ f0: 300 * v.rate, f1: 90 * v.rate, dur: 0.12, gain: 0.3 * v.gain }); noise({ dur: 0.08, gain: 0.08 * v.gain, f0: 700, q: 1 }); },
+    wub: (v) => { tone({ type: 'sawtooth', f0: 82 * v.rate, f1: 62 * v.rate, dur: 0.34, gain: 0.3 * v.gain, filter: 420, vib: 13 }); tone({ type: 'square', f0: 164 * v.rate, f1: 124 * v.rate, dur: 0.2, gain: 0.07 * v.gain, filter: 900 }); noise({ dur: 0.05, gain: 0.14 * v.gain, f0: 5000, q: 1 }); },
+    glitchy: (v) => [0, 0.035, 0.07, 0.105, 0.14, 0.175].forEach((at) => tone({ type: 'square', f0: (240 + Math.floor(Math.random() * 9) * 170) * v.rate, dur: 0.032, gain: 0.07 * v.gain, at, attack: 0.002 })),
+    crunch: (v) => [0, 0.03, 0.07, 0.1, 0.15].forEach((at, i) => { noise({ dur: 0.03, gain: 0.16 * v.gain, f0: 2400 + i * 500, q: 3, at }); tone({ f0: (700 + i * 130) * v.rate, f1: 1400, dur: 0.025, gain: 0.08 * v.gain, at }); }),
+    yum: (v) => { tone({ type: 'triangle', f0: 520 * v.rate, f1: 560 * v.rate, dur: 0.1, gain: 0.13 * v.gain }); tone({ type: 'triangle', f0: 780 * v.rate, f1: 830 * v.rate, dur: 0.16, gain: 0.13 * v.gain, at: 0.1 }); },
+    squeak: (v) => tone({ type: 'sine', f0: 1500 * v.rate, f1: 2300 * v.rate, dur: 0.07, gain: 0.1 * v.gain }),
+    yip: (v) => { tone({ type: 'triangle', f0: 700 * v.rate, f1: 1100 * v.rate, dur: 0.06, gain: 0.12 * v.gain }); tone({ type: 'triangle', f0: 900 * v.rate, f1: 600 * v.rate, dur: 0.07, gain: 0.1 * v.gain, at: 0.06 }); },
+    oof: (v) => tone({ type: 'sawtooth', f0: 170 * v.rate, f1: 95 * v.rate, dur: 0.16, gain: 0.16 * v.gain, filter: 600 }),
+    kick: (v) => { tone({ f0: 210 * v.rate, f1: 55, dur: 0.14, gain: 0.4 * v.gain }); noise({ dur: 0.03, gain: 0.14 * v.gain, f0: 3000, q: 1 }); },
+    mash: (v) => tone({ type: 'square', f0: [523, 659, 784, 1047][Math.floor(Math.random() * 4)] * v.rate, dur: 0.045, gain: 0.06 * v.gain, attack: 0.002 }),   // button mashing, in tune
+    zap: (v) => { tone({ type: 'sawtooth', f0: 1900 * v.rate, f1: 150 * v.rate, dur: 0.45, gain: 0.13 * v.gain, filter: 3200 }); tone({ type: 'sine', f0: 95, f1: 60, dur: 0.5, gain: 0.25 * v.gain }); [0.05, 0.14, 0.24].forEach((at, i) => tone({ f0: [2093, 2637, 3136][i], dur: 0.14, gain: 0.04 * v.gain, at })); },
+    grumble: (v) => tone({ type: 'sawtooth', f0: 110 * v.rate, f1: 82 * v.rate, dur: 0.4, gain: 0.12 * v.gain, filter: 380, vib: 9, attack: 0.05 }),
+    coin: (v) => { tone({ type: 'square', f0: 988 * v.rate, dur: 0.07, gain: 0.08 * v.gain }); tone({ type: 'square', f0: 1319 * v.rate, dur: 0.22, gain: 0.08 * v.gain, at: 0.07 }); },
+    sprout: (v) => { tone({ type: 'triangle', f0: 260 * v.rate, f1: 620 * v.rate, dur: 0.2, gain: 0.14 * v.gain }); tone({ f0: 1200 * v.rate, dur: 0.06, gain: 0.07 * v.gain, at: 0.2 }); },
+    pip: (v) => tone({ type: 'triangle', f0: 1300 * v.rate, f1: 900 * v.rate, dur: 0.035, gain: 0.07 * v.gain }),
+    timber: (v) => { tone({ type: 'sawtooth', f0: 520, f1: 130, dur: 0.75, gain: 0.07 * v.gain, filter: 1100, vib: 21, attack: 0.06 }); [0, 0.12, 0.3].forEach((at) => noise({ dur: 0.05, gain: 0.12 * v.gain, f0: 1800, q: 4, at })); tone({ f0: 100, f1: 36, dur: 0.5, gain: 0.55 * v.gain, at: 0.72 }); noise({ dur: 0.35, gain: 0.2 * v.gain, f0: 500, f1: 150, q: 0.7, at: 0.72 }); },
+    crumble: (v) => { [0, 0.08, 0.17, 0.27, 0.4].forEach((at, i) => { noise({ dur: 0.12, gain: 0.2 * v.gain, f0: 900 - i * 120, q: 0.8, at }); tone({ f0: 150 - i * 18, f1: 50, dur: 0.16, gain: 0.3 * v.gain, at }); }); },
+    gasp: (v) => tone({ type: 'triangle', f0: 400 * v.rate, f1: 1050 * v.rate, dur: 0.2, gain: 0.12 * v.gain, attack: 0.02 }),
+    fanfare: (v) => { [[523, 0], [659, 0.13], [784, 0.26], [1047, 0.39], [784, 0.56], [1047, 0.69]].forEach(([f, at], i) => { tone({ type: 'square', f0: f, dur: i === 5 ? 0.7 : 0.14, gain: 0.07 * v.gain, at, filter: 2600 }); tone({ type: 'triangle', f0: f / 2, dur: i === 5 ? 0.7 : 0.14, gain: 0.1 * v.gain, at }); }); },
+    womp: (v) => [[311, 0], [294, 0.3], [277, 0.6], [262, 0.9]].forEach(([f, at], i) => tone({ type: 'sawtooth', f0: f, f1: i === 3 ? f * 0.82 : f * 0.97, dur: i === 3 ? 0.9 : 0.28, gain: 0.1 * v.gain, at, filter: 800, vib: i === 3 ? 6 : 0 })),
+    drumroll: (v) => { for (let i = 0; i < 14; i++) noise({ dur: 0.03, gain: (0.05 + i * 0.008) * v.gain, f0: 2000, q: 1.5, at: i * 0.04 }); tone({ f0: 160, f1: 60, dur: 0.2, gain: 0.35 * v.gain, at: 0.58 }); noise({ dur: 0.3, gain: 0.14 * v.gain, f0: 6000, q: 0.6, at: 0.58 }); },
+    // the battle's little band: one note each, pitched by rate
+    bkick: (v) => tone({ f0: 150, f1: 46, dur: 0.16, gain: 0.3 * v.gain }),
+    bhat: (v) => noise({ dur: 0.03, gain: 0.05 * v.gain, f0: 7500, q: 1.2 }),
+    bbass: (v) => tone({ type: 'triangle', f0: 110 * v.rate, dur: 0.2, gain: 0.16 * v.gain, filter: 700 }),
+    bpluck: (v) => { tone({ type: 'triangle', f0: 440 * v.rate, dur: 0.22, gain: 0.07 * v.gain }); tone({ type: 'sine', f0: 880 * v.rate, dur: 0.1, gain: 0.025 * v.gain }); },
     // a far-off rumble: low noise that rolls in and dies away
     thunder: (v) => { noise({ dur: 3.2, gain: 0.3 * v.gain, type: 'lowpass', f0: 320, f1: 70, attack: 0.15 }); noise({ dur: 1.4, gain: 0.18 * v.gain, type: 'lowpass', f0: 600, f1: 120, attack: 0.05, at: 0.25 }); tone({ f0: 55, f1: 38, dur: 2.2, gain: 0.12 * v.gain, attack: 0.3 }); },
   };

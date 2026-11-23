@@ -5,7 +5,7 @@ import { ROYAL, KINDS, newBattle, step, canPlace, botMove, tree as treeOf, home 
 import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
 import { drawBud } from '/js/bud-flat.js';
 
-const S = window.BudSound || { play() {}, bindToggle() {} };
+const S = window.BudSound || { play() {}, babble() {}, bindToggle() {} };
 const T = ROYAL.TICK, ME = 0, THEM = 1, COL = ['#3D8BFD', '#F0607A'];
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -26,6 +26,13 @@ export async function runRoyal(deal) {
   const wx = (x) => x - ROYAL.W / 2, wz = (y) => ROYAL.L / 2 - y;
   const looks = deal.buds || {};
   const nameOfBud = (id) => looks[id]?.name || (id === 'gloam' ? 'Gloam' : id === 'squirrel' ? 'The squirrel' : null);
+
+  // sounds, kept from piling up: the same sound won't play again within `gap` seconds
+  const heard = {};
+  function snd(name, o = {}, gap = 0.07) { const t = performance.now() / 1000; if (heard[name] && t - heard[name] < gap) return; heard[name] = t; S.play(name, o); }
+  const HELLO = { bookworm: ['flap', 0.9], glitch: ['glitchy', 0.9], loud: ['wub', 0.5], lifter: ['oof', 1], striker: ['kick', 0.7], masher: ['mash', 1], lobber: ['crunch', 0.7], pet: ['yip', 0.9], chef: ['yum', 0.9], sprout: ['sprout', 1], islander: ['boop', 1], squirrel: ['squeak', 1], gloam: ['grumble', 1], bit: ['glitchy', 0.6] };
+  const SMACK = { masher: ['mash', 0.9, 0.05], lifter: ['bonk', 0.55, 0.1], striker: ['kick', 0.9, 0.1], pet: ['yip', 0.5, 0.16], squirrel: ['squeak', 0.7, 0.1], glitch: ['glitchy', 0.45, 0.12], bit: ['pip', 0.6, 0.08], islander: ['bonk', 0.8, 0.09] };
+  const voiceFor = (id) => ({ voice: looks[id]?.voice });
 
   /* ---------- the stage ---------- */
   const wrap = $('stage'), renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -111,6 +118,7 @@ export async function runRoyal(deal) {
     const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false })); s.renderOrder = 19; const h = 1.9; s.scale.set(h * w / c.height, h, 1);
     s.position.set(clamp(H.g.position.x, -5.5, 5.5), 7.6, H.g.position.z); scene.add(s); H.bubble = s; H.bubbleT = 2.6;
+    if (!fast) S.babble(text, H.name || 'bud', { gain: 1, ...voiceFor(H.owner) });   // and says it, in its own voice
   }
 
   /* ---------- buds ---------- */
@@ -171,7 +179,7 @@ export async function runRoyal(deal) {
   function gloamExtras(v) {
     const cap = new THREE.Group(), dome = ball(v.w * 0.42, M('#1E2540')), brim = cyl(v.w * 0.5, v.w * 0.5, 0.05, M('#1E2540'), 16); dome.scale.y = 0.6; brim.position.y = -0.02; cap.add(dome, brim); cap.position.y = v.h * 0.93; v.squash.add(cap);
     const lamp = new THREE.Group(), glow = ball(0.2, new THREE.MeshStandardMaterial({ color: lin('#FFE9A8'), emissive: lin('#FFB94A'), emissiveIntensity: 1.3 })), frame = cyl(0.24, 0.26, 0.06, M('#2B2F3F'), 8), topc = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.2, 8), M('#2B2F3F'));
-    frame.position.y = -0.2; topc.position.y = 0.26; lamp.add(glow, frame, topc); lamp.position.set(v.w * 0.7, v.h * 0.55, 0.15); v.root.add(lamp); v.lamp = lamp;
+    frame.position.y = -0.2; topc.position.y = 0.26; lamp.add(glow, frame, topc); lamp.position.set(v.w * 0.7, v.h * 0.55, 0.15); v.turn.add(lamp); v.lamp = lamp;
   }
   function squirrelMesh() {
     const g = new THREE.Group(), fur = M('#B5652B'), pale = M('#F2D2A8'), dark = B('#1D1C2B');
@@ -255,14 +263,15 @@ export async function runRoyal(deal) {
   const views = new Map(), ringGeo = new THREE.RingGeometry(0.78, 1, 28);
   function makeView(e) {
     const K = KINDS[e.kind], v = { e, kind: e.kind, x: e.x, y: e.y, px: e.x, py: e.y, lunge: 0, hurtT: 0, bob: Math.random() * 6, born: now };
-    v.root = new THREE.Group(); v.squash = new THREE.Group(); v.root.add(v.squash); v.w = K.r * 2 * 1.55; v.h = v.w;
+    v.root = new THREE.Group(); v.turn = new THREE.Group(); v.squash = new THREE.Group(); v.turn.add(v.squash); v.root.add(v.turn); v.yaw = e.side === ME ? Math.PI : 0; v.turn.rotation.y = v.yaw;   // it starts out facing the other side
+    v.w = K.r * 2 * 1.55; v.h = v.w;
     if (e.kind === 'squirrel') { const m = squirrelMesh(); m.scale.setScalar(1.7); v.squash.add(m); v.tail = m.userData.tail; v.h = 1.2; }
     else if (e.kind === 'pet') { const m = petMesh(e.id); m.scale.setScalar(1.6); v.squash.add(m); v.h = 1.1; }
     else if (e.kind === 'sprout') { const m = sproutMesh(); m.scale.setScalar(1.35); v.squash.add(m); v.head = m.userData.head; v.h = 2; }
     else {
       const base = e.kind === 'bit' ? 'glitch' : e.kind, t = tmplFor(e.bud, base), c = budCopy(t, v.w * (e.kind === 'lifter' ? 1.1 : 1));
       v.squash.add(c.squash.children[0]); v.inner = v.squash.children[0]; v.t = t; v.h = c.h;
-      if (base === 'gloam') gloamExtras(v); else v.root.add(propFor(base, v));
+      if (base === 'gloam') gloamExtras(v); else v.turn.add(propFor(base, v));
     }
     const rg = flat(ringGeo, B(COL[e.side], { transparent: true, opacity: 0.9, depthWrite: false }), 0.05); rg.scale.setScalar(K.r * 1.6); v.root.add(rg); v.ring = rg;
     v.bar = makeBar(Math.max(0.9, K.r * 2.4), e.side, false); v.bar.visible = false;
@@ -297,36 +306,36 @@ export async function runRoyal(deal) {
   function onEvent(ev) {
     if (fast) return;
     const src = ev.id ? entById(ev.id) : null, sv = src ? views.get(src.id) : null;
-    if (ev.k === 'spawn') { const e = entById(ev.id); if (e) { makeView(e); ring(wx(e.x), wz(e.y), 1.2, COL[e.side]); S.play('pop', { gain: 0.5, rate: 0.8 }); } }
+    if (ev.k === 'spawn') { const e = entById(ev.id); if (e) { makeView(e); ring(wx(e.x), wz(e.y), 1.2, COL[e.side]); snd('whee', { gain: 0.7 }, 0.12); const h = HELLO[e.kind]; if (h) setTimeout(() => snd(h[0], { gain: h[1] }, 0.1), 850); if (looks[e.bud] && e.kind !== 'bit') setTimeout(() => S.babble('hey', looks[e.bud].name, { gain: 0.7, ...voiceFor(e.bud) }), 950); } }
     else if (ev.k === 'place') { if (ev.side === ME && KINDS[ev.kind].cost >= 5) say(ME, 'big' + battle.tick, 'Go get ’em!', false); }
     else if (ev.k === 'throw') {
       const to = entById(ev.to) || { x: ev.x, y: ev.y, kind: 'spot', id: 0 };
       if (src) { fire(src, to, src.kind, ev.fly, src.kind === 'lobber' ? 3.2 : 1.4); if (sv) sv.lunge = 1; if (src.kind === 'tree') { const tv = trees.get(src.id); if (tv) tv.alertT = 2.5; } if (src.kind === 'home') homes[src.side].cheer = 0.4; }
-      S.play(src && src.kind === 'bookworm' ? 'paint' : 'click', { gain: 0.35, rate: 0.8 });
+      if (src) { if (src.kind === 'bookworm') snd('flap', { gain: 0.8 }, 0.1); else if (src.kind === 'lobber') snd('thwip', { gain: 0.9 }, 0.1); else snd('pip', { gain: src.build ? 0.9 : 0.7, rate: src.kind === 'home' ? 0.7 : 1 }, 0.09); }
     }
-    else if (ev.k === 'hit') { const to = entById(ev.to); if (sv) sv.lunge = 1; if (to) { puff(wx(to.x), wz(to.y), 3, '#FFFFFF', topOf(to), 1.5); S.play(ev.kind === 'masher' ? 'tick' : 'slap', { gain: 0.3, rate: ev.kind === 'lifter' ? 0.6 : 1.1 }); } if (ev.kind === 'striker' && sv) sv.kick = 1; }
-    else if (ev.k === 'boom') { for (let i = 0; i < 3; i++) setTimeout(() => ring(wx(ev.x), wz(ev.y), ev.r, '#FF9F6B', 0.5, 0.5 + i * 0.3), i * 70); if (sv) sv.boom = 1; S.play('thump', { gain: 0.6, rate: 1.4 }); shake = Math.max(shake, 0.12); }
-    else if (ev.k === 'pop') { puff(wx(ev.x), wz(ev.y), 14, '#FFF6D8', 0.4, 3); ring(wx(ev.x), wz(ev.y), ev.r, '#FFF6D8', 0.35); S.play('pop', { gain: 0.6, rate: 1.5 }); }
+    else if (ev.k === 'hit') { const to = entById(ev.to); if (sv) sv.lunge = 1; if (to) { puff(wx(to.x), wz(to.y), 3, '#FFFFFF', topOf(to), 1.5); const k = SMACK[ev.kind] || ['bonk', 0.7, 0.09]; snd(k[0], { gain: k[1], rate: ev.kind === 'lifter' ? 0.6 : ev.kind === 'pet' ? 1.3 : undefined }, k[2]); if (ev.kind === 'lifter') snd('oof', { gain: 0.5 }, 0.6); } if (ev.kind === 'striker' && sv) sv.kick = 1; }
+    else if (ev.k === 'boom') { for (let i = 0; i < 3; i++) setTimeout(() => ring(wx(ev.x), wz(ev.y), ev.r, '#FF9F6B', 0.5, 0.5 + i * 0.3), i * 70); if (sv) sv.boom = 1; snd('wub', { gain: 1 }, 0.2); shake = Math.max(shake, 0.12); }
+    else if (ev.k === 'pop') { puff(wx(ev.x), wz(ev.y), 14, '#FFF6D8', 0.4, 3); ring(wx(ev.x), wz(ev.y), ev.r, '#FFF6D8', 0.35); snd('crunch', { gain: 1 }, 0.12); }
     else if (ev.k === 'beam') {
       const dx = wx(ev.x1) - wx(ev.x), dz = wz(ev.y1) - wz(ev.y), len = Math.hypot(dx, dz), m = flat(new THREE.PlaneGeometry(len, 1.5), B('#FFE27A', { transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }), 0.6);
       m.rotation.z = -Math.atan2(dz, dx); bit(m, { x: (wx(ev.x) + wx(ev.x1)) / 2, y: 0.6, z: (wz(ev.y) + wz(ev.y1)) / 2, life: 0.45 });
       const core = flat(new THREE.PlaneGeometry(len, 0.5), B('#FFFFFF', { transparent: true, depthWrite: false, side: THREE.DoubleSide }), 0.62); core.rotation.z = m.rotation.z; bit(core, { x: m.position.x, y: 0.62, z: m.position.z, life: 0.3 });
-      S.play('whoosh', { gain: 0.7, rate: 0.5 }); S.play('sparkle', { gain: 0.4 }); shake = Math.max(shake, 0.2);
+      snd('zap', { gain: 1 }, 0.3); shake = Math.max(shake, 0.2);
     }
-    else if (ev.k === 'blink') { for (const [c, k] of [['#35E0E0', 0.33], ['#FF4FD8', 0.66]]) { const m = box(0.5, 0.7, 0.1, B(c, { transparent: true, opacity: 0.6, depthWrite: false })); bit(m, { x: wx(ev.x0 + (ev.x - ev.x0) * k), y: 0.5, z: wz(ev.y0 + (ev.y - ev.y0) * k), life: 0.3 }); } if (sv) { sv.px = ev.x; sv.py = ev.y; sv.x = ev.x; sv.y = ev.y; } S.play('scribble', { gain: 0.5, rate: 2 }); }
-    else if (ev.k === 'split') { for (let i = 0; i < 12; i++) { const m = box(0.16, 0.16, 0.16, B(i % 2 ? '#35E0E0' : '#FF4FD8', { transparent: true })); const a = Math.random() * 6.283; bit(m, { x: wx(ev.x), y: 0.6, z: wz(ev.y), vx: Math.cos(a) * 3, vz: Math.sin(a) * 3, vy: 3, g: 9, life: 0.5 }); } words('GLITCH!', wx(ev.x), 2, wz(ev.y), '#7BE0D2', 0.8); S.play('scribble', { gain: 0.9, rate: 1.4 }); }
-    else if (ev.k === 'heal') { const to = entById(ev.to); if (src && to) { fire(src, to, 'chef', 6, 1.2); setTimeout(() => words('+', wx(to.x), topOf(to) + 0.8, wz(to.y), '#7BE08A', 0.9), 300); } S.play('chime', { gain: 0.25, rate: 1.4 }); }
-    else if (ev.k === 'steal') { if (src) words(ev.n ? '−1 Glow!' : 'nibble!', wx(src.x), 2.2, wz(src.y), '#F4B400', 0.9); S.play('sparkle', { gain: 0.6 }); if (ev.side === THEM) say(ME, 'steal' + battle.tick, 'My Glow!', false); }
-    else if (ev.k === 'wake') { const H = homes[ev.side]; if (H) { say(ev.side, 'wake', ev.why === 'tree' ? 'That’s IT!' : 'Not the house!'); ring(H.g.position.x, H.g.position.z, 4, COL[ev.side], 0.7); S.play('alert', { gain: 0.6 }); banner(ev.side === ME ? 'Your bud joins the fight!' : `${H.name} joins the fight!`, 1.6); } }
+    else if (ev.k === 'blink') { for (const [c, k] of [['#35E0E0', 0.33], ['#FF4FD8', 0.66]]) { const m = box(0.5, 0.7, 0.1, B(c, { transparent: true, opacity: 0.6, depthWrite: false })); bit(m, { x: wx(ev.x0 + (ev.x - ev.x0) * k), y: 0.5, z: wz(ev.y0 + (ev.y - ev.y0) * k), life: 0.3 }); } if (sv) { sv.px = ev.x; sv.py = ev.y; sv.x = ev.x; sv.y = ev.y; } snd('glitchy', { gain: 0.7, rate: 1.5 }, 0.15); }
+    else if (ev.k === 'split') { for (let i = 0; i < 12; i++) { const m = box(0.16, 0.16, 0.16, B(i % 2 ? '#35E0E0' : '#FF4FD8', { transparent: true })); const a = Math.random() * 6.283; bit(m, { x: wx(ev.x), y: 0.6, z: wz(ev.y), vx: Math.cos(a) * 3, vz: Math.sin(a) * 3, vy: 3, g: 9, life: 0.5 }); } words('GLITCH!', wx(ev.x), 2, wz(ev.y), '#7BE0D2', 0.8); S.play('glitchy', { gain: 1, rate: 0.7 }); setTimeout(() => S.play('glitchy', { gain: 0.9, rate: 1.6 }), 160); }
+    else if (ev.k === 'heal') { const to = entById(ev.to); if (src && to) { fire(src, to, 'chef', 6, 1.2); setTimeout(() => words('+', wx(to.x), topOf(to) + 0.8, wz(to.y), '#7BE08A', 0.9), 300); } snd('yum', { gain: 0.8 }, 0.25); }
+    else if (ev.k === 'steal') { if (src) words(ev.n ? '−1 Glow!' : 'nibble!', wx(src.x), 2.2, wz(src.y), '#F4B400', 0.9); S.play('squeak', { gain: 1 }); if (ev.n) setTimeout(() => S.play('coin', { gain: 1 }), 120); if (ev.side === THEM) say(ME, 'steal' + battle.tick, 'My Glow!', false); }
+    else if (ev.k === 'wake') { const H = homes[ev.side]; if (H) { say(ev.side, 'wake', ev.why === 'tree' ? 'That’s IT!' : 'Not the house!'); ring(H.g.position.x, H.g.position.z, 4, COL[ev.side], 0.7); S.play('gasp', { gain: 1 }); setTimeout(() => S.play('alert', { gain: 0.6 }), 220); banner(ev.side === ME ? 'Your bud joins the fight!' : `${H.name} joins the fight!`, 1.6); } }
     else if (ev.k === 'down') {
       if (ev.kind === 'tree') {
         const tv = [...trees.values()].find((t) => t.e.id === ev.id); if (tv) tv.down = 0.001;
-        leaves(wx(ev.x), wz(ev.y), 40); shake = 0.6; S.play('thump', { gain: 1 }); S.play('whoosh', { gain: 0.8, rate: 0.6 });
+        leaves(wx(ev.x), wz(ev.y), 40); shake = 0.6; S.play('timber', { gain: 1 }); setTimeout(() => S.play(ev.side === ME ? 'womp' : 'fanfare', { gain: 0.45 }), 900);
         banner(ev.side === ME ? 'Your tree fell!' : 'Their tree is down!', 1.8); say(1 - ev.side, 'felled' + ev.id, 'YES!', false); say(ev.side, 'lost' + ev.id, 'NOOO!', false);
-      } else if (ev.kind === 'home') { const H = homes[ev.side]; H.fallen = 0.001; puff(H.g.position.x, H.g.position.z, 30, '#FFFFFF', 1.5, 5); shake = 0.9; S.play('thump', { gain: 1.1, rate: 0.7 }); }
-      else { const v = views.get(ev.id); if (v) { puff(wx(ev.x), wz(ev.y), ev.kind === 'sprout' ? 5 : 8, ev.kind === 'bit' ? '#7BE0D2' : '#FFFFFF'); v.dead = 0.001; } S.play('pop', { gain: 0.35, rate: 0.6 }); }
+      } else if (ev.kind === 'home') { const H = homes[ev.side]; H.fallen = 0.001; puff(H.g.position.x, H.g.position.z, 30, '#FFFFFF', 1.5, 5); shake = 0.9; S.play('crumble', { gain: 1.1 }); }
+      else { const v = views.get(ev.id); if (v) { puff(wx(ev.x), wz(ev.y), ev.kind === 'sprout' ? 5 : 8, ev.kind === 'bit' ? '#7BE0D2' : '#FFFFFF'); v.dead = 0.001; } snd(ev.kind === 'pet' ? 'yip' : ev.kind === 'squirrel' ? 'squeak' : ev.kind === 'bit' || ev.kind === 'glitch' ? 'glitchy' : 'plop', { gain: 0.6, rate: 0.7 }, 0.08); }
     }
-    else if (ev.k === 'sudden') { banner('Sudden death! First tree to fall wins', 2.4); S.play('alert', { gain: 0.8 }); }
+    else if (ev.k === 'sudden') { banner('Sudden death! First tree to fall wins', 2.4); S.play('drumroll', { gain: 1 }); }
     else if (ev.k === 'over') finish();
   }
   function tick() {
@@ -338,8 +347,8 @@ export async function runRoyal(deal) {
     for (const e of battle.ents) {
       const v = views.get(e.id); if (v) { v.x = e.x; v.y = e.y; if (e.hp < (hp.get(e.id) ?? e.hp) - 0.5) v.hurtT = 0.25; }
       if (e.build && e.hp < (hp.get(e.id) ?? e.hp)) {
-        if (e.kind === 'tree') { const tv = trees.get(e.id); tv.hitT = 0.35; tv.alertT = 3; say(e.side, 'tree' + e.id, e.side === ME ? 'Hey! My tree!' : 'Leave my tree alone!'); if (e.hp < e.max * 0.4) say(e.side, 'treelow' + e.id, 'Hang in there, tree!'); }
-        else { const H = homes[e.side]; H.shakeT = 0.3; if (e.hp < e.max * 0.35) { say(e.side, 'low', 'Help!!'); H.boards.visible = true; } else if (e.hp < e.max * 0.7) say(e.side, 'mid', 'My poor house!'); }
+        if (e.kind === 'tree') { const tv = trees.get(e.id); tv.hitT = 0.35; tv.alertT = 3; if (!fast) snd('bonk', { gain: 0.5, rate: 0.5 }, 0.25); say(e.side, 'tree' + e.id, e.side === ME ? 'Hey! My tree!' : 'Leave my tree alone!'); if (e.hp < e.max * 0.4) say(e.side, 'treelow' + e.id, 'Hang in there, tree!'); }
+        else { const H = homes[e.side]; H.shakeT = 0.3; if (!fast) snd('kick', { gain: 0.8, rate: 0.7 }, 0.25); if (e.hp < e.max * 0.35) { say(e.side, 'low', 'Help!!'); H.boards.visible = true; } else if (e.hp < e.max * 0.7) say(e.side, 'mid', 'My poor house!'); }
       }
     }
     const c = botMove(battle, THEM, bot); if (c) pending.push({ at: battle.tick + ROYAL.LAND_TICKS, c });
@@ -364,7 +373,7 @@ export async function runRoyal(deal) {
     const nx = S0.deck[S0.queue[0]], nk = nx.id + ':' + nx.kind; if (shownNext !== nk) { shownNext = nk; nextEl.textContent = `${ABOUT[nx.kind][0]}`; nextEl.title = `Next: ${KINDS[nx.kind].name}`; }
     const per = Math.round(ROYAL.GLOW_S * T / (doubled(battle) ? 2 : 1)), g = S0.glow + (S0.glow < ROYAL.GLOW_MAX ? S0.part / per : 0);
     glowFill.style.width = `${g / ROYAL.GLOW_MAX * 100}%`; glowNum.textContent = String(S0.glow);
-    const left = Math.ceil(timeLeft(battle)); if (left !== lastLeft) { lastLeft = left; clockEl.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; clockEl.classList.toggle('hot', doubled(battle)); if (left === ROYAL.DOUBLE_S && !battle.sudden && phase === 'play') { banner('Double Glow! ✨', 1.8); S.play('sparkle', { gain: 0.8 }); } if (left <= 10 && left > 0 && phase === 'play') S.play('tick', { gain: 0.4 }); }
+    const left = Math.ceil(timeLeft(battle)); if (left !== lastLeft) { lastLeft = left; clockEl.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; clockEl.classList.toggle('hot', doubled(battle)); if (left === ROYAL.DOUBLE_S && !battle.sudden && phase === 'play') { banner('Double Glow! ✨', 1.8); S.play('drumroll', { gain: 0.9 }); setTimeout(() => S.play('sparkle', { gain: 0.8 }), 600); } if (left <= 10 && left > 0 && phase === 'play') S.play('tick', { gain: 0.4 }); }
     $('x2').hidden = !doubled(battle);
   }
   let bannerT = 0; const bannerEl = $('banner');
@@ -399,13 +408,13 @@ export async function runRoyal(deal) {
   }
   function pick(slot, ev) {
     if (phase !== 'play') return; selected = slot; const card = S0.deck[S0.hand[slot]], K = KINDS[card.kind];
-    hint.textContent = `${ABOUT[card.kind][0]} ${K.name}: ${ABOUT[card.kind][1]}`; showNoGo(true); S.play('click', { gain: 0.4 });
+    hint.textContent = `${ABOUT[card.kind][0]} ${K.name}: ${ABOUT[card.kind][1]}`; showNoGo(true); S.play('boop', { gain: 0.7, rate: 0.9 + slot * 0.12 });
     drag = { slot, at: null, ok: false, chip: $('chip') }; drag.chip.textContent = ABOUT[card.kind][0]; if (ev) aim(ev); hud();
   }
   function drop(ev) {
     if (drag == null) return; if (ev) aim(ev);
     const d = drag;
-    if (d.at && d.ok) { pending.push({ at: battle.tick + ROYAL.LAND_TICKS, c: { side: ME, slot: d.slot, x: d.at.x, y: d.at.y } }); stats.placed++; S.play('whoosh', { gain: 0.35, rate: 1.6 }); selected = null; hint.textContent = ''; endDrag(); }
+    if (d.at && d.ok) { pending.push({ at: battle.tick + ROYAL.LAND_TICKS, c: { side: ME, slot: d.slot, x: d.at.x, y: d.at.y } }); stats.placed++; S.play('thwip', { gain: 0.8 }); selected = null; hint.textContent = ''; endDrag(); }
     else if (d.at && !d.ok) { S.play('boing', { gain: 0.3, rate: 0.7 }); hint.textContent = KINDS[S0.deck[S0.hand[d.slot]].kind].cost > S0.glow ? 'Not enough Glow yet.' : 'You can only place buds on your own side.'; ghost.visible = false; d.chip.hidden = true; d.at = null; }
     else { ghost.visible = false; d.chip.hidden = true; }   // let go over the cards: it stays picked, tap the meadow to place it
     hud();
@@ -422,7 +431,7 @@ export async function runRoyal(deal) {
     phase = 'over'; endDrag(); const won = battle.winner === ME, draw = battle.winner == null;
     for (const H of homes) { const mine = H.side === battle.winner; H.t.happy = mine; H.t.mood = mine || draw ? null : 'dizzy'; H.said = {}; }
     if (!draw) { say(battle.winner, 'end', 'WE DID IT!', false); if (!homes[1 - battle.winner].fallen) say(1 - battle.winner, 'end', 'Good game…', false); }
-    S.play(won ? 'chime' : 'whoosh', { gain: 0.9, rate: won ? 1 : 0.5 }); if (won) setTimeout(() => S.play('sparkle', { gain: 0.9 }), 300);
+    setTimeout(() => S.play(draw ? 'chime' : won ? 'fanfare' : 'womp', { gain: 1 }), battle.why === 'home' ? 700 : 100); if (won) setTimeout(() => S.play('sparkle', { gain: 0.9 }), 1500);
     const why = { home: won ? 'You reached their home!' : 'They reached your home.', trees: won ? 'You felled more trees.' : 'They felled more trees.', sudden: won ? 'First tree in sudden death!' : 'They got the first tree in sudden death.', health: won ? 'Your side was in better shape.' : draw ? 'Dead level.' : 'Their side was in better shape.' }[battle.why];
     setTimeout(() => {
       $('endTitle').textContent = draw ? 'A draw!' : won ? 'You won! 🎉' : `${homes[THEM].name} won`;
@@ -436,13 +445,32 @@ export async function runRoyal(deal) {
   $('introVs').textContent = `Your home against ${homes[THEM].name}’s`;
   hud(); fit();
 
+  /* ---------- the battle's little band ---------- */
+  // A loop in A minor that the frame clock steps through: kick, hat, a bass line, and a plucked tune that joins
+  // once buds are on the meadow. It speeds up when Glow doubles and again in sudden death.
+  let beatT = 0, beatN = 0;
+  const semi = (n) => Math.pow(2, n / 12), BARS = [[0, [0, 3, 7, 12]], [-4, [-4, 0, 3, 8]], [3, [3, 7, 10, 15]], [-2, [-2, 2, 5, 10]]];
+  const BASS = { 0: 0, 3: 0, 6: 12, 8: 0, 11: 7, 14: 12 }, TUNE = { 0: 0, 3: 2, 6: 1, 8: 3, 11: 2, 14: 1 };
+  function beat(dt) {
+    const hot = doubled(battle), bpm = battle.sudden ? 150 : hot ? 136 : 112, stepS = 60 / bpm / 4;
+    beatT += dt; if (beatT > 0.5) beatT = stepS;
+    while (beatT >= stepS) {
+      beatT -= stepS; const i = beatN % 16, [root, chord] = BARS[Math.floor(beatN / 16) % 4]; beatN++;
+      const busy = views.size >= 2;
+      if (i % 8 === 0 || (hot && i === 10)) S.play('bkick', { gain: 0.55, rate: 1 });
+      if (i % 4 === 2 || (hot && i % 2 === 0)) S.play('bhat', { gain: i % 4 === 2 ? 0.8 : 0.4, rate: 1 });
+      if (i in BASS) S.play('bbass', { gain: 0.6, rate: semi(root + BASS[i]) });
+      if (busy && i in TUNE) S.play('bpluck', { gain: 0.6, rate: semi(chord[TUNE[i]]) });
+    }
+  }
+
   /* ---------- every frame ---------- */
   let last = performance.now();
   function frame(t) {
     requestAnimationFrame(frame);
     const dt = Math.min(0.12, (t - last) / 1000); last = t; now += dt;
-    if (phase === 'count') { const before = Math.ceil(countT); countT -= dt; const n = Math.ceil(countT); if (n !== before && n > 0) { banner(String(n), 0.8); S.play('tick', { gain: 0.6 }); } if (before === 3 && bannerT <= 0) banner('3', 0.8); if (countT <= 0) { phase = 'play'; banner('Go!', 0.9); S.play('chime', { gain: 0.7 }); } }
-    if (phase === 'play') { acc += dt * T; let n = 0; while (acc >= 1 && n++ < 6 && !battle.over) { acc -= 1; tick(); } if (acc > 4) acc = 0; }
+    if (phase === 'count') { const before = Math.ceil(countT); countT -= dt; const n = Math.ceil(countT); if (n !== before && n > 0) { banner(String(n), 0.8); S.play('bkick', { gain: 1 }); S.play('boop', { gain: 0.6, rate: 0.8 }); } if (before === 3 && bannerT <= 0) banner('3', 0.8); if (countT <= 0) { phase = 'play'; banner('Go!', 0.9); S.play('drumroll', { gain: 0.8 }); beatT = 0; beatN = 0; } }
+    if (phase === 'play') { beat(dt); acc += dt * T; let n = 0; while (acc >= 1 && n++ < 6 && !battle.over) { acc -= 1; tick(); } if (acc > 4) acc = 0; }
     const a = phase === 'play' ? clamp(acc, 0, 1) : 1;
     if (bannerT > 0 && (bannerT -= dt) <= 0) bannerEl.hidden = true;
     // buds
@@ -454,10 +482,15 @@ export async function runRoyal(deal) {
       v.lunge = Math.max(0, v.lunge - dt * 5); v.hurtT = Math.max(0, v.hurtT - dt); v.boom = Math.max(0, (v.boom || 0) - dt * 3); v.kick = Math.max(0, (v.kick || 0) - dt * 4);
       const hop = arriving ? 0 : moving ? Math.abs(Math.sin(now * (K.speed > 2.2 ? 16 : 10) + v.bob)) * 0.16 * Math.min(1.5, K.speed) : 0, f = e.side === ME ? -1 : 1;
       const arrive = arriving ? clamp(1 - e.wait / (ROYAL.ARRIVE_S * T), 0, 1) : 1, drop = arriving ? (1 - arrive) * (1 - arrive) * 5 : 0;
-      v.root.position.set(wx(x), hop + drop, wz(y) + f * v.lunge * 0.35);
+      v.root.position.set(wx(x), hop + drop, wz(y));
+      // it faces the way it's going, and whoever it's fighting when it stops
+      { let want = v.yaw; const mx = v.x - v.px, my = v.y - v.py, tg = !moving && e.tgt ? entById(e.tgt) : null;
+        if (moving) want = Math.atan2(mx, -my); else if (tg) want = Math.atan2(tg.x - e.x, -(tg.y - e.y));
+        let turn = want - v.yaw; while (turn > Math.PI) turn -= Math.PI * 2; while (turn < -Math.PI) turn += Math.PI * 2;
+        v.yaw += turn * Math.min(1, dt * 9); v.turn.rotation.y = v.yaw; v.squash.position.z = v.lunge * 0.4; }
       const sq = 1 - v.hurtT * 1.2 + v.boom * 0.25 + (arriving && arrive > 0.9 ? -0.25 : 0);
       v.squash.scale.set((2 - sq) * (arriving ? 0.5 + arrive * 0.5 : 1), sq * (arriving ? 0.5 + arrive * 0.5 : 1), arriving ? 0.5 + arrive * 0.5 : 1);
-      v.squash.rotation.z = moving ? clamp(-(v.x - v.px) * 6, -0.3, 0.3) : 0; v.squash.rotation.x = v.lunge * f * 0.25;
+      v.squash.rotation.x = (moving && !arriving ? 0.13 : 0) + v.lunge * 0.3;
       v.ring.material.opacity = arriving ? 0.35 : 0.9; v.ring.position.y = 0.05 - hop - drop;
       if (v.t) face(v.t, now);
       if (v.ghosts) v.ghosts.forEach((g, i) => { g.visible = Math.sin(now * 23 + i * 2 + v.bob) > 0.2; g.position.x = v.inner.position.x + (i ? 0.09 : -0.09) * (1 + Math.sin(now * 31 + i)); });
