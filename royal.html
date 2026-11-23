@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+/* no zooming on phones (see /js/nozoom.js) */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+</style>
+<script src="/js/nozoom.js"></script>
+<title>Bud Royal · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="Bud Royal: defend your bud's home and its two guardian trees, and send everyone's buds to knock on the other door.">
+<meta name="theme-color" content="#BFE3FF">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root { --ink: #1D1C2B; --soft: #5B6076; --me: #3D8BFD; --them: #F0607A; --glow: #F4B400; --card: #FFFFFF; --head: 'Fredoka', 'Nunito', ui-rounded, system-ui, sans-serif; --body: 'Nunito', system-ui, sans-serif; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+body { font-family: var(--body); color: var(--ink); background: linear-gradient(#BFE3FF, #E4F4FF 55%, #F6FBFF); user-select: none; -webkit-user-select: none; touch-action: none; }
+[hidden] { display: none !important; }
+#app { height: 100%; max-width: 560px; margin: 0 auto; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+.top { display: flex; align-items: center; gap: 8px; padding: 8px 12px 4px; }
+.top a, .top button { font: inherit; font-weight: 800; font-size: 13px; color: var(--ink); background: rgba(255,255,255,.8); border: 0; border-radius: 999px; padding: 6px 12px; text-decoration: none; }
+.top .title { font-family: var(--head); font-weight: 700; font-size: 18px; margin-right: auto; }
+#soundBtn { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; }
+#soundBtn svg { width: 18px; height: 18px; display: block; }
+#clock { font-family: var(--head); font-weight: 700; font-size: 18px; background: var(--ink); color: #fff; border-radius: 999px; padding: 3px 14px; font-variant-numeric: tabular-nums; }
+#clock.hot { background: #E4572E; }
+#x2 { font-weight: 800; font-size: 12px; background: var(--glow); border-radius: 999px; padding: 4px 9px; }
+#stage { position: relative; min-height: 0; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#banner { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 3; font-family: var(--head); font-weight: 700; font-size: clamp(24px, 7vw, 40px); color: #fff; text-align: center; text-shadow: 0 3px 0 var(--ink), 0 0 12px rgba(29,28,43,.6); -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; pointer-events: none; width: 92%; }
+#banner.pop { animation: pop .35s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes pop { from { transform: translate(-50%, -50%) scale(.5); opacity: 0; } }
+.bottom { padding: 4px 10px 10px; display: grid; gap: 6px; }
+#hint { min-height: 18px; font-size: 13px; font-weight: 700; color: var(--soft); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.glow { display: flex; align-items: center; gap: 8px; }
+.glow .bar { position: relative; flex: 1; height: 16px; border-radius: 999px; background: rgba(29,28,43,.14); overflow: hidden; }
+.glow .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #FFD95A, #F4B400); border-radius: 999px; }
+.glow .bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 2px), rgba(255,255,255,.75) calc(10% - 2px), rgba(255,255,255,.75) 10%); }
+#glowNum { font-family: var(--head); font-weight: 700; font-size: 18px; min-width: 2ch; text-align: center; background: var(--glow); border-radius: 999px; padding: 0 9px; }
+.handrow { display: flex; align-items: stretch; gap: 6px; }
+#hand { flex: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.card { position: relative; font: inherit; color: var(--ink); background: var(--card); border: 0; border-radius: 14px; padding: 6px 4px 6px; display: grid; justify-items: center; gap: 1px; box-shadow: 0 3px 0 rgba(29,28,43,.16); touch-action: none; min-width: 0; }
+.card.in { animation: deal .28s ease-out; }
+@keyframes deal { from { transform: translateY(18px); opacity: 0; } }
+.card .pic { width: 52px; height: 52px; }
+.card b { font-family: var(--head); font-weight: 600; font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card small { font-size: 10.5px; font-weight: 700; color: var(--soft); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .cost { position: absolute; left: -3px; top: -5px; font-family: var(--head); font-weight: 700; font-size: 14px; background: var(--glow); border-radius: 999px; min-width: 24px; height: 24px; display: grid; place-items: center; box-shadow: 0 2px 0 rgba(29,28,43,.2); }
+.card .badge { position: absolute; right: 2px; top: 0; font-size: 15px; }
+.card.poor { filter: grayscale(.85) brightness(.9); }
+.card.sel { outline: 3px solid var(--me); transform: translateY(-6px); }
+.nextbox { width: 44px; display: grid; align-content: center; justify-items: center; gap: 2px; font-size: 10px; font-weight: 800; color: var(--soft); text-transform: uppercase; letter-spacing: .04em; }
+#next { font-size: 24px; background: rgba(255,255,255,.7); border-radius: 12px; width: 40px; height: 44px; display: grid; place-items: center; }
+#chip { position: fixed; z-index: 9; transform: translate(-50%, -120%); font-size: 34px; pointer-events: none; }
+.sheet { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(191,227,255,.72); padding: 20px; }
+.sheet .box { background: #fff; border-radius: 22px; padding: 22px 20px; max-width: 380px; width: 100%; text-align: center; display: grid; gap: 10px; box-shadow: 0 18px 40px -18px rgba(29,28,43,.5); }
+.sheet h1 { font-family: var(--head); font-weight: 700; font-size: 30px; margin: 0; }
+.sheet p { margin: 0; color: var(--soft); font-weight: 700; font-size: 14.5px; line-height: 1.45; }
+.sheet ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; text-align: left; font-weight: 700; font-size: 14px; }
+.sheet li { background: #F3F6FB; border-radius: 12px; padding: 8px 12px; }
+.btn { font: inherit; font-family: var(--head); font-weight: 700; font-size: 19px; color: #fff; background: var(--me); border: 0; border-radius: 999px; padding: 12px 20px; box-shadow: 0 4px 0 #2A6AD0; }
+.btn.quiet { background: #EEF1F6; color: var(--ink); box-shadow: none; font-size: 15px; text-decoration: none; }
+@media (max-height: 640px) { .card .pic { width: 40px; height: 40px; } .card small { display: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="top"><span class="title">Bud Royal</span><span id="x2" hidden>2× Glow</span><span id="clock">3:00</span><button type="button" id="soundBtn" aria-label="Sound"></button><a href="/world">Island</a></div>
+  <div id="stage"><div id="banner" hidden aria-live="polite"></div></div>
+  <div class="bottom">
+    <div id="hint" aria-live="polite"></div>
+    <div class="glow"><span id="glowNum">5</span><div class="bar"><i id="glowFill"></i></div></div>
+    <div class="handrow"><div id="hand"></div><div class="nextbox">next<span id="next"></span></div></div>
+  </div>
+</div>
+<div id="chip" hidden></div>
+<div class="sheet" id="gate"><div class="box"><h1>Bud Royal</h1><p id="gateText">Dealing the buds…</p><div id="gateBtns"></div></div></div>
+<div class="sheet" id="intro" hidden><div class="box">
+  <h1>Bud Royal</h1><p id="introVs"></p>
+  <ul><li>🌳 Knock down their trees, then their home. Protect yours.</li><li>✨ Buds cost Glow. It fills up by itself.</li><li>👆 Drag a bud from your hand onto your side of the meadow.</li><li>⏱️ Three minutes. Glow doubles in the last one.</li></ul>
+  <button type="button" class="btn" id="go">Start</button>
+</div></div>
+<div class="sheet" id="end" hidden><div class="box"><h1 id="endTitle"></h1><p id="endWhy"></p><button type="button" class="btn" id="again">Play again</button><a class="btn quiet" href="/world">Back to the island</a></div></div>
+<script src="/js/sound.js"></script>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const gate = (text, btns = []) => { $('gate').hidden = false; $('gateText').textContent = text; $('gateBtns').textContent = ''; for (const [label, go] of btns) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = label; b.addEventListener('click', go); $('gateBtns').append(b); } };
+try {
+  const res = await fetch('/api/game?royal=deal', { credentials: 'same-origin', cache: 'no-store' });
+  if (res.status === 401) { location.href = '/api/auth/login?next=' + encodeURIComponent('/royal'); throw new Error('signing in'); }
+  const deal = await res.json();
+  if (!res.ok) { gate(deal.error === 'make your bud first' ? 'You need a bud of your own first.' : `Couldn’t deal a match (${deal.error || res.status}).`, deal.error === 'make your bud first' ? [['Make my bud', () => { location.href = '/'; }]] : [['Try again', () => location.reload()]]); throw new Error('no deal'); }
+  for (const src of ['/js/vendor/three.r128.min.js', '/js/vendor/delaunator-5.0.1.min.js']) await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => no(new Error('couldn’t load the 3D picture')); document.head.append(sc); });
+  const { runRoyal } = await import('/js/royal-play.js');
+  window.__royal = await runRoyal(deal);
+  if (window.BudSound) window.BudSound.bindToggle($('soundBtn')); else $('soundBtn').hidden = true;
+  $('gate').hidden = true; $('intro').hidden = false;
+} catch (e) {
+  if (!['signing in', 'no deal'].includes(e.message)) { console.error(e); gate(`Something went wrong (${e.message}).`, [['Try again', () => location.reload()]]); }
+}
+</script>
+</body>
+</html>

@@ -30,17 +30,17 @@ export const KINDS = {
   bit: { name: 'Little Glitch', cost: 0, hp: 110, dmg: 34, hit: 0.8, speed: 2.3, range: 0.8, r: 0.32, mini: true },
   loud: { name: 'Loudspeaker', loves: 'music', role: 'Close-up blast', cost: 4, hp: 700, dmg: 66, hit: 1.2, speed: 1.15, range: 0.6, r: 0.6, aura: 2.3 },
   lifter: { name: 'Lifter', loves: 'fitness', role: 'Tank', cost: 5, hp: 1750, dmg: 95, hit: 1.5, speed: 1.1, range: 0.9, r: 0.75 },
-  striker: { name: 'Striker', loves: 'sports', role: 'Tree chaser', cost: 4, hp: 800, dmg: 110, hit: 1.4, speed: 2.5, range: 1.0, r: 0.55, only: 'build' },
+  striker: { name: 'Striker', loves: 'sports', role: 'Tree chaser', cost: 4, hp: 860, dmg: 122, hit: 1.4, speed: 2.5, range: 1.0, r: 0.55, only: 'build' },
   masher: { name: 'Button Masher', loves: 'games', role: 'Fast fighter', cost: 2, hp: 300, dmg: 38, hit: 0.5, speed: 2.4, range: 0.8, r: 0.45 },
-  lobber: { name: 'Popcorn Lobber', loves: 'movies', role: 'Ranged splash', cost: 4, hp: 300, dmg: 80, hit: 1.8, speed: 1.4, range: 5, r: 0.5, shot: 7, splash: 1.6 },
+  lobber: { name: 'Popcorn Lobber', loves: 'movies', role: 'Ranged splash', cost: 4, hp: 320, dmg: 88, hit: 1.8, speed: 1.4, range: 5, r: 0.5, shot: 7, splash: 1.6 },
   pets: { name: 'Pet Pack', loves: 'pets', role: 'Swarm', cost: 3, brings: 'pet', count: 3 },
   pet: { name: 'Pet', cost: 0, hp: 150, dmg: 42, hit: 0.7, speed: 2.6, range: 0.75, r: 0.34, mini: true },
   chef: { name: 'Chef', loves: 'cooking', role: 'Support', cost: 3, hp: 330, dmg: 30, hit: 1.2, speed: 1.6, range: 4, r: 0.5, shot: 9, heal: 44 },
   gardener: { name: 'Gardener', loves: 'nature', role: 'Building', cost: 3, brings: 'sprout', count: 1 },
   sprout: { name: 'Sprout', cost: 0, hp: 760, dmg: 56, hit: 0.9, speed: 0, range: 5.5, r: 0.7, shot: 11, struct: true, lasts: 30 },
   islander: { name: 'Islander', loves: null, role: 'Fighter', cost: 2, hp: 400, dmg: 55, hit: 1.1, speed: 1.7, range: 0.85, r: 0.5 },
-  squirrel: { name: 'Squirrel', loves: null, role: 'Pest', cost: 1, hp: 100, dmg: 20, hit: 0.8, speed: 3.4, range: 0.8, r: 0.35, only: 'build', steals: 1, quick: true },
-  gloam: { name: 'Gloam', loves: null, role: 'Lighthouse beam', cost: 6, hp: 900, dmg: 140, hit: 2.4, speed: 1.0, range: 6.5, r: 0.65, beam: 0.85 },
+  squirrel: { name: 'Squirrel', loves: null, role: 'Pest', cost: 1, hp: 85, dmg: 18, hit: 0.8, speed: 3.4, range: 0.8, r: 0.35, only: 'build', steals: 1, quick: true },
+  gloam: { name: 'Gloam', loves: null, role: 'Lighthouse beam', cost: 6, hp: 800, dmg: 115, hit: 2.6, speed: 1.0, range: 6.5, r: 0.65, beam: 0.85 },
 };
 // what a card can be (the rest are things cards bring along)
 export const CARDS = ['bookworm', 'glitch', 'loud', 'lifter', 'striker', 'masher', 'lobber', 'pets', 'chef', 'gardener', 'islander', 'squirrel', 'gloam'];
@@ -323,9 +323,13 @@ export function fingerprint(s) {
 // `me` holds its own dice and mood so it doesn't touch the battle's dice.
 export function botMove(s, side, me) {
   me.wait = (me.wait || 0) - 1; if (me.wait > 0 || s.over) return null;
-  me.wait = Math.round((0.35 + 0.5 * (1 - (me.skill ?? 1))) * T);
+  // It looks things over every couple of seconds and sometimes lets a moment pass (practice matches showed a
+  // player that reacts to everything at once wastes its Glow). An easy-going one (me.think 3, me.idle 0.55) is
+  // slower still, and loses about three matches in four to this one.
+  me.wait = Math.round((me.think ?? 1.8) * T);
   const rnd = () => { me.seed = (Math.imul(me.seed || 7, 1103515245) + 12345) >>> 0; return me.seed / 4294967296; };
   const S = s.sides[side], f = side === 0 ? 1 : -1, own = (y) => (side === 0 ? y : ROYAL.L - y), toY = (yy) => (side === 0 ? yy : ROYAL.L - yy);
+  if (rnd() < (me.idle ?? 0.4)) return null;
   const hand = S.hand.map((i, slot) => ({ slot, kind: S.deck[i].kind, K: KINDS[S.deck[i].kind] })).filter((c) => c.K.cost <= S.glow);
   if (!hand.length) return null;
   const foes = s.ents.filter((e) => e.side !== side && e.hp > 0 && !e.build && !KINDS[e.kind].struct), mine = s.ents.filter((e) => e.side === side && e.hp > 0 && !e.build);
@@ -351,7 +355,7 @@ export function botMove(s, side, me) {
     return { side, slot: c.slot, x: lx + (rnd() - 0.5) * 2 + (c.K.range > 2 ? (lane ? -1.5 : 1.5) : 0), y: toY(yy) };
   }
   // nothing pressing: save up, then push
-  const want = doubled(s) ? 6 : 7;
+  const want = Math.min(10, (doubled(s) ? 6 : 7) + (me.patience ?? 0));
   const pushing = mine.filter((e) => KINDS[e.kind].speed > 0 && own(e.y) > 8);
   if (S.glow < want && !pushing.length) return null;
   if (S.glow < 4 && pushing.length) { const c = choose((c) => (c.K.cost <= 2 ? 2 : -3)); if (!c || c.K.cost > 2) return null; }

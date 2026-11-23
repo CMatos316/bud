@@ -25,6 +25,7 @@ import * as mail from '../lib/doodlemail.js';
 import * as pult from '../lib/catapult.js';
 import * as bpg from '../lib/bpgame.js';
 import * as race from '../lib/race.js';
+import * as royal from '../lib/royal.js';
 import * as party from '../lib/party.js';
 
 const okRoom = (r) => typeof r === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(r);
@@ -46,6 +47,10 @@ export async function GET(request) {
       const [peek, catapults] = await Promise.all([myGames(session.id), bpg.myGames(session.id).catch(() => [])]);
       return json({ games: peek.filter((g) => g.status === 'setup' || g.status === 'playing').map(({ id, them, myTurn, status }) => ({ id, them, myTurn, status })), catapults });
     } catch (err) { return fail(err); }
+  }
+  // Bud Royal (lib/royal.js): GET ?royal=deal deals a match against an island bud
+  if (url.searchParams.get('royal') === 'deal') {
+    try { const out = await royal.dealMatch(session.id, session.name); return out.error ? json({ error: out.error }, out.status) : json(out); } catch (err) { return fail(err); }
   }
   const pt = url.searchParams.get('party');
   if (pt != null) {

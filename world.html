@@ -4795,6 +4795,10 @@ function renderGamesPanel() {
     }
     cardBody.append(row);
   }
+  // Bud Royal: a three-minute battle on your own phone, against an island bud for now (/royal)
+  const royal = el('p', 'muted'), rl = el('a', null, 'Play Bud Royal');
+  rl.href = '/royal'; rl.style.cssText = 'color: inherit; font-weight: 600;'; royal.append('New: defend your bud’s home and its two trees with everyone’s buds. ', rl, '.');
+  cardBody.append(royal);
   cardBody.append(el('p', 'muted', 'On a Discord call? Island Race, Prankster and Question Showdown are in bud’s Activity: the rocket button in the call.'));
   // party night: a laptop on the TV, everyone's phone a controller (/tv)
   const tv = el('p', 'muted'), link = el('a', null, 'Start a party night');
