@@ -16,6 +16,7 @@ export const ROYAL = {
   MATCH_S: 180, DOUBLE_S: 60, OVER_S: 60,
   ARRIVE_S: 1,                                  // a bud takes this long to arrive after it's placed
   LAND_TICKS: 10,                               // a placement lands this many ticks after it's sent (hides lag)
+  TREE_GIFT: 4,                                 // lose a tree and its last gift is this much Glow, to fight back with
   HAND: 4, DECK: 8, DEEP: 21,                   // how far up you may place once the tree in that lane is down
   TREE: { hp: 1250, dmg: 42, hit: 0.8, range: 6.5, r: 1.1, shot: 12 },
   HOME: { hp: 2300, dmg: 55, hit: 1.0, range: 6.5, r: 1.6, shot: 12 },
@@ -162,6 +163,7 @@ function hurt(s, e, dmg, by) {
     s.sides[1 - e.side].felled++;
     if (!S.awake) { S.awake = true; s.ev.push({ k: 'wake', side: e.side, why: 'tree' }); }
     if (s.sudden) end(s, 1 - e.side, 'sudden');
+    else { const n = Math.min(ROYAL.TREE_GIFT, ROYAL.GLOW_MAX - S.glow); S.glow += n; s.ev.push({ k: 'gift', side: e.side, n, x: e.x, y: e.y }); }
   } else if (e.kind === 'home') end(s, 1 - e.side, 'home');
 }
 function end(s, winner, why) { if (s.over) return; s.over = true; s.winner = winner; s.why = why; s.ev.push({ k: 'over', winner, why }); }

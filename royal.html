@@ -57,6 +57,9 @@ body { font-family: var(--body); color: var(--ink); background: linear-gradient(
 .card.sel { outline: 3px solid var(--me); transform: translateY(-6px); }
 .nextbox { width: 44px; display: grid; align-content: center; justify-items: center; gap: 2px; font-size: 10px; font-weight: 800; color: var(--soft); text-transform: uppercase; letter-spacing: .04em; }
 #next { font-size: 24px; background: rgba(255,255,255,.7); border-radius: 12px; width: 40px; height: 44px; display: grid; place-items: center; }
+.drop { position: fixed; z-index: 8; width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #FFF6C2, #FFD23F 45%, #F4A300); box-shadow: 0 0 12px 4px rgba(255,210,63,.75); pointer-events: none; }
+#glowNum.bump { animation: bump .3s ease-out; }
+@keyframes bump { 40% { transform: scale(1.5); background: #FFF0A8; } }
 #chip { position: fixed; z-index: 9; transform: translate(-50%, -120%); font-size: 34px; pointer-events: none; }
 .sheet { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(191,227,255,.72); padding: 20px; }
 .sheet .box { background: #fff; border-radius: 22px; padding: 22px 20px; max-width: 380px; width: 100%; text-align: center; display: grid; gap: 10px; box-shadow: 0 18px 40px -18px rgba(29,28,43,.5); }
@@ -83,7 +86,7 @@ body { font-family: var(--body); color: var(--ink); background: linear-gradient(
 <div class="sheet" id="gate"><div class="box"><h1>Bud Royal</h1><p id="gateText">Dealing the buds…</p><div id="gateBtns"></div></div></div>
 <div class="sheet" id="intro" hidden><div class="box">
   <h1>Bud Royal</h1><p id="introVs"></p>
-  <ul><li>🌳 Knock down their trees, then their home. Protect yours.</li><li>✨ Buds cost Glow. It fills up by itself.</li><li>👆 Drag a bud from your hand onto your side of the meadow.</li><li>⏱️ Three minutes. Glow doubles in the last one.</li></ul>
+  <ul><li>🌳 Knock down their trees, then their home. Protect yours.</li><li>✨ Buds cost Glow. It fills up by itself.</li><li>👆 Drag a bud from your hand onto your side of the meadow.</li><li>🎁 Lose a tree and it leaves you 4 Glow, and the bud at home starts throwing things.</li><li>⏱️ Three minutes. Glow doubles in the last one.</li></ul>
   <button type="button" class="btn" id="go">Start</button>
 </div></div>
 <div class="sheet" id="end" hidden><div class="box"><h1 id="endTitle"></h1><p id="endWhy"></p><button type="button" class="btn" id="again">Play again</button><a class="btn quiet" href="/world">Back to the island</a></div></div>

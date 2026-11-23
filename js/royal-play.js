@@ -288,11 +288,14 @@ export async function runRoyal(deal) {
     if (kind === 'lobber') { const g = new THREE.Group(); for (let i = 0; i < 5; i++) { const p = ball(0.13, M('#FFF6D8')); p.position.set((i % 3 - 1) * 0.16, (i % 2) * 0.14, (i > 2 ? 0.14 : 0)); g.add(p); } return g; }
     if (kind === 'chef') { const g = new THREE.Group(), bun = ball(0.2, M('#E8B46A')); bun.scale.y = 0.7; g.add(bun); return g; }
     if (kind === 'sprout') return ball(0.13, M('#2B1A10'));
+    if (kind === 'cushion') { const c = box(0.42, 0.16, 0.42, M('#FFFFFF')); const g = new THREE.Group(); g.add(c); return g; }
     const g = new THREE.Group(), nut = ball(0.17, acornM), cap = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), capM); nut.scale.y = 1.2; cap.position.y = 0.08; g.add(nut, cap); return g;
   }
   const topOf = (e) => (e.kind === 'tree' ? 3.6 : e.kind === 'home' ? 4.8 : (views.get(e.id)?.h || 1) * 0.7);
-  function fire(from, to, kind, fly, arc = 1.6) {
-    const m = missile(kind); scene.add(m);
+  // what the bud at home throws once it's in the fight: its own thing if it has one, otherwise a cushion off the sofa
+  const homeThrows = (side) => { const k = looks[homes[side].owner]?.kind; return k === 'bookworm' || k === 'lobber' || k === 'chef' ? k : 'cushion'; };
+  function fire(from, to, kind, fly, arc = 1.6, size = 1) {
+    const m = missile(kind); m.scale.multiplyScalar(size); scene.add(m);
     shots.push({ m, x0: wx(from.x), y0: topOf(from), z0: wz(from.y), to, x1: wx(to.x), y1: 0.5, z1: wz(to.y), t: 0, dur: fly / T, arc, kind });
   }
 
@@ -310,7 +313,7 @@ export async function runRoyal(deal) {
     else if (ev.k === 'place') { if (ev.side === ME && KINDS[ev.kind].cost >= 5) say(ME, 'big' + battle.tick, 'Go get ’em!', false); }
     else if (ev.k === 'throw') {
       const to = entById(ev.to) || { x: ev.x, y: ev.y, kind: 'spot', id: 0 };
-      if (src) { fire(src, to, src.kind, ev.fly, src.kind === 'lobber' ? 3.2 : 1.4); if (sv) sv.lunge = 1; if (src.kind === 'tree') { const tv = trees.get(src.id); if (tv) tv.alertT = 2.5; } if (src.kind === 'home') homes[src.side].cheer = 0.4; }
+      if (src) { fire(src, to, src.kind === 'home' ? homeThrows(src.side) : src.kind, ev.fly, src.kind === 'lobber' ? 3.2 : src.kind === 'home' ? 2.4 : 1.4, src.kind === 'home' ? 1.9 : 1); if (sv) sv.lunge = 1; if (src.kind === 'tree') { const tv = trees.get(src.id); if (tv) tv.alertT = 2.5; } if (src.kind === 'home') { const H = homes[src.side]; H.cheer = 0.5; H.throwT = 0.3; H.aimX = to.x - src.x; } }
       if (src) { if (src.kind === 'bookworm') snd('flap', { gain: 0.8 }, 0.1); else if (src.kind === 'lobber') snd('thwip', { gain: 0.9 }, 0.1); else snd('pip', { gain: src.build ? 0.9 : 0.7, rate: src.kind === 'home' ? 0.7 : 1 }, 0.09); }
     }
     else if (ev.k === 'hit') { const to = entById(ev.to); if (sv) sv.lunge = 1; if (to) { puff(wx(to.x), wz(to.y), 3, '#FFFFFF', topOf(to), 1.5); const k = SMACK[ev.kind] || ['bonk', 0.7, 0.09]; snd(k[0], { gain: k[1], rate: ev.kind === 'lifter' ? 0.6 : ev.kind === 'pet' ? 1.3 : undefined }, k[2]); if (ev.kind === 'lifter') snd('oof', { gain: 0.5 }, 0.6); } if (ev.kind === 'striker' && sv) sv.kick = 1; }
@@ -326,7 +329,7 @@ export async function runRoyal(deal) {
     else if (ev.k === 'split') { for (let i = 0; i < 12; i++) { const m = box(0.16, 0.16, 0.16, B(i % 2 ? '#35E0E0' : '#FF4FD8', { transparent: true })); const a = Math.random() * 6.283; bit(m, { x: wx(ev.x), y: 0.6, z: wz(ev.y), vx: Math.cos(a) * 3, vz: Math.sin(a) * 3, vy: 3, g: 9, life: 0.5 }); } words('GLITCH!', wx(ev.x), 2, wz(ev.y), '#7BE0D2', 0.8); S.play('glitchy', { gain: 1, rate: 0.7 }); setTimeout(() => S.play('glitchy', { gain: 0.9, rate: 1.6 }), 160); }
     else if (ev.k === 'heal') { const to = entById(ev.to); if (src && to) { fire(src, to, 'chef', 6, 1.2); setTimeout(() => words('+', wx(to.x), topOf(to) + 0.8, wz(to.y), '#7BE08A', 0.9), 300); } snd('yum', { gain: 0.8 }, 0.25); }
     else if (ev.k === 'steal') { if (src) words(ev.n ? '−1 Glow!' : 'nibble!', wx(src.x), 2.2, wz(src.y), '#F4B400', 0.9); S.play('squeak', { gain: 1 }); if (ev.n) setTimeout(() => S.play('coin', { gain: 1 }), 120); if (ev.side === THEM) say(ME, 'steal' + battle.tick, 'My Glow!', false); }
-    else if (ev.k === 'wake') { const H = homes[ev.side]; if (H) { say(ev.side, 'wake', ev.why === 'tree' ? 'That’s IT!' : 'Not the house!'); ring(H.g.position.x, H.g.position.z, 4, COL[ev.side], 0.7); S.play('gasp', { gain: 1 }); setTimeout(() => S.play('alert', { gain: 0.6 }), 220); banner(ev.side === ME ? 'Your bud joins the fight!' : `${H.name} joins the fight!`, 1.6); } }
+    else if (ev.k === 'wake') { const H = homes[ev.side]; if (H) { say(ev.side, 'wake', ev.why === 'tree' ? 'That’s IT!' : 'Not the house!'); ring(H.g.position.x, H.g.position.z, ROYAL.HOME.range, COL[ev.side], 1.1); S.play('gasp', { gain: 1 }); setTimeout(() => S.play('alert', { gain: 0.6 }), 220); banner(ev.side === ME ? 'Your bud starts throwing things!' : `${H.name} starts throwing things!`, 1.8); } }
     else if (ev.k === 'down') {
       if (ev.kind === 'tree') {
         const tv = [...trees.values()].find((t) => t.e.id === ev.id); if (tv) tv.down = 0.001;
@@ -335,6 +338,7 @@ export async function runRoyal(deal) {
       } else if (ev.kind === 'home') { const H = homes[ev.side]; H.fallen = 0.001; puff(H.g.position.x, H.g.position.z, 30, '#FFFFFF', 1.5, 5); shake = 0.9; S.play('crumble', { gain: 1.1 }); }
       else { const v = views.get(ev.id); if (v) { puff(wx(ev.x), wz(ev.y), ev.kind === 'sprout' ? 5 : 8, ev.kind === 'bit' ? '#7BE0D2' : '#FFFFFF'); v.dead = 0.001; } snd(ev.kind === 'pet' ? 'yip' : ev.kind === 'squirrel' ? 'squeak' : ev.kind === 'bit' || ev.kind === 'glitch' ? 'glitchy' : 'plop', { gain: 0.6, rate: 0.7 }, 0.08); }
     }
+    else if (ev.k === 'gift') { if (ev.n > 0) gift(ev); }
     else if (ev.k === 'sudden') { banner('Sudden death! First tree to fall wins', 2.4); S.play('drumroll', { gain: 1 }); }
     else if (ev.k === 'over') finish();
   }
@@ -445,6 +449,21 @@ export async function runRoyal(deal) {
   $('introVs').textContent = `Your home against ${homes[THEM].name}’s`;
   hud(); fit();
 
+  // A fallen tree's last gift: drops of Glow fly out of it, into your Glow bar (or up to the other side's home)
+  function gift(ev) {
+    const r = renderer.domElement.getBoundingClientRect(), at = (x, y, z) => { const p = new THREE.Vector3(x, y, z).project(camera); return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height]; };
+    const [x0, y0] = at(wx(ev.x), 2.5, wz(ev.y)), mine = ev.side === ME, bar = glowNum.getBoundingClientRect(), H = homes[ev.side];
+    const [x1, y1] = mine ? [bar.left + bar.width / 2, bar.top + bar.height / 2] : at(H.g.position.x, 5, H.g.position.z);
+    words(`+${ev.n} Glow`, wx(ev.x), 4.6, wz(ev.y), '#FFD23F', 1.1);
+    for (let i = 0; i < ev.n; i++) {
+      const d = el('i', 'drop'); d.style.left = `${x0}px`; d.style.top = `${y0}px`; document.body.append(d);
+      const sx = (Math.random() - 0.5) * 90, sy = -40 - Math.random() * 50, wait = 350 + i * 170;
+      d.animate([{ transform: 'translate(-50%, -50%) scale(.3)', opacity: 0 }, { transform: `translate(calc(-50% + ${sx}px), calc(-50% + ${sy}px)) scale(1.15)`, opacity: 1, offset: 0.3 }, { transform: `translate(calc(-50% + ${x1 - x0}px), calc(-50% + ${y1 - y0}px)) scale(.75)`, opacity: 1 }], { duration: 850, delay: wait, easing: 'cubic-bezier(.5, 0, .3, 1)', fill: 'both' })
+        .finished.then(() => { d.remove(); S.play('coin', { gain: 0.7, rate: 1 + i * 0.12 }); if (mine) { glowNum.classList.remove('bump'); void glowNum.offsetWidth; glowNum.classList.add('bump'); } }).catch(() => d.remove());
+    }
+    if (mine) setTimeout(() => say(ME, 'gift' + battle.tick, 'Thank you, tree!', false), 1500);
+  }
+
   /* ---------- the battle's little band ---------- */
   // A loop in A minor that the frame clock steps through: kick, hat, a bass line, and a plucked tune that joins
   // once buds are on the meadow. It speeds up when Glow doubles and again in sudden death.
@@ -526,7 +545,7 @@ export async function runRoyal(deal) {
       const b = H.bud.root, jump = mood === 'win' ? Math.abs(Math.sin(now * 7)) * 0.7 : mood === 'fight' ? Math.abs(Math.sin(now * 9)) * 0.22 + H.cheer * 0.5 : mood === 'panic' ? Math.abs(Math.sin(now * 16)) * 0.12 : mood === 'worry' ? Math.abs(Math.sin(now * 5)) * 0.08 : Math.sin(now * 1.6) * 0.03 + 0.03;
       if (H.fallen) { H.fallen = Math.min(1, H.fallen + dt * 1.4); const f = H.fallen; H.house.scale.set(1 + f * 0.3, Math.max(0.01, 1 - f * 1.2), 1 + f * 0.3); H.house.visible = f < 0.8; H.tent.visible = f > 0.5; H.tent.scale.setScalar(clamp((f - 0.5) * 2, 0.01, 1)); b.position.set(1.9, Math.max(0, 3.38 * (1 - f * 1.4)), 1.2); b.rotation.z = Math.sin(now * 2) * 0.05; H.bar.visible = false; H.mailbox.rotation.z = 1.2 * f; }
       else {
-        b.position.set(mood === 'panic' ? Math.sin(now * 9) * 0.35 : mood === 'worry' ? Math.sin(now * 2.2) * 0.25 : 0, 3.38 + jump, 0); b.rotation.z = mood === 'win' ? Math.sin(now * 7) * 0.25 : mood === 'fight' ? Math.sin(now * 9) * 0.1 : 0;
+        b.position.set(mood === 'panic' ? Math.sin(now * 9) * 0.35 : mood === 'worry' ? Math.sin(now * 2.2) * 0.25 : 0, 3.38 + jump, 0); H.throwT = Math.max(0, (H.throwT || 0) - dt); b.rotation.z = mood === 'win' ? Math.sin(now * 7) * 0.25 : mood === 'fight' ? Math.sin(now * 9) * 0.1 - clamp((H.aimX || 0) * 0.12, -0.5, 0.5) * (H.throwT / 0.3) : 0;
         H.bud.squash.scale.set(1, 1 + (mood === 'win' || mood === 'fight' ? Math.sin(now * 14) * 0.06 : 0), 1);
         H.house.position.x = H.shakeT * Math.sin(now * 70) * 0.25; H.house.rotation.z = H.shakeT * Math.sin(now * 55) * 0.06; H.mailbox.rotation.z = k < 0.35 ? 0.9 : 0;
         setBar(H.bar, clamp(k, 0, 1)); if (H.side === ME) H.bar.position.set(H.g.position.x, 0.5, H.g.position.z + 2.9); else H.bar.position.set(H.g.position.x, 7, H.g.position.z); H.bar.quaternion.copy(camera.quaternion);

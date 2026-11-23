@@ -30,11 +30,15 @@ const battle = (d0 = D, d1 = D) => newBattle(42, [d0, d1]);
   ok(m.hp <= 0 && tree(s, 1, 0).hp < ROYAL.TREE.hp + 1 && !s.sides[1].awake, 'a lone masher is seen off by the tree, and the home sleeps on');
 }
 { // a tree falls: home wakes, deeper placing opens
-  const s = battle(M, M); const t = tree(s, 1, 0); t.hp = 30; s.sides[0].glow = 10; place(s, { side: 0, slot: 1, x: 3.5, y: 14 });
+  const s = battle(M, M); const t = tree(s, 1, 0); t.hp = 30; s.sides[0].glow = 10; s.sides[1].glow = 0; place(s, { side: 0, slot: 1, x: 3.5, y: 14 });
   const ev = run(s, 8);
   ok(ev.some((e) => e.k === 'down' && e.kind === 'tree') && s.sides[0].felled === 1, 'the striker runs past everything and fells the tree');
   ok(ev.some((e) => e.k === 'wake' && e.side === 1 && e.why === 'tree') && s.sides[1].awake, 'when a tree falls, the home behind it wakes up');
   ok(canPlace(s, 0, 4, 19) && !canPlace(s, 0, 14, 19) && !canPlace(s, 0, 4, 23), 'and you may place deeper, on that side only');
+  const g = ev.find((e) => e.k === 'gift'); ok(g && g.side === 1 && g.n === 4, 'the side that lost the tree is given 4 Glow');
+  const s9 = battle(M, M); tree(s9, 1, 0).hp = 30; s9.sides[0].glow = 10; place(s9, { side: 0, slot: 1, x: 3.5, y: 14 }); let before = null, after = null;
+  for (let i = 0; i < 8 * T && after == null; i++) { s9.sides[1].glow = 8; s9.sides[1].part = 0; before = 8; step(s9, null); if (s9.ev.some((e) => e.k === 'gift')) after = s9.sides[1].glow; s9.ev.length = 0; }
+  ok(after === 10, 'the gift stops at 10 Glow');
 }
 { // home down ends it
   const s = battle(M, M); home(s, 1).hp = 20; tree(s, 1, 0).hp = 0; s.sides[1].awake = true; s.sides[0].glow = 10; place(s, { side: 0, slot: 1, x: 3.5, y: 14 });
