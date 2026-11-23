@@ -247,6 +247,8 @@ export async function runRoyal(deal) {
     const door = box(0.7, 1.15, 0.08, M('#8A5C3A')); door.position.set(-0.75, 0.58, 1.33); const knob = ball(0.06, M('#FFD23F')); knob.position.set(-0.52, 0.58, 1.39); house.add(door, knob);
     const win = cyl(0.42, 0.42, 0.08, new THREE.MeshStandardMaterial({ color: lin('#FFE9A8'), emissive: lin('#FFC864'), emissiveIntensity: 0.5 }), 20); win.rotation.x = Math.PI / 2; win.position.set(0.75, 1.2, 1.33); const frame = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.06, 6, 20), M('#FFFFFF')); frame.position.set(0.75, 1.2, 1.36); house.add(win, frame);
     const boards = new THREE.Group(); for (const r of [0.5, -0.5]) { const b = box(1.15, 0.16, 0.06, M('#A8825E')); b.rotation.z = r; b.position.set(0.75, 1.2, 1.42); boards.add(b); } boards.visible = false; house.add(boards);
+    // its pile of pebbles, up on the deck beside it
+    for (const [x, y, z, r] of [[0.62, 3.47, 0.5, 0.17], [0.82, 3.45, 0.38, 0.14], [0.68, 3.44, 0.24, 0.13], [0.74, 3.6, 0.4, 0.13], [-0.7, 3.45, 0.5, 0.14], [-0.82, 3.44, 0.34, 0.12]]) { const p = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), M(r > 0.135 ? '#9AA1B4' : '#B4B9C8', { flatShading: true, roughness: 0.6 })); p.position.set(x, y, z); p.scale.y = 0.75; house.add(p); }
     const chim = box(0.4, 0.9, 0.4, M('#C97B63')); chim.position.set(1.15, 2.7, -0.5); house.add(chim);
     const post = cyl(0.04, 0.04, 0.7, M('#8A5C3A'), 6), mail = box(0.36, 0.22, 0.24, M(COL[side])); post.position.set(-2.1, 0.35, 1.2); mail.position.set(-2.1, 0.78, 1.2); const mailbox = new THREE.Group(); mailbox.add(post, mail); g.add(mailbox);
     for (let i = 0; i < 7; i++) { const f = ball(0.11, M(['#FFB3D1', '#FFE27A', '#FFFFFF'][i % 3])); f.position.set(0.2 + i * 0.3, 0.12, 1.7 + (i % 2) * 0.16); g.add(f); }
@@ -288,12 +290,12 @@ export async function runRoyal(deal) {
     if (kind === 'lobber') { const g = new THREE.Group(); for (let i = 0; i < 5; i++) { const p = ball(0.13, M('#FFF6D8')); p.position.set((i % 3 - 1) * 0.16, (i % 2) * 0.14, (i > 2 ? 0.14 : 0)); g.add(p); } return g; }
     if (kind === 'chef') { const g = new THREE.Group(), bun = ball(0.2, M('#E8B46A')); bun.scale.y = 0.7; g.add(bun); return g; }
     if (kind === 'sprout') return ball(0.13, M('#2B1A10'));
-    if (kind === 'cushion') { const c = box(0.42, 0.16, 0.42, M('#FFFFFF')); const g = new THREE.Group(); g.add(c); return g; }
+    if (kind === 'pebble') { const g = new THREE.Group(), p = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), M(['#9AA1B4', '#8C93A3', '#B4B9C8'][Math.floor(Math.random() * 3)], { flatShading: true, roughness: 0.6 })); p.scale.set(1.15, 0.7, 0.95); g.add(p); return g; }
     const g = new THREE.Group(), nut = ball(0.17, acornM), cap = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), capM); nut.scale.y = 1.2; cap.position.y = 0.08; g.add(nut, cap); return g;
   }
   const topOf = (e) => (e.kind === 'tree' ? 3.6 : e.kind === 'home' ? 4.8 : (views.get(e.id)?.h || 1) * 0.7);
-  // what the bud at home throws once it's in the fight: its own thing if it has one, otherwise a cushion off the sofa
-  const homeThrows = (side) => { const k = looks[homes[side].owner]?.kind; return k === 'bookworm' || k === 'lobber' || k === 'chef' ? k : 'cushion'; };
+  // what the bud at home throws once it's in the fight: pebbles, from the pile it keeps up on the deck
+  const homeThrows = () => 'pebble';
   function fire(from, to, kind, fly, arc = 1.6, size = 1) {
     const m = missile(kind); m.scale.multiplyScalar(size); scene.add(m);
     shots.push({ m, x0: wx(from.x), y0: topOf(from), z0: wz(from.y), to, x1: wx(to.x), y1: 0.5, z1: wz(to.y), t: 0, dur: fly / T, arc, kind });
@@ -314,7 +316,7 @@ export async function runRoyal(deal) {
     else if (ev.k === 'throw') {
       const to = entById(ev.to) || { x: ev.x, y: ev.y, kind: 'spot', id: 0 };
       if (src) { fire(src, to, src.kind === 'home' ? homeThrows(src.side) : src.kind, ev.fly, src.kind === 'lobber' ? 3.2 : src.kind === 'home' ? 2.4 : 1.4, src.kind === 'home' ? 1.9 : 1); if (sv) sv.lunge = 1; if (src.kind === 'tree') { const tv = trees.get(src.id); if (tv) tv.alertT = 2.5; } if (src.kind === 'home') { const H = homes[src.side]; H.cheer = 0.5; H.throwT = 0.3; H.aimX = to.x - src.x; } }
-      if (src) { if (src.kind === 'bookworm') snd('flap', { gain: 0.8 }, 0.1); else if (src.kind === 'lobber') snd('thwip', { gain: 0.9 }, 0.1); else snd('pip', { gain: src.build ? 0.9 : 0.7, rate: src.kind === 'home' ? 0.7 : 1 }, 0.09); }
+      if (src) { if (src.kind === 'bookworm') snd('flap', { gain: 0.8 }, 0.1); else if (src.kind === 'lobber') snd('thwip', { gain: 0.9 }, 0.1); else if (src.kind === 'home') snd('thwip', { gain: 0.7, rate: 0.75 }, 0.12); else snd('pip', { gain: src.build ? 0.9 : 0.7 }, 0.09); }
     }
     else if (ev.k === 'hit') { const to = entById(ev.to); if (sv) sv.lunge = 1; if (to) { puff(wx(to.x), wz(to.y), 3, '#FFFFFF', topOf(to), 1.5); const k = SMACK[ev.kind] || ['bonk', 0.7, 0.09]; snd(k[0], { gain: k[1], rate: ev.kind === 'lifter' ? 0.6 : ev.kind === 'pet' ? 1.3 : undefined }, k[2]); if (ev.kind === 'lifter') snd('oof', { gain: 0.5 }, 0.6); } if (ev.kind === 'striker' && sv) sv.kick = 1; }
     else if (ev.k === 'boom') { for (let i = 0; i < 3; i++) setTimeout(() => ring(wx(ev.x), wz(ev.y), ev.r, '#FF9F6B', 0.5, 0.5 + i * 0.3), i * 70); if (sv) sv.boom = 1; snd('wub', { gain: 1 }, 0.2); shake = Math.max(shake, 0.12); }
@@ -329,7 +331,7 @@ export async function runRoyal(deal) {
     else if (ev.k === 'split') { for (let i = 0; i < 12; i++) { const m = box(0.16, 0.16, 0.16, B(i % 2 ? '#35E0E0' : '#FF4FD8', { transparent: true })); const a = Math.random() * 6.283; bit(m, { x: wx(ev.x), y: 0.6, z: wz(ev.y), vx: Math.cos(a) * 3, vz: Math.sin(a) * 3, vy: 3, g: 9, life: 0.5 }); } words('GLITCH!', wx(ev.x), 2, wz(ev.y), '#7BE0D2', 0.8); S.play('glitchy', { gain: 1, rate: 0.7 }); setTimeout(() => S.play('glitchy', { gain: 0.9, rate: 1.6 }), 160); }
     else if (ev.k === 'heal') { const to = entById(ev.to); if (src && to) { fire(src, to, 'chef', 6, 1.2); setTimeout(() => words('+', wx(to.x), topOf(to) + 0.8, wz(to.y), '#7BE08A', 0.9), 300); } snd('yum', { gain: 0.8 }, 0.25); }
     else if (ev.k === 'steal') { if (src) words(ev.n ? '−1 Glow!' : 'nibble!', wx(src.x), 2.2, wz(src.y), '#F4B400', 0.9); S.play('squeak', { gain: 1 }); if (ev.n) setTimeout(() => S.play('coin', { gain: 1 }), 120); if (ev.side === THEM) say(ME, 'steal' + battle.tick, 'My Glow!', false); }
-    else if (ev.k === 'wake') { const H = homes[ev.side]; if (H) { say(ev.side, 'wake', ev.why === 'tree' ? 'That’s IT!' : 'Not the house!'); ring(H.g.position.x, H.g.position.z, ROYAL.HOME.range, COL[ev.side], 1.1); S.play('gasp', { gain: 1 }); setTimeout(() => S.play('alert', { gain: 0.6 }), 220); banner(ev.side === ME ? 'Your bud starts throwing things!' : `${H.name} starts throwing things!`, 1.8); } }
+    else if (ev.k === 'wake') { const H = homes[ev.side]; if (H) { say(ev.side, 'wake', ev.why === 'tree' ? 'That’s IT!' : 'Not the house!'); ring(H.g.position.x, H.g.position.z, ROYAL.HOME.range, COL[ev.side], 1.1); S.play('gasp', { gain: 1 }); setTimeout(() => S.play('alert', { gain: 0.6 }), 220); banner(ev.side === ME ? 'Your bud starts throwing pebbles!' : `${H.name} starts throwing pebbles!`, 1.8); } }
     else if (ev.k === 'down') {
       if (ev.kind === 'tree') {
         const tv = [...trees.values()].find((t) => t.e.id === ev.id); if (tv) tv.down = 0.001;
@@ -526,7 +528,7 @@ export async function runRoyal(deal) {
       const s = shots[i]; s.t += dt; const k = Math.min(1, s.t / s.dur), to = s.to && s.to.id ? entById(s.to.id) : null;
       if (to && to.hp > 0) { s.x1 = wx(to.x); s.z1 = wz(to.y); s.y1 = topOf(to) * 0.8; }
       s.m.position.set(s.x0 + (s.x1 - s.x0) * k, s.y0 + (s.y1 - s.y0) * k + Math.sin(k * Math.PI) * s.arc, s.z0 + (s.z1 - s.z0) * k); s.m.rotation.x += dt * 12; s.m.rotation.z += dt * 7;
-      if (k >= 1) { scene.remove(s.m); shots.splice(i, 1); if (s.kind !== 'lobber' && s.kind !== 'chef') puff(s.x1, s.z1, 3, '#FFFFFF', s.y1, 1.4); }
+      if (k >= 1) { scene.remove(s.m); shots.splice(i, 1); if (s.kind === 'pebble') { puff(s.x1, s.z1, 4, '#C9CEDA', s.y1, 1.8); snd('bonk', { gain: 0.6, rate: 1.5 }, 0.1); } else if (s.kind !== 'lobber' && s.kind !== 'chef') puff(s.x1, s.z1, 3, '#FFFFFF', s.y1, 1.4); }
     }
     // trees
     for (const v of trees.values()) {
