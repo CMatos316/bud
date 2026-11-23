@@ -68,6 +68,15 @@ body { font-family: var(--body); color: var(--ink); background: linear-gradient(
 .sheet ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; text-align: left; font-weight: 700; font-size: 14px; }
 .sheet li { background: #F3F6FB; border-radius: 12px; padding: 8px 12px; }
 .btn { font: inherit; font-family: var(--head); font-weight: 700; font-size: 19px; color: #fff; background: var(--me); border: 0; border-radius: 999px; padding: 12px 20px; box-shadow: 0 4px 0 #2A6AD0; }
+.btn.alt { background: #2F9E6B; box-shadow: 0 4px 0 #237A52; }
+.btn small { display: block; font-family: var(--body); font-weight: 700; font-size: 12px; opacity: .85; }
+.btn:disabled { filter: grayscale(.6); opacity: .7; }
+.btns { display: grid; gap: 8px; }
+.sheet .box { max-height: 100%; overflow: auto; }
+.list { display: grid; gap: 6px; max-height: 46vh; overflow: auto; text-align: left; }
+.who { display: flex; align-items: center; gap: 10px; font: inherit; font-weight: 800; font-size: 16px; color: var(--ink); background: #F3F6FB; border: 0; border-radius: 12px; padding: 6px 12px; }
+.who canvas { width: 40px; height: 40px; flex: none; }
+#cPic { width: 100%; height: auto; border-radius: 14px; display: block; }
 .btn.quiet { background: #EEF1F6; color: var(--ink); box-shadow: none; font-size: 15px; text-decoration: none; }
 @media (max-height: 640px) { .card .pic { width: 40px; height: 40px; } .card small { display: none; } }
 </style>
@@ -83,7 +92,26 @@ body { font-family: var(--body); color: var(--ink); background: linear-gradient(
   </div>
 </div>
 <div id="chip" hidden></div>
-<div class="sheet" id="gate"><div class="box"><h1>Bud Royal</h1><p id="gateText">Dealing the buds…</p><div id="gateBtns"></div></div></div>
+<div class="sheet" id="gate"><div class="box"><h1>Bud Royal</h1><p id="gateText">One moment…</p><div id="gateBtns" class="btns"></div></div></div>
+<div class="sheet" id="menu" hidden><div class="box">
+  <h1>Bud Royal</h1><p>Your bud’s home and its two trees, against someone else’s.</p>
+  <button type="button" class="btn" id="mSolo">Play an island bud</button>
+  <button type="button" class="btn alt" id="mFriend">Challenge a friend</button>
+  <button type="button" class="btn alt" id="mOpen">Open table <small>play whoever sits down</small></button>
+  <p id="menuNote" hidden></p>
+  <a class="btn quiet" href="/world">Back to the island</a>
+</div></div>
+<div class="sheet" id="friends" hidden><div class="box">
+  <h1>Who?</h1><p>They’ll get a Discord message from bud with a picture of your bud.</p>
+  <div id="friendList" class="list"></div>
+  <button type="button" class="btn quiet" id="fBack">Back</button>
+</div></div>
+<div class="sheet" id="confirm" hidden><div class="box">
+  <h1 id="cTitle"></h1><canvas id="cPic" width="720" height="480"></canvas>
+  <p id="cText"></p>
+  <button type="button" class="btn" id="cSend">Send the challenge</button>
+  <button type="button" class="btn quiet" id="cBack">Back</button>
+</div></div>
 <div class="sheet" id="intro" hidden><div class="box">
   <h1>Bud Royal</h1><p id="introVs"></p>
   <ul><li>🌳 Knock down their trees, then their home. Protect yours.</li><li>✨ Buds cost Glow. It fills up by itself.</li><li>👆 Drag a bud from your hand onto your side of the meadow.</li><li>🎁 Lose a tree and it leaves you 4 Glow, and the bud at home starts throwing pebbles.</li><li>⏱️ Three minutes. Glow doubles in the last one.</li></ul>
@@ -92,21 +120,102 @@ body { font-family: var(--body); color: var(--ink); background: linear-gradient(
 <div class="sheet" id="end" hidden><div class="box"><h1 id="endTitle"></h1><p id="endWhy"></p><button type="button" class="btn" id="again">Play again</button><a class="btn quiet" href="/world">Back to the island</a></div></div>
 <script src="/js/sound.js"></script>
 <script type="module">
-const $ = (id) => document.getElementById(id);
-const gate = (text, btns = []) => { $('gate').hidden = false; $('gateText').textContent = text; $('gateBtns').textContent = ''; for (const [label, go] of btns) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = label; b.addEventListener('click', go); $('gateBtns').append(b); } };
-try {
-  const res = await fetch('/api/game?royal=deal', { credentials: 'same-origin', cache: 'no-store' });
-  if (res.status === 401) { location.href = '/api/auth/login?next=' + encodeURIComponent('/royal'); throw new Error('signing in'); }
-  const deal = await res.json();
-  if (!res.ok) { gate(deal.error === 'make your bud first' ? 'You need a bud of your own first.' : `Couldn’t deal a match (${deal.error || res.status}).`, deal.error === 'make your bud first' ? [['Make my bud', () => { location.href = '/'; }]] : [['Try again', () => location.reload()]]); throw new Error('no deal'); }
-  for (const src of ['/js/vendor/three.r128.min.js', '/js/vendor/delaunator-5.0.1.min.js']) await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => no(new Error('couldn’t load the 3D picture')); document.head.append(sc); });
-  const { runRoyal } = await import('/js/royal-play.js');
-  window.__royal = await runRoyal(deal);
-  if (window.BudSound) window.BudSound.bindToggle($('soundBtn')); else $('soundBtn').hidden = true;
-  $('gate').hidden = true; $('intro').hidden = false;
-} catch (e) {
-  if (!['signing in', 'no deal'].includes(e.message)) { console.error(e); gate(`Something went wrong (${e.message}).`, [['Try again', () => location.reload()]]); }
+import { drawBud } from '/js/bud-flat.js';
+const $ = (id) => document.getElementById(id), sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+const sheets = ['gate', 'menu', 'friends', 'confirm', 'intro', 'end'], show = (id) => { for (const s of sheets) $(s).hidden = s !== id; };
+const gate = (text, btns = []) => { show('gate'); $('gateText').textContent = text; $('gateBtns').textContent = ''; for (const [label, go, quiet] of btns) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn' + (quiet ? ' quiet' : ''); b.textContent = label; b.addEventListener('click', go); $('gateBtns').append(b); } };
+const home = () => { location.href = '/royal'; };
+async function call(query, body) {
+  const res = await fetch('/api/game' + (query ? '?' + query : ''), body ? { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { credentials: 'same-origin', cache: 'no-store' });
+  if (res.status === 401) { location.href = '/api/auth/login?next=' + encodeURIComponent(location.pathname + location.search); await sleep(1e9); }
+  let data = {}; try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw Object.assign(new Error(data.error || `error ${res.status}`), { status: res.status });
+  return data;
 }
+const noBud = (e) => (e.message === 'make your bud first' ? gate('You need a bud of your own first.', [['Make my bud', () => { location.href = '/'; }]]) : gate(`That didn’t work (${e.message}).`, [['Back', home]]));
+let loaded = null;
+const load3d = () => (loaded ||= (async () => {
+  for (const src of ['/js/vendor/three.r128.min.js', '/js/vendor/delaunator-5.0.1.min.js']) await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => no(new Error('couldn’t load the 3D picture')); document.head.append(sc); });
+  if (window.BudSound) window.BudSound.bindToggle($('soundBtn')); else $('soundBtn').hidden = true;
+  return (await import('/js/royal-play.js')).runRoyal;
+})());
+
+// against an island bud
+async function solo() {
+  gate('Dealing the buds…');
+  try { const deal = await call('royal=deal'), run = await load3d(); window.__royal = await run(deal); show('intro'); }
+  catch (e) { if (e.status === 409) noBud(e); else gate(`Couldn’t deal a match (${e.message}).`, [['Try again', solo], ['Back', home, true]]); }
+}
+// against a person: wait for them, connect, and let the server name the moment it starts
+async function live(id, note) {
+  gate('Finding your match…');
+  try {
+    let m = await call(`royal=match&m=${encodeURIComponent(id)}`);
+    while (m.state === 'waiting') { gate('Waiting for someone to sit down at the open table…', [['Never mind', home, true]]); await sleep(2000); m = await call(`royal=match&m=${encodeURIComponent(id)}`); }
+    if (m.result) return gate('That match is over.', [['Back', home]]);
+    if (m.startAt && m.now - m.startAt > 8000) return gate('That match started without you.', [['Back', home]]);
+    if (!m.live) return gate('Live matches aren’t switched on yet.', [['Back', home]]);
+    gate('Connecting…');
+    const room = window.__royalNet ? await window.__royalNet(m) : await (await import('/js/royal-net.js')).joinRoom(m.live, m.rival.id);
+    let startAt = m.startAt || null;
+    const net = { side: m.side, id: m.id, startAt: () => startAt, now: room.now, send: room.send, print: room.print, onPeer: room.onPeer, onPeerPrint: room.onPeerPrint, peerAge: room.peerAge, leave: room.leave };
+    const run = await load3d();
+    window.__royal = await run({ seed: m.seed, decks: m.decks, buds: m.buds, me: m.me, rival: m.rival }, net);
+    for (const s of sheets) $(s).hidden = true;
+    if (note) $('hint').textContent = note;
+    // "I'm here", until both of us are and there's a start time
+    while (!startAt) { try { const r = await call('', { action: 'royal-ready', id: m.id }); if (r.startAt) startAt = r.startAt; } catch (e) {} if (!startAt) await sleep(1500); }
+  } catch (e) { if (e.status === 409) noBud(e); else gate(`Couldn’t join that match (${e.message}).`, [['Back', home]]); }
+}
+async function openTable() { gate('Looking for someone…'); try { const r = await call('', { action: 'royal-open' }); history.replaceState(null, '', '/royal?m=' + r.id); live(r.id); } catch (e) { if (e.status === 409) noBud(e); else gate(`${e.message}.`, [['Back', home]]); } }
+
+// challenging a friend: pick them, see the picture they'll be sent, send it
+let who = null;
+async function friends(pre) {
+  gate('Seeing who’s about…');
+  try { who = who || await call('royal=who'); } catch (e) { return gate(`Couldn’t load the island (${e.message}).`, [['Back', home]]); }
+  if (!who.me) return noBud(new Error('make your bud first'));
+  if (!who.live) return gate('Live matches aren’t switched on yet.', [['Back', home]]);
+  const one = pre && who.buds.find((b) => b.id === pre); if (one) return confirm(one);
+  const list = $('friendList'); list.textContent = '';
+  if (!who.buds.length) list.append(Object.assign(document.createElement('p'), { textContent: 'Nobody else has a bud yet.' }));
+  for (const b of who.buds) { const row = document.createElement('button'); row.type = 'button'; row.className = 'who'; const pic = document.createElement('canvas'); row.append(pic, Object.assign(document.createElement('b'), { textContent: b.name })); row.addEventListener('click', () => confirm(b)); list.append(row); drawBud(pic, b, { size: 40 }); }
+  show('friends');
+}
+// the picture: your bud, looking for a fun fight
+async function picture(canvas, me, them) {
+  const g = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
+  const sky = g.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#8FCBFF'); sky.addColorStop(0.62, '#DFF2FF'); sky.addColorStop(0.62, '#A9D98A'); sky.addColorStop(1, '#8FC473'); g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  g.save(); g.translate(W / 2, H * 0.52); g.strokeStyle = 'rgba(255,255,255,.75)'; g.lineWidth = 10; g.lineCap = 'round';
+  for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * 170, Math.sin(a) * 150); g.lineTo(Math.cos(a) * (215 + (i % 2) * 28), Math.sin(a) * (190 + (i % 2) * 24)); g.stroke(); } g.restore();
+  g.fillStyle = 'rgba(40,70,40,.25)'; g.beginPath(); g.ellipse(W / 2, H * 0.83, 120, 20, 0, 0, Math.PI * 2); g.fill();
+  const bud = document.createElement('canvas'); await drawBud(bud, me, { size: 260, happy: true, dpr: 1 }); g.save(); g.translate(W / 2, H * 0.55); g.rotate(-0.08); g.drawImage(bud, -130, -130, 260, 260); g.restore();
+  g.fillStyle = '#000'; g.font = '96px serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🥊', W * 0.22, H * 0.56); g.save(); g.translate(W * 0.78, H * 0.56); g.scale(-1, 1); g.fillText('🥊', 0, 0); g.restore();
+  const text = (s, y, px, fill) => { g.font = `700 ${px}px Fredoka, Nunito, ui-rounded, system-ui, sans-serif`; g.lineJoin = 'round'; g.lineWidth = px / 5; g.strokeStyle = '#1D1C2B'; g.strokeText(s, W / 2, y); g.fillStyle = fill; g.fillText(s, W / 2, y); };
+  text('BUD ROYAL', 58, 64, '#FFD23F'); text(`${me.name} wants a fun fight!`.slice(0, 34), H - 78, 42, '#FFFFFF'); text(`Are you in, ${them.name}?`.slice(0, 34), H - 32, 30, '#FFFFFF');
+}
+let target = null;
+async function confirm(b) {
+  target = b; $('cTitle').textContent = `Challenge ${b.name}?`; $('cText').textContent = `${b.name}’s person gets this picture in a Discord message from bud, with a button to play you.`;
+  $('cSend').disabled = false; $('cSend').textContent = 'Send the challenge'; show('confirm'); await picture($('cPic'), who.me, b);
+}
+$('cSend').addEventListener('click', async () => {
+  $('cSend').disabled = true; $('cSend').textContent = 'Sending…';
+  try {
+    const r = await call('', { action: 'royal-challenge', to: target.id, image: $('cPic').toDataURL('image/jpeg', 0.86) });
+    history.replaceState(null, '', '/royal?m=' + r.id);
+    live(r.id, r.dm ? `Challenge sent to ${r.to.name} on Discord. The match starts when they arrive.` : `Discord wouldn’t deliver it. Send ${r.to.name} this page’s link yourself.`);
+  } catch (e) { $('cSend').disabled = false; $('cSend').textContent = 'Send the challenge'; $('cText').textContent = `That didn’t send: ${e.message}.`; }
+});
+$('cBack').addEventListener('click', () => friends()); $('fBack').addEventListener('click', () => show('menu'));
+$('mSolo').addEventListener('click', solo); $('mFriend').addEventListener('click', () => friends()); $('mOpen').addEventListener('click', openTable);
+
+const q = new URLSearchParams(location.search);
+try {
+  if (q.get('m')) live(q.get('m'));
+  else if (q.get('vs')) friends(q.get('vs'));
+  else show('menu');
+} catch (e) { console.error(e); gate(`Something went wrong (${e.message}).`, [['Try again', () => location.reload()]]); }
 </script>
 </body>
 </html>

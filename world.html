@@ -3375,7 +3375,9 @@ function renderCardBody() {
   // a ready-made note when you have something in common ("you like basketball too?!"), editable as always
   const draft = d.common && d.common.top ? `you like ${d.common.top} too?!` : '';
   stick.addEventListener('click', () => openComposer(bud, draft));
-  const r = el('div', 'row'); r.append(stick); cardBody.append(r);
+  // a Bud Royal challenge: /royal shows the picture they'd be sent and asks before sending anything
+  const duel = el('a', 'btn', 'Challenge to Bud Royal'); duel.href = `/royal?vs=${encodeURIComponent(bud.id)}`;
+  const r = el('div', 'row'); r.append(stick, duel); cardBody.append(r);
 }
 
 /* ---------------- your bud's diary ---------------- */
@@ -4797,7 +4799,7 @@ function renderGamesPanel() {
   }
   // Bud Royal: a three-minute battle on your own phone, against an island bud for now (/royal)
   const royal = el('p', 'muted'), rl = el('a', null, 'Play Bud Royal');
-  rl.href = '/royal'; rl.style.cssText = 'color: inherit; font-weight: 600;'; royal.append('New: defend your bud’s home and its two trees with everyone’s buds. ', rl, '.');
+  rl.href = '/royal'; rl.style.cssText = 'color: inherit; font-weight: 600;'; royal.append('Defend your bud’s home and its two trees with everyone’s buds, against an island bud or a friend. ', rl, '.');
   cardBody.append(royal);
   cardBody.append(el('p', 'muted', 'On a Discord call? Island Race, Prankster and Question Showdown are in bud’s Activity: the rocket button in the call.'));
   // party night: a laptop on the TV, everyone's phone a controller (/tv)

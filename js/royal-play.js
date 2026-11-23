@@ -1,12 +1,14 @@
 // Bud Royal, the part you see and touch: the meadow in 3D, your hand of buds, and a match against an island bud.
 // The battle itself is js/royal-rules.js; this file only shows it and sends placements into it.
 // World: x across (-9 to 9), z down the meadow (your home near the camera at z = +13, theirs at z = -13).
-import { ROYAL, KINDS, newBattle, step, canPlace, botMove, tree as treeOf, home as homeOf, statOf, timeLeft, doubled } from '/js/royal-rules.js';
+import { ROYAL, KINDS, newBattle, step, canPlace, botMove, fingerprint, tree as treeOf, home as homeOf, statOf, timeLeft, doubled } from '/js/royal-rules.js';
 import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
 import { drawBud } from '/js/bud-flat.js';
 
 const S = window.BudSound || { play() {}, babble() {}, bindToggle() {} };
-const T = ROYAL.TICK, ME = 0, THEM = 1, COL = ['#3D8BFD', '#F0607A'];
+const T = ROYAL.TICK;
+let ME = 0, THEM = 1;   // which side is yours: 0 against an island bud; whichever the server gave you against a friend
+const col = (side) => (side === ME ? '#3D8BFD' : '#F0607A');
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 // what each power does, in a line, and its little picture
@@ -18,12 +20,16 @@ export const ABOUT = {
   gloam: ['🏮', 'A slow lighthouse beam through everything in its line.'],
 };
 
-export async function runRoyal(deal) {
+// deal: the match from the server. net: the live connection when it's against a friend (js/royal-net.js, plus
+// which side you are, the match's id and when it starts); without it the other side is an island bud.
+export async function runRoyal(deal, net = null) {
+  ME = net ? net.side : 0; THEM = 1 - ME;
   const THREE = window.THREE;
   const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
   const M = (hex, o = {}) => new THREE.MeshStandardMaterial({ color: lin(hex), roughness: 0.85, ...o });
   const B = (hex, o = {}) => new THREE.MeshBasicMaterial({ color: lin(hex), ...o });
-  const wx = (x) => x - ROYAL.W / 2, wz = (y) => ROYAL.L / 2 - y;
+  // your home is always at the bottom of your screen, so side 1 sees the meadow turned round
+  const flip = ME === 1, wx = (x) => (flip ? ROYAL.W / 2 - x : x - ROYAL.W / 2), wz = (y) => (flip ? y - ROYAL.L / 2 : ROYAL.L / 2 - y);
   const looks = deal.buds || {};
   const nameOfBud = (id) => looks[id]?.name || (id === 'gloam' ? 'Gloam' : id === 'squirrel' ? 'The squirrel' : null);
 
@@ -216,7 +222,7 @@ export async function runRoyal(deal) {
     const faceM = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.74, 1.5, 16, 1, true, -1.05, 2.1), new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })); faceM.position.y = 1.15; g.add(faceM);
     const crown = new THREE.Group(), lm = [M('#58B368'), M('#6CC47A'), M('#4BA35C')];
     for (const [x, y, z, r, k] of [[0, 0.3, 0, 1.45, 0], [1.0, 0, 0.3, 1.05, 1], [-1.0, 0.05, 0.2, 1.1, 2], [0.2, 0.1, 0.95, 1.0, 1], [-0.2, 0.2, -0.95, 1.05, 0], [0, 1.0, 0, 0.95, 2]]) { const p = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), lm[k]); p.position.set(x, y, z); p.scale.y = 0.85; crown.add(p); }
-    const sash = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.09, 8, 24), M(COL[e.side])); sash.rotation.x = Math.PI / 2; sash.position.y = 2.15; g.add(sash);
+    const sash = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.09, 8, 24), M(col(e.side))); sash.rotation.x = Math.PI / 2; sash.position.y = 2.15; g.add(sash);
     crown.position.y = 3.5; g.add(crown); g.position.set(wx(e.x), 0, wz(e.y)); scene.add(g);
     const v = { e, g, crown, tex, fg: fc.getContext('2d'), key: '', hitT: 0, alertT: 0, bar: makeBar(1.9, e.side, true), down: 0 };
     trees.set(e.id, v); return v;
@@ -239,9 +245,9 @@ export async function runRoyal(deal) {
     v.tex.needsUpdate = true;
   }
   function makeHome(e) {
-    const side = e.side, g = new THREE.Group(), owner = side === ME ? deal.me.id : deal.rival.id, wall = M(side === ME ? '#F4E9D8' : '#F6E3E3'), roofM = M(COL[side], { roughness: 0.7 });
+    const side = e.side, g = new THREE.Group(), owner = side === ME ? deal.me.id : deal.rival.id, wall = M(side === ME ? '#F4E9D8' : '#F6E3E3'), roofM = M(col(side), { roughness: 0.7 });
     const house = new THREE.Group(), walls = box(3.4, 2.0, 2.6, wall); walls.position.y = 1.0; house.add(walls);
-    const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 2.75, 1.3, 4, 1), M(COL[side], { roughness: 0.7, flatShading: true })); roof.rotation.y = Math.PI / 4; roof.scale.set(1, 1, 0.82); roof.position.y = 2.62; house.add(roof);
+    const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 2.75, 1.3, 4, 1), M(col(side), { roughness: 0.7, flatShading: true })); roof.rotation.y = Math.PI / 4; roof.scale.set(1, 1, 0.82); roof.position.y = 2.62; house.add(roof);
     const eave = box(3.9, 0.16, 3.0, M('#FFFFFF')); eave.position.y = 2.02; house.add(eave);
     const deck = box(1.9, 0.14, 1.6, M('#B98A56')); deck.position.y = 3.3; house.add(deck); for (const [x, z] of [[-0.9, 0.75], [0.9, 0.75], [-0.9, -0.75], [0.9, -0.75]]) { const p = cyl(0.05, 0.05, 0.45, M('#FFFFFF'), 6); p.position.set(x, 3.55, z); house.add(p); }
     const door = box(0.7, 1.15, 0.08, M('#8A5C3A')); door.position.set(-0.75, 0.58, 1.33); const knob = ball(0.06, M('#FFD23F')); knob.position.set(-0.52, 0.58, 1.39); house.add(door, knob);
@@ -250,7 +256,7 @@ export async function runRoyal(deal) {
     // its pile of pebbles, up on the deck beside it
     for (const [x, y, z, r] of [[0.62, 3.47, 0.5, 0.17], [0.82, 3.45, 0.38, 0.14], [0.68, 3.44, 0.24, 0.13], [0.74, 3.6, 0.4, 0.13], [-0.7, 3.45, 0.5, 0.14], [-0.82, 3.44, 0.34, 0.12]]) { const p = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), M(r > 0.135 ? '#9AA1B4' : '#B4B9C8', { flatShading: true, roughness: 0.6 })); p.position.set(x, y, z); p.scale.y = 0.75; house.add(p); }
     const chim = box(0.4, 0.9, 0.4, M('#C97B63')); chim.position.set(1.15, 2.7, -0.5); house.add(chim);
-    const post = cyl(0.04, 0.04, 0.7, M('#8A5C3A'), 6), mail = box(0.36, 0.22, 0.24, M(COL[side])); post.position.set(-2.1, 0.35, 1.2); mail.position.set(-2.1, 0.78, 1.2); const mailbox = new THREE.Group(); mailbox.add(post, mail); g.add(mailbox);
+    const post = cyl(0.04, 0.04, 0.7, M('#8A5C3A'), 6), mail = box(0.36, 0.22, 0.24, M(col(side))); post.position.set(-2.1, 0.35, 1.2); mail.position.set(-2.1, 0.78, 1.2); const mailbox = new THREE.Group(); mailbox.add(post, mail); g.add(mailbox);
     for (let i = 0; i < 7; i++) { const f = ball(0.11, M(['#FFB3D1', '#FFE27A', '#FFFFFF'][i % 3])); f.position.set(0.2 + i * 0.3, 0.12, 1.7 + (i % 2) * 0.16); g.add(f); }
     // when it's all over for a home: a little tent where the cottage was
     const tent = new THREE.Group(), cone = new THREE.Mesh(new THREE.ConeGeometry(1.5, 1.7, 4), M('#E8D2A0')); cone.rotation.y = Math.PI / 4; cone.position.y = 0.85; const flap = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.1, 3), M('#8A5C3A')); flap.position.set(0, 0.55, 0.85); tent.add(cone, flap); tent.visible = false; g.add(tent);
@@ -275,7 +281,7 @@ export async function runRoyal(deal) {
       v.squash.add(c.squash.children[0]); v.inner = v.squash.children[0]; v.t = t; v.h = c.h;
       if (base === 'gloam') gloamExtras(v); else v.turn.add(propFor(base, v));
     }
-    const rg = flat(ringGeo, B(COL[e.side], { transparent: true, opacity: 0.9, depthWrite: false }), 0.05); rg.scale.setScalar(K.r * 1.6); v.root.add(rg); v.ring = rg;
+    const rg = flat(ringGeo, B(col(e.side), { transparent: true, opacity: 0.9, depthWrite: false }), 0.05); rg.scale.setScalar(K.r * 1.6); v.root.add(rg); v.ring = rg;
     v.bar = makeBar(Math.max(0.9, K.r * 2.4), e.side, false); v.bar.visible = false;
     v.root.position.set(wx(e.x), 0, wz(e.y)); scene.add(v.root); views.set(e.id, v);
     return v;
@@ -309,9 +315,9 @@ export async function runRoyal(deal) {
   const entById = (id) => battle.ents.find((e) => e.id === id);
 
   function onEvent(ev) {
-    if (fast) return;
+    if (fast) { if (ev.k === 'over' && !net) finish(); return; }
     const src = ev.id ? entById(ev.id) : null, sv = src ? views.get(src.id) : null;
-    if (ev.k === 'spawn') { const e = entById(ev.id); if (e) { makeView(e); ring(wx(e.x), wz(e.y), 1.2, COL[e.side]); snd('whee', { gain: 0.7 }, 0.12); const h = HELLO[e.kind]; if (h) setTimeout(() => snd(h[0], { gain: h[1] }, 0.1), 850); if (looks[e.bud] && e.kind !== 'bit') setTimeout(() => S.babble('hey', looks[e.bud].name, { gain: 0.7, ...voiceFor(e.bud) }), 950); } }
+    if (ev.k === 'spawn') { const e = entById(ev.id); if (e) { makeView(e); ring(wx(e.x), wz(e.y), 1.2, col(e.side)); snd('whee', { gain: 0.7 }, 0.12); const h = HELLO[e.kind]; if (h) setTimeout(() => snd(h[0], { gain: h[1] }, 0.1), 850); if (looks[e.bud] && e.kind !== 'bit') setTimeout(() => S.babble('hey', looks[e.bud].name, { gain: 0.7, ...voiceFor(e.bud) }), 950); } }
     else if (ev.k === 'place') { if (ev.side === ME && KINDS[ev.kind].cost >= 5) say(ME, 'big' + battle.tick, 'Go get ’em!', false); }
     else if (ev.k === 'throw') {
       const to = entById(ev.to) || { x: ev.x, y: ev.y, kind: 'spot', id: 0 };
@@ -331,7 +337,7 @@ export async function runRoyal(deal) {
     else if (ev.k === 'split') { for (let i = 0; i < 12; i++) { const m = box(0.16, 0.16, 0.16, B(i % 2 ? '#35E0E0' : '#FF4FD8', { transparent: true })); const a = Math.random() * 6.283; bit(m, { x: wx(ev.x), y: 0.6, z: wz(ev.y), vx: Math.cos(a) * 3, vz: Math.sin(a) * 3, vy: 3, g: 9, life: 0.5 }); } words('GLITCH!', wx(ev.x), 2, wz(ev.y), '#7BE0D2', 0.8); S.play('glitchy', { gain: 1, rate: 0.7 }); setTimeout(() => S.play('glitchy', { gain: 0.9, rate: 1.6 }), 160); }
     else if (ev.k === 'heal') { const to = entById(ev.to); if (src && to) { fire(src, to, 'chef', 6, 1.2); setTimeout(() => words('+', wx(to.x), topOf(to) + 0.8, wz(to.y), '#7BE08A', 0.9), 300); } snd('yum', { gain: 0.8 }, 0.25); }
     else if (ev.k === 'steal') { if (src) words(ev.n ? '−1 Glow!' : 'nibble!', wx(src.x), 2.2, wz(src.y), '#F4B400', 0.9); S.play('squeak', { gain: 1 }); if (ev.n) setTimeout(() => S.play('coin', { gain: 1 }), 120); if (ev.side === THEM) say(ME, 'steal' + battle.tick, 'My Glow!', false); }
-    else if (ev.k === 'wake') { const H = homes[ev.side]; if (H) { say(ev.side, 'wake', ev.why === 'tree' ? 'That’s IT!' : 'Not the house!'); ring(H.g.position.x, H.g.position.z, ROYAL.HOME.range, COL[ev.side], 1.1); S.play('gasp', { gain: 1 }); setTimeout(() => S.play('alert', { gain: 0.6 }), 220); banner(ev.side === ME ? 'Your bud starts throwing pebbles!' : `${H.name} starts throwing pebbles!`, 1.8); } }
+    else if (ev.k === 'wake') { const H = homes[ev.side]; if (H) { say(ev.side, 'wake', ev.why === 'tree' ? 'That’s IT!' : 'Not the house!'); ring(H.g.position.x, H.g.position.z, ROYAL.HOME.range, col(ev.side), 1.1); S.play('gasp', { gain: 1 }); setTimeout(() => S.play('alert', { gain: 0.6 }), 220); banner(ev.side === ME ? 'Your bud starts throwing pebbles!' : `${H.name} starts throwing pebbles!`, 1.8); } }
     else if (ev.k === 'down') {
       if (ev.kind === 'tree') {
         const tv = [...trees.values()].find((t) => t.e.id === ev.id); if (tv) tv.down = 0.001;
@@ -342,7 +348,7 @@ export async function runRoyal(deal) {
     }
     else if (ev.k === 'gift') { if (ev.n > 0) gift(ev); }
     else if (ev.k === 'sudden') { banner('Sudden death! First tree to fall wins', 2.4); S.play('drumroll', { gain: 1 }); }
-    else if (ev.k === 'over') finish();
+    else if (ev.k === 'over') { if (!net) finish(); }   // against a friend it waits a moment first (see netFrame)
   }
   function tick() {
     const cmds = []; for (let i = pending.length - 1; i >= 0; i--) if (pending[i].at <= battle.tick) cmds.push(pending.splice(i, 1)[0].c);
@@ -357,13 +363,91 @@ export async function runRoyal(deal) {
         else { const H = homes[e.side]; H.shakeT = 0.3; if (!fast) snd('kick', { gain: 0.8, rate: 0.7 }, 0.25); if (e.hp < e.max * 0.35) { say(e.side, 'low', 'Help!!'); H.boards.visible = true; } else if (e.hp < e.max * 0.7) say(e.side, 'mid', 'My poor house!'); }
       }
     }
-    const c = botMove(battle, THEM, bot); if (c) pending.push({ at: battle.tick + ROYAL.LAND_TICKS, c });
-    if (auto) { const m = botMove(battle, ME, auto); if (m) pending.push({ at: battle.tick + ROYAL.LAND_TICKS, c: m }); }
+    if (net) netTick(); else { const c = botMove(battle, THEM, bot); if (c) pending.push({ at: battle.tick + ROYAL.LAND_TICKS, c }); }
+    if (auto && !fast) { const m = botMove(battle, ME, auto); if (m && !busy(m.slot)) issue(m.slot, m.x, m.y); }
     if (!fast) hud();
   }
 
+  /* ---------- against a friend: two phones, one battle ---------- */
+  // Each phone runs the whole battle itself and only tells the other where it put its buds, stamped with the tick
+  // they land on (half a second ahead). If one arrives after that tick has already been played here, the battle
+  // is wound back to a copy kept from just before and played forward again with it in, so both phones end up
+  // with the same battle. Every 5 seconds they compare a fingerprint to make sure.
+  const log = [], mine = [], snaps = new Map(), prints = new Map(), peerPrints = new Map();
+  let got = 0, outOfSync = false, overAt = 0, lastCount = 0, goneFor = 0;
+  const b36 = (n, w) => Math.max(0, Math.round(n)).toString(36).padStart(w, '0').slice(-w);
+  // what's sent: how many placements so far (2 characters) and the last four, 8 characters each: tick, slot, x, y
+  const encode = () => b36(mine.length, 2) + mine.slice(-4).map((m) => b36(m.at, 3) + m.c.slot + b36(m.c.x * 10, 2) + b36(m.c.y * 10, 2)).join('');
+  function decode(str) {
+    const count = parseInt(str.slice(0, 2), 36) || 0, cmds = [];
+    for (let i = 2; i + 8 <= str.length; i += 8) cmds.push({ at: parseInt(str.slice(i, i + 3), 36), c: { side: THEM, slot: +str[i + 3], x: parseInt(str.slice(i + 4, i + 6), 36) / 10, y: parseInt(str.slice(i + 6, i + 8), 36) / 10 } });
+    return { count, cmds };
+  }
+  function issue(slot, x, y) {
+    const c = { side: ME, slot, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }, m = { at: battle.tick + ROYAL.LAND_TICKS, c };
+    pending.push(m); if (net) { log.push(m); mine.push(m); net.send(encode()); }
+  }
+  function outOfStep(why) { if (outOfSync) return; outOfSync = true; console.warn('bud royal out of step:', why); hint.textContent = 'The two phones disagree about this match. The result may not count.'; }
+  function onPeer(str) {
+    if (phase === 'over') return;
+    const { count, cmds } = decode(String(str || '')), fresh = count - got; if (fresh <= 0) return;
+    if (fresh > cmds.length) outOfStep('missed a placement');
+    got = count; let back = Infinity;
+    for (const m of cmds.slice(-Math.min(fresh, cmds.length))) { log.push(m); if (m.at >= battle.tick) pending.push(m); else back = Math.min(back, m.at); }
+    if (back < Infinity) rewind(back);
+  }
+  // put the views back in touch with the battle after it's been swapped for a copy or played forward unseen
+  function resync() {
+    S0 = battle.sides[ME];
+    for (const H of homes) H.e = homeOf(battle, H.side);
+    for (const v of trees.values()) { v.e = entById(v.e.id); if (v.e.hp <= 0 && !v.down) v.down = 1; if (v.e.hp > 0 && v.down) { v.down = 0; v.g.rotation.z = 0; v.g.position.y = 0; v.bar.visible = true; } }
+    for (const v of [...views.values()]) { const e = entById(v.e.id); if (!e || e.hp <= 0) dropView(v); else { v.e = e; v.x = v.px = e.x; v.y = v.py = e.y; v.dead = 0; } }
+    for (const e of battle.ents) if (e.hp > 0 && !e.build && !views.has(e.id)) makeView(e);
+    hud();
+  }
+  function rewind(at) {
+    const k = Math.floor(at / 20) * 20, snap = snaps.get(k), target = battle.tick; if (!snap) return outOfStep('no copy to go back to');
+    for (const key of Object.keys(battle)) delete battle[key]; Object.assign(battle, structuredClone(snap));
+    for (const key of [...snaps.keys()]) if (key > k) snaps.delete(key);
+    pending.length = 0; for (const m of log) if (m.at >= k) pending.push(m);
+    fast = true; while (battle.tick < target && !battle.over) tick(); fast = false; resync();
+  }
+  function netTick() {
+    const t = battle.tick;
+    if (t % 20 === 0) snaps.set(t, structuredClone(battle));
+    if (t % 100 === 0) prints.set(t, fingerprint(battle));
+    if (t % 100 === 60 && !fast) { const t0 = t - 60, mineIs = prints.get(t0); net.print(t0 * 4294967296 + mineIs); const theirs = peerPrints.get(t0); if (theirs != null && theirs !== mineIs) outOfStep(`fingerprints differ at tick ${t0}`); }
+  }
+  if (net) {
+    snaps.set(0, structuredClone(battle));
+    net.onPeer(onPeer);
+    net.onPeerPrint((num) => { const t0 = Math.floor(num / 4294967296), h = num - t0 * 4294967296; peerPrints.set(t0, h); if (battle.tick >= t0 + 60 && prints.has(t0) && prints.get(t0) !== h) outOfStep(`fingerprints differ at tick ${t0}`); });
+  }
+  // the clock both phones share decides which tick it is
+  function netFrame(dt) {
+    if (phase === 'over') return;
+    const startAt = net.startAt();
+    if (!startAt) { phase = 'wait'; if (bannerT <= 0.2) banner(`Waiting for ${homes[THEM].name}…`, 1.2); return; }
+    const since = (net.now() - startAt) / 1000;
+    if (since < 0) { phase = 'count'; const n = Math.ceil(-since); if (n !== lastCount && n <= 3) { lastCount = n; banner(String(n), 0.8); S.play('bkick', { gain: 1 }); S.play('boop', { gain: 0.6, rate: 0.8 }); } return; }
+    if (phase !== 'play') { phase = 'play'; banner('Go!', 0.9); S.play('drumroll', { gain: 0.8 }); beatT = 0; beatN = 0; }
+    beat(dt);
+    const want = since * T, target = Math.floor(want), behind = target - battle.tick;
+    if (behind > 40) { fast = true; let n = 0; while (battle.tick < target && n++ < 600 && !battle.over) tick(); fast = false; resync(); }
+    else { let n = 0; while (battle.tick < target && n++ < 8 && !battle.over) tick(); }
+    acc = clamp(want - battle.tick, 0, 1);
+    // the other phone has gone quiet
+    const age = net.peerAge();
+    if (age > 6000 && !battle.over) { goneFor = age; if (bannerT <= 0.2) banner(`Waiting for ${homes[THEM].name} to come back… ${Math.max(0, Math.ceil((15000 - age) / 1000))}`, 1.2); if (age > 15000) { battle.over = true; battle.winner = ME; battle.why = 'left'; overAt = 0; } }
+    // it's over once it's stayed over for a moment (a late placement could still change the last second)
+    if (battle.over) { if (!overAt) overAt = now + (battle.why === 'left' ? 0 : 1.3); if (now >= overAt) finish(); } else overAt = 0;
+  }
+
   /* ---------- your hand ---------- */
-  const handEl = $('hand'), cardEls = [], S0 = battle.sides[ME];
+  const handEl = $('hand'), cardEls = []; let S0 = battle.sides[ME];
+  // Glow you can still spend: what you have, less what's already on its way down
+  const spare = () => S0.glow - pending.reduce((a, p) => a + (p.c.side === ME ? KINDS[S0.deck[S0.hand[p.c.slot]].kind].cost : 0), 0);
+  const busy = (slot) => pending.some((p) => p.c.side === ME && p.c.slot === slot);
   function cardFace(c, card) {
     const K = KINDS[card.kind], about = ABOUT[card.kind]; c.dataset.card = card.id + ':' + card.kind; c.textContent = '';
     const pic = el('canvas', 'pic'), cost = el('span', 'cost', String(K.cost)), short = K.name.replace(' Lobber', '').replace('Button ', ''), nm = el('b', null, nameOfBud(card.id) || short), pw = el('small', null, short), badge = el('span', 'badge', about[0]);
@@ -375,7 +459,7 @@ export async function runRoyal(deal) {
   const nextEl = $('next'), glowFill = $('glowFill'), glowNum = $('glowNum'), hint = $('hint'), clockEl = $('clock');
   let shown = [], shownNext = null, selected = null;
   function hud() {
-    S0.hand.forEach((idx, i) => { const card = S0.deck[idx], key = card.id + ':' + card.kind, c = cardEls[i]; if (shown[i] !== key) { shown[i] = key; cardFace(c, card); c.classList.remove('in'); void c.offsetWidth; c.classList.add('in'); } c.classList.toggle('poor', KINDS[card.kind].cost > S0.glow); c.classList.toggle('sel', selected === i); });
+    S0.hand.forEach((idx, i) => { const card = S0.deck[idx], key = card.id + ':' + card.kind, c = cardEls[i]; if (shown[i] !== key) { shown[i] = key; cardFace(c, card); c.classList.remove('in'); void c.offsetWidth; c.classList.add('in'); } c.classList.toggle('poor', KINDS[card.kind].cost > spare() || busy(i)); c.classList.toggle('sel', selected === i); });
     const nx = S0.deck[S0.queue[0]], nk = nx.id + ':' + nx.kind; if (shownNext !== nk) { shownNext = nk; nextEl.textContent = `${ABOUT[nx.kind][0]}`; nextEl.title = `Next: ${KINDS[nx.kind].name}`; }
     const per = Math.round(ROYAL.GLOW_S * T / (doubled(battle) ? 2 : 1)), g = S0.glow + (S0.glow < ROYAL.GLOW_MAX ? S0.part / per : 0);
     glowFill.style.width = `${g / ROYAL.GLOW_MAX * 100}%`; glowNum.textContent = String(S0.glow);
@@ -393,7 +477,7 @@ export async function runRoyal(deal) {
   function showNoGo(on) {
     noGo.forEach((m) => { m.visible = false; }); if (!on) return;
     [0, 1].forEach((lane) => {
-      const t = treeOf(battle, THEM, lane), open = !t || t.hp <= 0, x0 = lane ? ROYAL.W / 2 : 0, rects = open ? [[ROYAL.RIVER0 - 0.3, ROYAL.RIVER1 + 0.3], [ROYAL.DEEP, ROYAL.L]] : [[ROYAL.RIVER0 - 0.3, ROYAL.L]];
+      const t = treeOf(battle, THEM, lane), open = !t || t.hp <= 0, x0 = lane ? ROYAL.W / 2 : 0, rects = (open ? [[ROYAL.RIVER0 - 0.3, ROYAL.RIVER1 + 0.3], [ROYAL.DEEP, ROYAL.L]] : [[ROYAL.RIVER0 - 0.3, ROYAL.L]]).map(([a, b]) => (flip ? [ROYAL.L - b, ROYAL.L - a] : [a, b]));
       rects.forEach(([y0, y1], i) => { const m = noGo[lane * 2 + i]; m.visible = true; m.scale.set(ROYAL.W / 2, y1 - y0, 1); m.position.set(wx(x0 + ROYAL.W / 4), 0.04, wz((y0 + y1) / 2)); });
     });
   }
@@ -402,26 +486,26 @@ export async function runRoyal(deal) {
     const r = renderer.domElement.getBoundingClientRect(), v = new THREE.Vector2((ev.clientX - r.left) / r.width * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     if (ev.clientY > r.bottom || ev.clientY < r.top) return null;
     ray.setFromCamera(v, camera); const p = new THREE.Vector3(); if (!ray.ray.intersectPlane(ground, p)) return null;
-    return { x: clamp(p.x + ROYAL.W / 2, 0.6, ROYAL.W - 0.6), y: clamp(ROYAL.L / 2 - p.z, 0.6, ROYAL.L - 0.6) };
+    return { x: clamp(flip ? ROYAL.W / 2 - p.x : p.x + ROYAL.W / 2, 0.6, ROYAL.W - 0.6), y: clamp(flip ? p.z + ROYAL.L / 2 : ROYAL.L / 2 - p.z, 0.6, ROYAL.L - 0.6) };
   }
   function aim(ev) {
     if (drag == null) return; const p = spot(ev), card = S0.deck[S0.hand[drag.slot]], K = KINDS[card.kind], U = KINDS[K.brings || card.kind];
     drag.at = p; ghost.visible = !!p; if (drag.chip) { drag.chip.style.left = ev.clientX + 'px'; drag.chip.style.top = ev.clientY + 'px'; drag.chip.hidden = !!p; }
     if (!p) return;
-    const ok = canPlace(battle, ME, p.x, p.y) && K.cost <= S0.glow; drag.ok = ok;
+    const ok = canPlace(battle, ME, p.x, p.y) && K.cost <= spare(); drag.ok = ok;
     ghost.position.set(wx(p.x), 0, wz(p.y)); const c = lin(ok ? '#FFFFFF' : '#F0607A'); gRing.material.color.copy(c); gDisc.material.color.copy(c); gReach.material.color.copy(c);
     gRing.scale.setScalar(U.r * 1.4); gDisc.scale.setScalar(U.r * 1.4); const reach = U.aura || (U.range > 1.2 ? U.range : 0); gReach.visible = reach > 0; gReach.scale.setScalar(reach || 1);
   }
   function pick(slot, ev) {
-    if (phase !== 'play') return; selected = slot; const card = S0.deck[S0.hand[slot]], K = KINDS[card.kind];
+    if (phase !== 'play' || busy(slot)) return; selected = slot; const card = S0.deck[S0.hand[slot]], K = KINDS[card.kind];
     hint.textContent = `${ABOUT[card.kind][0]} ${K.name}: ${ABOUT[card.kind][1]}`; showNoGo(true); S.play('boop', { gain: 0.7, rate: 0.9 + slot * 0.12 });
     drag = { slot, at: null, ok: false, chip: $('chip') }; drag.chip.textContent = ABOUT[card.kind][0]; if (ev) aim(ev); hud();
   }
   function drop(ev) {
     if (drag == null) return; if (ev) aim(ev);
     const d = drag;
-    if (d.at && d.ok) { pending.push({ at: battle.tick + ROYAL.LAND_TICKS, c: { side: ME, slot: d.slot, x: d.at.x, y: d.at.y } }); stats.placed++; S.play('thwip', { gain: 0.8 }); selected = null; hint.textContent = ''; endDrag(); }
-    else if (d.at && !d.ok) { S.play('boing', { gain: 0.3, rate: 0.7 }); hint.textContent = KINDS[S0.deck[S0.hand[d.slot]].kind].cost > S0.glow ? 'Not enough Glow yet.' : 'You can only place buds on your own side.'; ghost.visible = false; d.chip.hidden = true; d.at = null; }
+    if (d.at && d.ok) { issue(d.slot, d.at.x, d.at.y); stats.placed++; S.play('thwip', { gain: 0.8 }); selected = null; hint.textContent = ''; endDrag(); }
+    else if (d.at && !d.ok) { S.play('boing', { gain: 0.3, rate: 0.7 }); hint.textContent = KINDS[S0.deck[S0.hand[d.slot]].kind].cost > spare() ? 'Not enough Glow yet.' : 'You can only place buds on your own side.'; ghost.visible = false; d.chip.hidden = true; d.at = null; }
     else { ghost.visible = false; d.chip.hidden = true; }   // let go over the cards: it stays picked, tap the meadow to place it
     hud();
   }
@@ -435,10 +519,11 @@ export async function runRoyal(deal) {
   /* ---------- start and finish ---------- */
   function finish() {
     phase = 'over'; endDrag(); const won = battle.winner === ME, draw = battle.winner == null;
+    if (net) { fetch('/api/game', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'royal-result', id: net.id, winner: battle.winner, why: battle.why, tick: battle.tick, print: fingerprint(battle) }) }).catch(() => {}); setTimeout(() => net.leave(), 4000); }
     for (const H of homes) { const mine = H.side === battle.winner; H.t.happy = mine; H.t.mood = mine || draw ? null : 'dizzy'; H.said = {}; }
     if (!draw) { say(battle.winner, 'end', 'WE DID IT!', false); if (!homes[1 - battle.winner].fallen) say(1 - battle.winner, 'end', 'Good game…', false); }
     setTimeout(() => S.play(draw ? 'chime' : won ? 'fanfare' : 'womp', { gain: 1 }), battle.why === 'home' ? 700 : 100); if (won) setTimeout(() => S.play('sparkle', { gain: 0.9 }), 1500);
-    const why = { home: won ? 'You reached their home!' : 'They reached your home.', trees: won ? 'You felled more trees.' : 'They felled more trees.', sudden: won ? 'First tree in sudden death!' : 'They got the first tree in sudden death.', health: won ? 'Your side was in better shape.' : draw ? 'Dead level.' : 'Their side was in better shape.' }[battle.why];
+    const why = { home: won ? 'You reached their home!' : 'They reached your home.', trees: won ? 'You felled more trees.' : 'They felled more trees.', sudden: won ? 'First tree in sudden death!' : 'They got the first tree in sudden death.', health: won ? 'Your side was in better shape.' : draw ? 'Dead level.' : 'Their side was in better shape.', left: `${homes[THEM].name} left the match.` }[battle.why];
     setTimeout(() => {
       $('endTitle').textContent = draw ? 'A draw!' : won ? 'You won! 🎉' : `${homes[THEM].name} won`;
       $('endWhy').textContent = `${why} Trees felled: you ${battle.sides[ME].felled}, them ${battle.sides[THEM].felled}.`;
@@ -447,7 +532,7 @@ export async function runRoyal(deal) {
   }
   function start() { $('intro').hidden = true; phase = 'count'; countT = 3; S.play('click'); try { S.unlock && S.unlock(); } catch (e) {} }
   $('go').addEventListener('click', start);
-  $('again').addEventListener('click', () => location.reload());
+  $('again').addEventListener('click', () => { if (net) location.href = '/royal'; else location.reload(); });
   $('introVs').textContent = `Your home against ${homes[THEM].name}’s`;
   hud(); fit();
 
@@ -490,8 +575,9 @@ export async function runRoyal(deal) {
   function frame(t) {
     requestAnimationFrame(frame);
     const dt = Math.min(0.12, (t - last) / 1000); last = t; now += dt;
-    if (phase === 'count') { const before = Math.ceil(countT); countT -= dt; const n = Math.ceil(countT); if (n !== before && n > 0) { banner(String(n), 0.8); S.play('bkick', { gain: 1 }); S.play('boop', { gain: 0.6, rate: 0.8 }); } if (before === 3 && bannerT <= 0) banner('3', 0.8); if (countT <= 0) { phase = 'play'; banner('Go!', 0.9); S.play('drumroll', { gain: 0.8 }); beatT = 0; beatN = 0; } }
-    if (phase === 'play') { beat(dt); acc += dt * T; let n = 0; while (acc >= 1 && n++ < 6 && !battle.over) { acc -= 1; tick(); } if (acc > 4) acc = 0; }
+    if (net) netFrame(dt);
+    else if (phase === 'count') { const before = Math.ceil(countT); countT -= dt; const n = Math.ceil(countT); if (n !== before && n > 0) { banner(String(n), 0.8); S.play('bkick', { gain: 1 }); S.play('boop', { gain: 0.6, rate: 0.8 }); } if (before === 3 && bannerT <= 0) banner('3', 0.8); if (countT <= 0) { phase = 'play'; banner('Go!', 0.9); S.play('drumroll', { gain: 0.8 }); beatT = 0; beatN = 0; } }
+    if (phase === 'play' && !net) { beat(dt); acc += dt * T; let n = 0; while (acc >= 1 && n++ < 6 && !battle.over) { acc -= 1; tick(); } if (acc > 4) acc = 0; }
     const a = phase === 'play' ? clamp(acc, 0, 1) : 1;
     if (bannerT > 0 && (bannerT -= dt) <= 0) bannerEl.hidden = true;
     // buds
@@ -506,7 +592,7 @@ export async function runRoyal(deal) {
       v.root.position.set(wx(x), hop + drop, wz(y));
       // it faces the way it's going, and whoever it's fighting when it stops
       { let want = v.yaw; const mx = v.x - v.px, my = v.y - v.py, tg = !moving && e.tgt ? entById(e.tgt) : null;
-        if (moving) want = Math.atan2(mx, -my); else if (tg) want = Math.atan2(tg.x - e.x, -(tg.y - e.y));
+        const fs = flip ? -1 : 1; if (moving) want = Math.atan2(mx * fs, -my * fs); else if (tg) want = Math.atan2((tg.x - e.x) * fs, -(tg.y - e.y) * fs);
         let turn = want - v.yaw; while (turn > Math.PI) turn -= Math.PI * 2; while (turn < -Math.PI) turn += Math.PI * 2;
         v.yaw += turn * Math.min(1, dt * 9); v.turn.rotation.y = v.yaw; v.squash.position.z = v.lunge * 0.4; }
       const sq = 1 - v.hurtT * 1.2 + v.boom * 0.25 + (arriving && arrive > 0.9 ? -0.25 : 0);
@@ -533,7 +619,7 @@ export async function runRoyal(deal) {
     // trees
     for (const v of trees.values()) {
       const e = v.e; v.hitT = Math.max(0, v.hitT - dt); v.alertT = Math.max(0, v.alertT - dt); treeFace(v, now);
-      if (v.down) { v.down = Math.min(1, v.down + dt * 1.6); const k = v.down * v.down; v.g.rotation.z = (e.x < 9 ? 1 : -1) * k * 1.45; v.g.position.y = -k * 0.3; v.bar.visible = false; }
+      if (v.down) { v.down = Math.min(1, v.down + dt * 1.6); const k = v.down * v.down; v.g.rotation.z = (wx(e.x) < 0 ? 1 : -1) * k * 1.45; v.g.position.y = -k * 0.3; v.bar.visible = false; }
       else { v.crown.rotation.z = Math.sin(now * 1.1 + e.id) * 0.03 + v.hitT * Math.sin(now * 50) * 0.25; v.crown.scale.setScalar(1 + v.hitT * 0.15); setBar(v.bar, clamp(e.hp / e.max, 0, 1)); v.bar.position.set(v.g.position.x, 0.4, v.g.position.z + 1.5); v.bar.quaternion.copy(camera.quaternion); }
     }
     // homes: the bud who lives there is watching all this
@@ -572,7 +658,7 @@ export async function runRoyal(deal) {
   }
   requestAnimationFrame(frame);
   // for the checks: a way in
-  return { battle, get phase() { return phase; }, start, views, homes, trees, pending, place: (slot, x, y) => pending.push({ at: battle.tick + 1, c: { side: ME, slot, x, y } }),
-    skip(ticks) { fast = true; for (let i = 0; i < ticks && !battle.over; i++) tick(); fast = false; for (const e of battle.ents) if (e.hp > 0 && !e.build && !views.has(e.id)) makeView(e); for (const v of trees.values()) if (v.e.hp <= 0 && !v.down) v.down = 1; hud(); if (battle.over && phase !== 'over') finish(); },
+  return { battle, get phase() { return phase; }, start, views, homes, trees, pending, place: (slot, x, y) => issue(slot, x, y), get outOfSync() { return outOfSync; }, get side() { return ME; }, print: () => fingerprint(battle),
+    skip(ticks) { fast = true; for (let i = 0; i < ticks && !battle.over; i++) tick(); fast = false; resync(); if (battle.over && phase !== 'over') finish(); },
     setPhase(p) { phase = p; }, autoplay(on) { auto = on ? { seed: 5 } : null; } };
 }

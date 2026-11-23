@@ -49,6 +49,12 @@ export async function GET(request) {
     } catch (err) { return fail(err); }
   }
   // Bud Royal (lib/royal.js): GET ?royal=deal deals a match against an island bud
+  if (url.searchParams.get('royal') === 'who') {
+    try { return json(await royal.who(session.id)); } catch (err) { return fail(err); }
+  }
+  if (url.searchParams.get('royal') === 'match') {
+    try { return json(await royal.look(url.searchParams.get('m'), session.id, session.name)); } catch (err) { return fail(err); }
+  }
   if (url.searchParams.get('royal') === 'deal') {
     try { const out = await royal.dealMatch(session.id, session.name); return out.error ? json({ error: out.error }, out.status) : json(out); } catch (err) { return fail(err); }
   }
@@ -102,6 +108,16 @@ export async function POST(request) {
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
   const { action, id } = body || {};
+  // Bud Royal against a friend (lib/royal.js)
+  if (typeof action === 'string' && action.startsWith('royal-')) {
+    try {
+      if (action === 'royal-challenge') return json(await royal.challenge(session.id, session.name, body.to, body.image));
+      if (action === 'royal-open') return json(await royal.openTable(session.id, session.name));
+      if (action === 'royal-ready') return json(await royal.ready(body.id, session.id));
+      if (action === 'royal-result') return json(await royal.report(body.id, session.id, body));
+      return json({ error: 'bad request' }, 400);
+    } catch (err) { return fail(err); }
+  }
   if (typeof action === 'string' && action.startsWith('party-')) {
     try {
       const code = typeof body.code === 'string' ? body.code.toUpperCase() : null;
