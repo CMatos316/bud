@@ -269,6 +269,16 @@ export async function runRoyal(deal, net = null) {
 
   /* ---------- buds on the meadow ---------- */
   const views = new Map(), ringGeo = new THREE.RingGeometry(0.78, 1, 28);
+  // a little badge over each bud saying what its power is: the power's picture on a disc in its side's color
+  const ICON = { pet: '🐾', bit: '👾', sprout: '🌱' }, badges = new Map();
+  function badgeFor(kind, side) {
+    const key = kind + (side === ME ? ':me' : ':them'); let m = badges.get(key); if (m) return m;
+    const c = document.createElement('canvas'); c.width = c.height = 96; const g = c.getContext('2d');
+    g.fillStyle = '#FFFFFF'; g.strokeStyle = col(side); g.lineWidth = 9; g.beginPath(); g.arc(48, 48, 40, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.font = '50px serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#000'; g.fillText(ICON[kind] || ABOUT[kind]?.[0] || '•', 48, 52);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+    m = new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false }); badges.set(key, m); return m;
+  }
   function makeView(e) {
     const K = KINDS[e.kind], v = { e, kind: e.kind, x: e.x, y: e.y, px: e.x, py: e.y, lunge: 0, hurtT: 0, bob: Math.random() * 6, born: now };
     v.root = new THREE.Group(); v.turn = new THREE.Group(); v.squash = new THREE.Group(); v.turn.add(v.squash); v.root.add(v.turn); v.yaw = e.side === ME ? Math.PI : 0; v.turn.rotation.y = v.yaw;   // it starts out facing the other side
@@ -283,10 +293,11 @@ export async function runRoyal(deal, net = null) {
     }
     const rg = flat(ringGeo, B(col(e.side), { transparent: true, opacity: 0.9, depthWrite: false }), 0.05); rg.scale.setScalar(K.r * 1.6); v.root.add(rg); v.ring = rg;
     v.bar = makeBar(Math.max(0.9, K.r * 2.4), e.side, false); v.bar.visible = false;
+    v.badge = new THREE.Sprite(badgeFor(e.kind, e.side)); v.badge.renderOrder = 14; v.badge.scale.setScalar(K.mini ? 0.55 : 0.8); scene.add(v.badge);
     v.root.position.set(wx(e.x), 0, wz(e.y)); scene.add(v.root); views.set(e.id, v);
     return v;
   }
-  function dropView(v) { scene.remove(v.root); scene.remove(v.bar); views.delete(v.e.id); }
+  function dropView(v) { scene.remove(v.root); scene.remove(v.bar); scene.remove(v.badge); views.delete(v.e.id); }
 
   /* ---------- things in the air ---------- */
   const shots = [];
@@ -583,7 +594,7 @@ export async function runRoyal(deal, net = null) {
     // buds
     for (const v of [...views.values()]) {
       const e = v.e, K = KINDS[e.kind];
-      if (v.dead) { v.dead += dt; v.squash.scale.set(1 + v.dead * 2, Math.max(0.01, 1 - v.dead * 5), 1 + v.dead * 2); v.bar.visible = false; if (v.dead > 0.2) dropView(v); continue; }
+      if (v.dead) { v.badge.visible = false; v.dead += dt; v.squash.scale.set(1 + v.dead * 2, Math.max(0.01, 1 - v.dead * 5), 1 + v.dead * 2); v.bar.visible = false; if (v.dead > 0.2) dropView(v); continue; }
       if (e.hp <= 0 || !battle.ents.includes(e)) { dropView(v); continue; }
       const x = v.px + (v.x - v.px) * a, y = v.py + (v.y - v.py) * a, moving = Math.hypot(v.x - v.px, v.y - v.py) > 0.004, arriving = e.wait > 0;
       v.lunge = Math.max(0, v.lunge - dt * 5); v.hurtT = Math.max(0, v.hurtT - dt); v.boom = Math.max(0, (v.boom || 0) - dt * 3); v.kick = Math.max(0, (v.kick || 0) - dt * 4);
@@ -607,7 +618,8 @@ export async function runRoyal(deal, net = null) {
       if (v.ball) v.ball.position.z = v.w * 0.6 + v.kick * 0.8;
       if (v.lamp) v.lamp.rotation.z = Math.sin(now * 2 + v.bob) * 0.2;
       if (v.speaker) v.speaker.scale.setScalar(1 + v.boom * 0.4);
-      const hurt = e.hp < e.max - 1; v.bar.visible = hurt && !arriving; if (hurt) { setBar(v.bar, clamp(e.hp / e.max, 0, 1)); v.bar.position.set(wx(x), v.h + 0.75 + hop, wz(y)); v.bar.quaternion.copy(camera.quaternion); }
+      v.badge.position.set(wx(x), v.h + 0.62 + hop + drop, wz(y)); v.badge.visible = !arriving || arrive > 0.5;
+      const hurt = e.hp < e.max - 1; v.bar.visible = hurt && !arriving; if (hurt) { setBar(v.bar, clamp(e.hp / e.max, 0, 1)); v.bar.position.set(wx(x), v.h + 1.3 + hop, wz(y)); v.bar.quaternion.copy(camera.quaternion); }
     }
     // things in the air
     for (let i = shots.length - 1; i >= 0; i--) {
