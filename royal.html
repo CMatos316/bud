@@ -52,7 +52,8 @@ body { font-family: var(--body); color: var(--ink); background: linear-gradient(
 .card b { font-family: var(--head); font-weight: 600; font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card small { font-size: 10.5px; font-weight: 700; color: var(--soft); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .cost { position: absolute; left: -3px; top: -5px; font-family: var(--head); font-weight: 700; font-size: 14px; background: var(--glow); border-radius: 999px; min-width: 24px; height: 24px; display: grid; place-items: center; box-shadow: 0 2px 0 rgba(29,28,43,.2); }
-.card .badge { position: absolute; right: 2px; top: 0; font-size: 15px; }
+.card .holds { position: relative; display: block; line-height: 0; }
+.card .badge { position: absolute; right: -9px; bottom: -3px; width: 24px; height: 24px; display: grid; place-items: center; font-size: 14px; line-height: 1; background: #fff; border-radius: 50%; box-shadow: 0 0 0 2px var(--me); }
 .card.poor { filter: grayscale(.85) brightness(.9); }
 .card.sel { outline: 3px solid var(--me); transform: translateY(-6px); }
 .nextbox { width: 44px; display: grid; align-content: center; justify-items: center; gap: 2px; font-size: 10px; font-weight: 800; color: var(--soft); text-transform: uppercase; letter-spacing: .04em; }

@@ -293,7 +293,9 @@ export async function runRoyal(deal, net = null) {
     }
     const rg = flat(ringGeo, B(col(e.side), { transparent: true, opacity: 0.9, depthWrite: false }), 0.05); rg.scale.setScalar(K.r * 1.6); v.root.add(rg); v.ring = rg;
     v.bar = makeBar(Math.max(0.9, K.r * 2.4), e.side, false); v.bar.visible = false;
-    v.badge = new THREE.Sprite(badgeFor(e.kind, e.side)); v.badge.renderOrder = 14; v.badge.scale.setScalar(K.mini ? 0.55 : 0.8); scene.add(v.badge);
+    // the badge sits over the bud's bottom right corner, like something it's holding. Things that already are the
+    // picture (the squirrel, pets, a sprout, a little glitch, Gloam with its lantern) don't need one.
+    v.badge = new THREE.Sprite(badgeFor(e.kind, e.side)); v.badge.renderOrder = 14; v.badge.scale.setScalar(Math.max(0.62, v.w * 0.52)); v.badge.userData.off = !v.t || e.kind === 'bit' || e.kind === 'gloam'; v.badge.visible = false; scene.add(v.badge);
     v.root.position.set(wx(e.x), 0, wz(e.y)); scene.add(v.root); views.set(e.id, v);
     return v;
   }
@@ -462,9 +464,9 @@ export async function runRoyal(deal, net = null) {
   function cardFace(c, card) {
     const K = KINDS[card.kind], about = ABOUT[card.kind]; c.dataset.card = card.id + ':' + card.kind; c.textContent = '';
     const pic = el('canvas', 'pic'), cost = el('span', 'cost', String(K.cost)), short = K.name.replace(' Lobber', '').replace('Button ', ''), nm = el('b', null, nameOfBud(card.id) || short), pw = el('small', null, short), badge = el('span', 'badge', about[0]);
-    c.append(cost, badge, pic, nm, pw);
+    c.append(cost, pic, nm, pw);
     if (card.kind === 'squirrel' || card.kind === 'gloam' || !looks[card.id]) { const g = pic.getContext('2d'); pic.width = pic.height = 120; g.font = '76px serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(about[0], 60, 66); }
-    else drawBud(pic, looks[card.id], { size: 60 });
+    else { drawBud(pic, looks[card.id], { size: 60 }); const holder = el('span', 'holds'); holder.append(pic, badge); c.insertBefore(holder, nm); }   // the badge only goes on a real bud's picture
   }
   for (let i = 0; i < ROYAL.HAND; i++) { const c = el('button', 'card'); c.type = 'button'; c.dataset.slot = i; handEl.append(c); cardEls.push(c); }
   const nextEl = $('next'), glowFill = $('glowFill'), glowNum = $('glowNum'), hint = $('hint'), clockEl = $('clock');
@@ -618,8 +620,8 @@ export async function runRoyal(deal, net = null) {
       if (v.ball) v.ball.position.z = v.w * 0.6 + v.kick * 0.8;
       if (v.lamp) v.lamp.rotation.z = Math.sin(now * 2 + v.bob) * 0.2;
       if (v.speaker) v.speaker.scale.setScalar(1 + v.boom * 0.4);
-      v.badge.position.set(wx(x), v.h + 0.62 + hop + drop, wz(y)); v.badge.visible = !arriving || arrive > 0.5;
-      const hurt = e.hp < e.max - 1; v.bar.visible = hurt && !arriving; if (hurt) { setBar(v.bar, clamp(e.hp / e.max, 0, 1)); v.bar.position.set(wx(x), v.h + 1.3 + hop, wz(y)); v.bar.quaternion.copy(camera.quaternion); }
+      v.badge.position.set(wx(x) + v.w * 0.42, v.h * 0.2 + hop + drop, wz(y) + 0.25); v.badge.visible = !v.badge.userData.off && (!arriving || arrive > 0.5);
+      const hurt = e.hp < e.max - 1; v.bar.visible = hurt && !arriving; if (hurt) { setBar(v.bar, clamp(e.hp / e.max, 0, 1)); v.bar.position.set(wx(x), v.h + 0.75 + hop, wz(y)); v.bar.quaternion.copy(camera.quaternion); }
     }
     // things in the air
     for (let i = shots.length - 1; i >= 0; i--) {
