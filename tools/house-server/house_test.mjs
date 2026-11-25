@@ -7,7 +7,7 @@ const throws = async (f, status) => { try { await f(); return false; } catch (e)
 const outline = Array.from({ length: 64 }, (_, i) => { const a = i / 64 * Math.PI * 2; return [Math.cos(a) * 60, Math.sin(a) * 55]; }).flat();
 const id = (i) => `${i}000000`, bud = (i, name) => store.set(`guilds/G/buds/${id(i)}`, { trueName: name, nickname: null, outline, eye: { x: 0, y: -8, r: 16 }, eyeStyle: 'classic' });
 bud(1, 'Mochi'); bud(2, 'Taro'); bud(3, 'Kelp');
-const doodle = (did, from, to, kept = true) => store.set(`guilds/G/doodleMail/${did}`, { id: did, from: id(from), to: id(to), fromName: 'F' + from, fromBud: 'Bud' + from, caption: 'hi ' + did, thumb: 'data:image/jpeg;base64,xx', toKept: kept, fromKept: true, createdAt: { toMillis: () => 1000 } });
+const doodle = (did, from, to, kept = true) => store.set(`guilds/G/doodleMail/${did}`, { id: did, from: id(from), to: id(to), fromName: 'F' + from, fromBud: 'Bud' + from, caption: 'hi ' + did, thumb: 'eHg=', toKept: kept, fromKept: true, createdAt: { toMillis: () => 1000 } });
 doodle('doodle01', 2, 1); doodle('doodle02', 3, 1); doodle('doodle03', 2, 1, false); doodle('doodle04', 1, 2);
 store.set(`guilds/G/users/${id(1)}`, { away: { finds: { shell: 2, feather: 1 }, fond: 0, recent: ['shell', 'feather'] } });
 
