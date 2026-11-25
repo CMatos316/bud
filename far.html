@@ -83,6 +83,10 @@ body.inside #act { background: #F1F0F8; color: #15161F; }
 .slot .ct { font-size: 11px; color: var(--muted); }
 .slot.no .ic { opacity: .28; filter: grayscale(1); }
 .slot.no .nm { color: var(--muted); }
+button.slot { font: inherit; color: inherit; border: 0; cursor: pointer; }
+button.slot:disabled { opacity: .5; }
+#shelfList { list-style: none; margin: 10px 0 0; padding: 0; max-height: 30dvh; overflow: auto; display: grid; gap: 4px; font-size: 15px; }
+#shelfList span { color: var(--muted); }
 .row { display: flex; gap: 8px; margin-top: 14px; justify-content: flex-end; }
 .btn { font: inherit; font-weight: 500; font-size: 16px; border-radius: 999px; padding: 10px 18px; min-height: 44px; border: 1px solid var(--chip-line); background: var(--slot); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
 .btn.primary { background: var(--me); color: var(--me-ink); border-color: transparent; }
@@ -119,6 +123,14 @@ body.inside #act { background: #F1F0F8; color: #15161F; }
   <p>The last three you found sit on your porch back home, where everyone can see them.</p>
   <div id="journalBox" hidden><h2 style="font-size:17px;margin-top:14px">Wick’s journal</h2><p id="journalSub"></p><div class="journal" id="journal"></div></div>
   <div class="row"><button class="btn primary" id="findsClose" type="button">Close</button></div>
+</div>
+<div class="card" id="shelfCard" role="dialog" aria-labelledby="shelfTitle" hidden>
+  <h2 id="shelfTitle">The shelf</h2>
+  <p id="shelfSub"></p>
+  <ul id="shelfList"></ul>
+  <p id="shelfAsk"></p>
+  <div class="grid" id="shelfGrid"></div>
+  <div class="row"><button class="btn primary" id="shelfClose" type="button">Close</button></div>
 </div>
 <div class="card" id="pageCard" role="dialog" aria-labelledby="pageTitle" hidden>
   <h2 id="pageTitle"></h2>
@@ -451,7 +463,13 @@ const wash = [];
 const ROOM_Y = -80, RR = 4.7;
 const room = new THREE.Group(); room.position.y = ROOM_Y; room.visible = false; scene.add(room);
 const roomObstacles = [];
-const STAIR = { x: 3.25, z: 1.5 }, MAT = { x: 0, z: RR - 0.9 }, CRATE = { x: 0.9, z: -1.1 };
+const STAIR = { x: 3.25, z: 1.5 }, MAT = { x: 0, z: RR - 0.9 }, CRATE = { x: 0.9, z: -1.1 }, SHELF = { a: 1.02, x: -2.5, z: -1.55 };   // the keeper's shelf: where on the wall it hangs, and where you stand to use it
+// The keeper's shelf: finds that visitors have given it, the newest first (the same for everyone who comes in).
+const shelfG = new THREE.Group(); let shelf = [], myId = null;
+function drawShelf(pop = false) {
+  while (shelfG.children.length) shelfG.remove(shelfG.children[0]);
+  shelf.slice(0, 18).forEach((it, i) => { if (!FINDS[it.kind]) return; const f = makeFind(THREE, it.kind), row = 2 - Math.floor(i / 6); f.position.set(-0.85 + (i % 6) * 0.34, 1.54 + row * 0.66, 0.22); f.scale.setScalar(0.6); f.rotation.y = i * 1.7; f.userData.y0 = f.position.y; if (pop && i === 0) f.userData.pop = 1; shelfG.add(f); });
+}
 let stoveLight;
 function buildRoom() {
   const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
@@ -489,8 +507,10 @@ function buildRoom() {
   { const w = new THREE.Mesh(new THREE.CircleGeometry(0.62, 20), win); w.position.set(1.2, 2.6, -RR + 0.34); room.add(w);
     const fr = new THREE.Mesh(new THREE.TorusGeometry(0.64, 0.07, 6, 24), M('#8A5A3A')); fr.position.copy(w.position); room.add(fr, box(1.24, 0.06, 0.05, M('#8A5A3A'), 1.2, 2.6, -RR + 0.36), box(0.06, 1.24, 0.05, M('#8A5A3A'), 1.2, 2.6, -RR + 0.36)); }
   // a shelf of jars and old finds
-  { room.add(box(1.5, 0.07, 0.3, M('#8A5A3A'), -0.3, 2.3, -RR + 0.42));
-    ['shell', 'pebble', 'float', 'pinecone'].forEach((k, i) => { const f = makeFind(THREE, k); f.position.set(-0.85 + i * 0.37, 2.34, -RR + 0.42); f.scale.setScalar(0.62); room.add(f); }); }
+  // the shelves on the wall between the bed and the stove: what visitors have left for the keeper goes here (drawShelf)
+  { const u = new THREE.Group(); u.position.set(-Math.sin(SHELF.a) * (RR - 0.06), 0, -Math.cos(SHELF.a) * (RR - 0.06)); u.rotation.y = SHELF.a;
+    for (let r = 0; r < 3; r++) { u.add(box(2.1, 0.07, 0.36, M('#8A5A3A'), 0, 1.5 + r * 0.66, 0.2)); for (const s of [-1, 1]) u.add(box(0.06, 0.22, 0.28, M('#6B4630'), s * 0.9, 1.37 + r * 0.66, 0.16)); }
+    u.add(shelfG); room.add(u); }
   // the good crate, by the stove
   room.add(box(0.7, 0.55, 0.7, M('#B98954'), CRATE.x, 0.28, CRATE.z)); room.children[room.children.length - 1].rotation.y = 0.3; roomObstacles.push({ x: CRATE.x, z: CRATE.z, r: 0.5 });
   // a lantern hanging overhead
@@ -963,6 +983,7 @@ addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (!$('findsCard').hidden) { if (e.code === 'Escape' || e.code === 'Enter') $('findsCard').hidden = true; return; }
   if (!$('pageCard').hidden) { if (e.code === 'Escape' || e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); $('pageCard').hidden = true; } return; }
+  if (!$('shelfCard').hidden) { if (e.code === 'Escape') $('shelfCard').hidden = true; return; }
   if (KEYMAP[e.code]) { keys.add(e.code); walkTo = null; e.preventDefault(); }
   if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyE') && !e.repeat) { e.preventDefault(); doAction(); }
 });
@@ -1069,16 +1090,17 @@ function placeBud(bud, dt, gy) {
 const post = (body) => fetch('/api/world', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ away: body }) }).then((r) => r.json().then((j) => ({ ok: r.ok, ...j }))).catch(() => ({ ok: false }));
 let toastTimer = 0;
 function toast(text, ms = 3200) { const t = $('toast'); t.textContent = text; t.classList.remove('gone'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('gone'), ms); }
-const kindsFound = () => FIND_KINDS.filter((k) => away.finds[k]).length;
+const knows = (k) => away.finds[k] > 0 || (away.known || []).includes(k);   // found at least once, even if it's since gone to the keeper's shelf
+const kindsFound = () => FIND_KINDS.filter(knows).length;
 function updateFindsPill() { $('findsBtn').hidden = false; $('findsCount').textContent = `${kindsFound()}/${FIND_KINDS.length}`; }
 function openFinds() {
   const grid = $('findsGrid'); grid.textContent = '';
   for (const k of Object.keys(FINDS)) {
     const n = away.finds[k] || 0, f = FINDS[k];
     if (f.gift && !n) continue;
-    const s = document.createElement('div'); s.className = 'slot' + (n ? '' : ' no');
+    const gone = !n && knows(k), s = document.createElement('div'); s.className = 'slot' + (n ? '' : ' no');
     s.innerHTML = `<span class="ic" aria-hidden="true"></span><span class="nm"></span><span class="ct"></span>`;
-    s.children[0].textContent = n ? f.icon : '?'; s.children[1].textContent = n ? f.name : '???'; s.children[2].textContent = n > 1 ? `×${n}` : n ? (f.gift ? `from ${KEEPER}` : 'found') : 'not yet';
+    s.children[0].textContent = n || gone ? f.icon : '?'; s.children[1].textContent = n || gone ? f.name : '???'; s.children[2].textContent = n > 1 ? `×${n}` : n ? (f.gift ? `from ${KEEPER}` : 'found') : gone ? 'given away' : 'not yet';
     grid.appendChild(s);
   }
   const left = finds.filter((f) => !f.taken).length;
@@ -1093,11 +1115,12 @@ function openFinds() {
 $('findsBtn').addEventListener('click', openFinds);
 $('pageClose').addEventListener('click', () => { $('pageCard').hidden = true; S.play('click', { gain: 0.5 }); });
 $('findsClose').addEventListener('click', () => { $('findsCard').hidden = true; S.play('click', { gain: 0.5 }); });
+$('shelfClose').addEventListener('click', () => { $('shelfCard').hidden = true; S.play('click', { gain: 0.5 }); });
 
 function pickUp(f) {
   mode = 'busy'; walkTo = null; me.vx = me.vz = 0;
   me.heading = Math.atan2(f.x - me.x, f.z - me.z); f.taken = true;
-  const first = !away.finds[f.kind], info = FINDS[f.kind];
+  const first = !knows(f.kind), info = FINDS[f.kind];
   const lift = () => {
     f.model.visible = true; f.spark.visible = false; f.g.children.forEach((c) => { if (c !== f.model && c !== f.spark) c.visible = false; });
     f.fly = { t: 0, x0: f.g.position.x, y0: f.g.position.y, z0: f.g.position.z };
@@ -1238,6 +1261,8 @@ function findAction() {
   if (mode !== 'play') return null;
   const near = (x, z, d) => Math.hypot(me.x - x, me.z - z) < d;
   if (area === 'top') return { label: 'Climb back down', run: goDown };
+  // by the shelf, the shelf comes first unless the keeper is nearer (it often sits close by)
+  if (area === 'in' && near(SHELF.x, SHELF.z, 1.5) && !(gloam && gloamAt.area === 'in' && Math.hypot(me.x - gloam.x, me.z - gloam.z) < Math.hypot(me.x - SHELF.x, me.z - SHELF.z))) return { label: `Look at ${away.met ? KEEPER + '’s' : 'the'} shelf`, run: openShelf };
   if (gloam && gloamAt.area === area && near(gloam.x, gloam.z, 2.7)) {
     if (away.pages.includes(LETTER) && !away.letter) return { label: 'Give Gloam the letter', run: giveLetter };
     return { label: `Talk to ${away.met ? KEEPER : 'the keeper'}`, run: talk };
@@ -1262,7 +1287,33 @@ function findAction() {
   if (onPier(me.x, me.z) && me.z > SHORE + 1.6) return { label: 'Sail home', run: sailHome };
   return null;
 }
-function doAction() { if (action && $('findsCard').hidden && $('pageCard').hidden) action.run(); }
+function doAction() { if (action && $('findsCard').hidden && $('pageCard').hidden && $('shelfCard').hidden) action.run(); }
+/* The keeper's shelf: see what's on it and who left it, and leave something of your own. */
+function openShelf() {
+  walkTo = null; const list = $('shelfList'), grid = $('shelfGrid'); list.textContent = ''; grid.textContent = '';
+  $('shelfTitle').textContent = `${away.met ? KEEPER + '’s' : 'The keeper’s'} shelf`;
+  $('shelfSub').textContent = shelf.length ? 'Things visitors have left here.' : 'Three bare boards. Nobody has left anything yet.';
+  for (const it of shelf) { if (!FINDS[it.kind]) continue; const li = document.createElement('li'); li.textContent = `${FINDS[it.kind].icon} ${FINDS[it.kind].name}`; const who = document.createElement('span'); who.textContent = it.by === myId ? ' · from you' : ` · from ${it.bud}`; li.append(who); list.append(li); }
+  const mine = Object.keys(FINDS).filter((k) => !FINDS[k].gift && away.finds[k] > 0);
+  $('shelfAsk').textContent = mine.length ? 'Leave one of your finds? It stays here for everyone to see.' : 'You’ve nothing to leave just now. Things turn up around the rock every day.';
+  for (const k of mine) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'slot'; b.innerHTML = '<span class="ic" aria-hidden="true"></span><span class="nm"></span><span class="ct"></span>';
+    b.children[0].textContent = FINDS[k].icon; b.children[1].textContent = FINDS[k].name; b.children[2].textContent = away.finds[k] > 1 ? `×${away.finds[k]}` : 'your only one';
+    b.addEventListener('click', () => leaveOnShelf(k, b)); grid.append(b);
+  }
+  $('shelfCard').hidden = false; S.play('pop', { gain: 0.5 });
+}
+let shelfBusy = false;
+async function leaveOnShelf(kind, btn) {
+  if (shelfBusy) return; shelfBusy = true; btn.disabled = true;
+  const r = await post({ do: 'shelf', kind }); shelfBusy = false;
+  if (!r.ok || !r.shelf) { if (r.away) away = { ...r.away }; toast(r.error ? `That didn’t work: ${r.error}.` : 'That didn’t work. Try again in a moment.'); openShelf(); return; }
+  away = { ...r.away }; shelf = r.shelf; drawShelf(true); updateFindsPill(); $('shelfCard').hidden = true; S.play('chime', { gain: 0.5 });
+  say(me, pick(['for your shelf!', 'this one’s for you.', 'found it out there!']), 1800);
+  if (gloam && gloamAt.area === 'in') setTimeout(() => { gloamSay(r.warmed ? pick(['…hm. it can stay.', '…put it straight, at least.', '…that’s a decent one.']) : pick(['…another one.', '…the shelf’s not endless.', '…fine.']), 3000); if (r.warmed) gloam.happyUntil = T + 2; }, 1500);
+  toast(`${FINDS[kind].icon} Your ${FINDS[kind].name} is on the shelf now.`, 4200);
+  if (r.gift) setTimeout(() => toast(`${FINDS.lantern.icon} ${KEEPER} gave you its old lantern. It’s on your porch now.`, 6000), 5000);
+}
 $('act').addEventListener('click', doAction);
 function showAction() {
   const a = findAction(), el = $('act');
@@ -1417,6 +1468,7 @@ function frame(ms) {
     }
   } else if (stove.fire) { const f = 1.3 + Math.sin(T * 9) * 0.2 + Math.sin(T * 23) * 0.12; stove.fire.emissiveIntensity = f; stoveLight.intensity = 0.55 + f * 0.3; }
 
+  for (const f of shelfG.children) if (f.userData.pop > 0) { f.userData.pop = Math.max(0, f.userData.pop - dt * 1.6); f.position.y = f.userData.y0 + Math.sin(f.userData.pop * Math.PI) * 0.3; f.rotation.y += dt * 6 * f.userData.pop; }
   aimCamera(dt); fadeBlockers(dt);
   showAction();
   placeBubble(me); if (gloam) placeBubble(gloam);
@@ -1442,7 +1494,7 @@ S.onChange(() => S.ambient(!S.muted)); S.ambient(true);
     if (!res.ok) throw new Error(world.error || 'load failed');
   } catch (e) { console.error(e); showCenter('The ferry couldn’t make the crossing', 'Something went wrong on the way over. Try again in a moment.', 'Back to bud island', '/world'); return; }
   if (!world.bud) { showCenter('You’ll need a bud for this trip', 'Make your bud first, then catch the ferry from the dock.', 'Make my bud', '/'); return; }
-  away = world.away;
+  away = world.away; shelf = world.shelf || []; myId = world.me && world.me.id; drawShelf();
   const fond = params.get('fond'); if (fond != null && /^\d+$/.test(fond)) { away.fond = Number(fond); away.level = fondLevel(away.fond); away.met = away.met || away.fond > 0; }   // preview only: nothing is saved
   buildTerrain(); buildDecor(); buildSky(); buildDock(); buildLighthouse(away.level); buildRoom(); buildFarTree();
   buildFinds(away.taken); buildBirds();

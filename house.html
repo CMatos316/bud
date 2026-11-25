@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+/* no zooming on phones (see /js/nozoom.js) */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+</style>
+<script src="/js/nozoom.js"></script>
+<title>At home · the buddie system</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+<meta name="description" content="Inside a bud's home: doodles on the walls, finds on the shelves.">
+<meta name="theme-color" content="#F3E7D3">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root { --ink: #1D1C2B; --soft: #6B6170; --head: 'Fredoka', 'Nunito', ui-rounded, system-ui, sans-serif; --body: 'Nunito', system-ui, sans-serif; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+body { font-family: var(--body); color: var(--ink); background: radial-gradient(ellipse at 50% 40%, #FBF3E4, #EAD9C0 75%, #D9C4A6); user-select: none; -webkit-user-select: none; }
+[hidden] { display: none !important; }
+#app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+.top { display: flex; align-items: center; gap: 8px; padding: 10px 14px 4px; }
+.top h1 { font-family: var(--head); font-weight: 700; font-size: 20px; margin: 0 auto 0 0; }
+.top a { font-weight: 800; font-size: 14px; color: var(--ink); background: rgba(255,255,255,.85); border-radius: 999px; padding: 7px 14px; text-decoration: none; }
+#stage { position: relative; min-height: 0; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#hint { min-height: 44px; padding: 6px 16px 14px; text-align: center; font-weight: 700; font-size: 14.5px; color: var(--soft); text-wrap: balance; }
+.sheet { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(60,40,24,.42); padding: 18px; }
+.sheet .box { background: #FFFDF8; border-radius: 22px; padding: 20px 18px; max-width: 400px; width: 100%; max-height: 100%; overflow: auto; text-align: center; display: grid; gap: 10px; box-shadow: 0 18px 40px -18px rgba(29,28,43,.6); }
+.sheet h2 { font-family: var(--head); font-weight: 700; font-size: 22px; margin: 0; }
+.sheet p { margin: 0; color: var(--soft); font-weight: 700; font-size: 14px; line-height: 1.45; }
+#sBody { display: grid; gap: 10px; justify-items: center; }
+.big { width: min(260px, 70vw); aspect-ratio: 1; object-fit: cover; border-radius: 12px; border: 8px solid #8A5A3C; background: #fff; image-rendering: auto; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; width: 100%; }
+.pick { font: inherit; color: var(--ink); background: #F5EEE1; border: 0; border-radius: 12px; padding: 6px; display: grid; gap: 3px; justify-items: center; }
+.pick img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: #fff; }
+.pick small { font-weight: 800; font-size: 11.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick .ico { font-size: 34px; line-height: 1.3; }
+.pick.find small { white-space: normal; line-height: 1.15; }
+.btn { font: inherit; font-family: var(--head); font-weight: 700; font-size: 17px; color: #fff; background: #3D8BFD; border: 0; border-radius: 999px; padding: 11px 20px; text-decoration: none; display: inline-block; }
+.btn.quiet { background: #EFE7DA; color: var(--ink); font-size: 15px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="top"><h1 id="title">A home</h1><a href="/world">Back outside</a></div>
+  <div id="stage"></div>
+  <div id="hint" aria-live="polite"></div>
+</div>
+<div class="sheet" id="gate"><div class="box"><h2>Knock knock…</h2><p id="gateText">Opening the door.</p><div id="gateBtns"></div></div></div>
+<div class="sheet" id="sheet" hidden><div class="box"><h2 id="sTitle"></h2><div id="sBody"></div><p id="sNote"></p><button type="button" class="btn quiet" id="sClose">Close</button></div></div>
+<script src="/js/sound.js"></script>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const gate = (text, btns = []) => { $('gate').hidden = false; $('gateText').textContent = text; $('gateBtns').textContent = ''; for (const [label, href] of btns) { const a = document.createElement('a'); a.className = 'btn'; a.textContent = label; a.href = href; $('gateBtns').append(a); } };
+async function call(url, body) {
+  const res = await fetch(url, body ? { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { credentials: 'same-origin', cache: 'no-store' });
+  if (res.status === 401) { location.href = '/api/auth/login?next=' + encodeURIComponent(location.pathname + location.search); await new Promise(() => {}); }
+  let data = {}; try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw Object.assign(new Error(data.error || `error ${res.status}`), { status: res.status });
+  return data;
+}
+try {
+  const q = new URLSearchParams(location.search), of = q.get('of') || 'me';
+  const { runHouse, KINDS } = await import('/js/house-room.js');
+  const kind = KINDS.includes(q.get('k')) ? q.get('k') : 'cottage';
+  let who = of;
+  if (of === 'me') { const w = await call('/api/world?away=1'); who = w.me.id; }
+  const data = await call('/api/world?house=' + encodeURIComponent(who));
+  for (const src of ['/js/vendor/three.r128.min.js', '/js/vendor/delaunator-5.0.1.min.js']) await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => no(new Error('couldn’t load the 3D picture')); document.head.append(sc); });
+  window.__house = await runHouse(data, kind, (house) => call('/api/world', { house }));
+  $('gate').hidden = true;
+} catch (e) {
+  console.error(e);
+  gate(e.status === 404 ? 'Nobody lives there.' : `The door’s stuck (${e.message}).`, [['Back outside', '/world']]);
+}
+</script>
+</body>
+</html>

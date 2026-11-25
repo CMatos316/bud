@@ -3298,6 +3298,10 @@ function renderCardBody() {
     cardBody.append(back);
   }
   const d = bud.data;
+  {   // the way into its home (house.html): a room shaped like the home is from outside
+    const hm = town.homes.get(d.id);
+    if (hm) { const r = el('div', 'row'), a = el('a', 'btn', d.isMe ? 'Go inside your home' : `Visit ${nameOf(bud)}’s home`); a.href = `/house?of=${encodeURIComponent(d.id)}&k=${hm.kind}`; r.append(a); cardBody.append(r); }
+  }
   if (d.isMe) {
     if (!hasProfile) {
       // it hasn't had its getting-to-know-you chat with you yet

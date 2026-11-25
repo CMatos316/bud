@@ -19,7 +19,7 @@ class Query {
 class Col extends Query { doc(id) { return new Doc(`${this.path}/${id || 'auto' + String(++n).padStart(12, '0')}`); } }
 const root = { collection: (name) => new Col(name), async runTransaction(fn) { const tx = { get: (ref) => ref.get(), set: (ref, d, o) => { ref.set(d, o); }, update: (ref, d) => { ref.update(d); } }; return fn(tx); } };
 export const db = () => root;
-export const refs = { user: (id) => new Doc(`guilds/G/users/${id}`) };
+export const refs = { user: (id) => new Doc(`guilds/G/users/${id}`), bud: (id) => new Doc(`guilds/G/buds/${id}`), friend: (a, b) => new Doc(`guilds/G/friends/${[a, b].sort().join('_')}`) };
 export const Timestamp = { now: () => ({ ms: Date.now(), toMillis() { return this.ms; } }) };
 export const adminAuth = async () => ({ createCustomToken: async (uid, claims) => `token:${uid}:${JSON.stringify(claims)}` });
 export const projectId = () => 'test';

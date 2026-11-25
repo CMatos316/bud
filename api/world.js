@@ -13,7 +13,8 @@ import { myGames as myPults } from '../lib/bpgame.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
 import { townFor } from '../lib/townStore.js';
-import { awayView, awayAct, porchOf } from '../lib/away.js';
+import { awayView, awayAct, porchOf, gloamShelf } from '../lib/away.js';
+import { houseView, houseSet } from '../lib/house.js';
 import { gloamTalk, gloamForget } from '../lib/gloam.js';
 import { dayKey } from '../js/away.js';
 import { waitUntil } from '@vercel/functions';
@@ -34,8 +35,11 @@ export async function GET(request) {
     if (new URL(request.url).searchParams.get('away') === '1') {
       const [budDoc, userDoc] = await Promise.all([refs.bud(me).get(), refs.user(me).get()]);
       const d = budDoc.exists ? budDoc.data() : null, bud = d ? budForWorld(me, d, session.name, true) : null;
-      return json({ me: { id: me, name: session.name }, bud: bud && bud.r.length === 64 ? bud : null, day: dayKey(), away: awayView(userDoc.exists ? userDoc.get('away') : null) });
+      return json({ me: { id: me, name: session.name }, bud: bud && bud.r.length === 64 ? bud : null, day: dayKey(), away: awayView(userDoc.exists ? userDoc.get('away') : null), shelf: await gloamShelf() });
     }
+    // inside someone's home (/house): what's on the walls and shelves
+    const house = new URL(request.url).searchParams.get('house');
+    if (house) { try { return json(await houseView(house, me)); } catch (err) { if (err.expose) return json({ error: err.message }, err.status); throw err; } }
     const buds = db().collection('guilds').doc(GUILD_ID).collection('buds');
     const [snap, pending, sent, friendships, meDoc, photos, profileDoc, news, gameSnap, profileSnap, allFriends] = await Promise.all([
       buds.select(...FIELDS).limit(MAX_BUDS).get(),
@@ -199,6 +203,11 @@ export async function POST(request) {
   if (!session) return json({ error: 'sign in first' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+  // rearranging your own home: what's hung and what's on the shelves
+  if (body?.house) {
+    try { return json(await houseSet(session.id, body.house)); }
+    catch (err) { if (err.expose) return json({ error: err.message }, err.status); console.error('house failed:', err); return json({ error: 'could not save that' }, 500); }
+  }
   // something done on Lighthouse Rock: a find picked up, a hello to the keeper
   if (body?.away) {
     try {
