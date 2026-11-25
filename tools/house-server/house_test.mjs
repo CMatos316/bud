@@ -22,7 +22,7 @@ ok(await throws(() => H.houseSet(id(1), { walls: ['doodle01', 'doodle01'], shelv
 ok(/another/.test(await throws(() => H.houseSet(id(1), { walls: [], shelves: ['feather', 'feather'] }), 403) || ''), 'you can’t set out more of a find than you have');
 ok(await throws(() => H.houseSet(id(1), { walls: [], shelves: ['crown'] }), 400), 'or something that isn’t a find');
 const seen = await H.houseView(id(1), id(2));
-ok(!seen.mine && !seen.have && seen.walls[0].id === 'doodle01' && seen.walls[0].thumb && seen.shelves[0] === 'shell' && seen.you.name === 'Taro' && seen.owner.name === 'Mochi', 'a visitor sees the walls and shelves, and nothing of what else the owner has');
+ok(!seen.mine && !seen.have && seen.walls[0].id === 'doodle01' && seen.walls[0].thumb.startsWith('data:image/png;base64,') && seen.shelves[0] === 'shell' && seen.you.name === 'Taro' && seen.owner.name === 'Mochi', 'a visitor sees the walls and shelves, and nothing of what else the owner has');
 store.get('guilds/G/doodleMail/doodle01').toKept = false;
 ok((await H.houseView(id(1), id(2))).walls[0] === null && (await H.houseView(id(1), id(1))).walls[0] === null, 'a doodle the owner later throws away leaves its frame empty');
 ok(await throws(() => H.houseView('424242424', id(1)), 404) && await throws(() => H.houseView('nope', id(1)), 404), 'no home for someone without a bud');
