@@ -1117,12 +1117,31 @@ function homeAt(x, y) {
 function tapHome(u) {
   const bud = buds.find((b) => b.data.id === u.id);
   u.bounce = 1; S.play('pop', { gain: 0.6, rate: 0.9 });
-  if (!bud) return;
-  focusOn(bud);
-  bud.syv -= 0.1; bud.happyUntil = T + 1.2; bud.lookCameraUntil = T + 2.5;
-  if (bud.state === 'act') endActivity(bud, 1.6);
-  say(bud, bud.data.isMe ? pick(['that’s my place!', 'home sweet home!', 'we live there!']) : pick(['that’s my house!', 'you found my place!', 'come visit anytime!']), 1800);
-  openCard(bud);
+  if (bud) {
+    bud.syv -= 0.1; bud.happyUntil = T + 1.2;
+    say(bud, bud.data.isMe ? pick(['that’s my place!', 'home sweet home!', 'we live there!']) : pick(['that’s my house!', 'you found my place!', 'come visit anytime!']), 1800);
+  }
+  openHomeCard(u, bud);
+}
+// A home's own card: the camera comes over to the home (not to its bud, who may be anywhere), and the card is about
+// the home: whose it is, the way inside, and a way over to its bud.
+const HOME_NAMES = { cottage: 'A cottage', hut: 'A round hut', tall: 'A tall house', aframe: 'An A-frame', burrow: 'A burrow', stilt: 'A house on stilts', tent: 'A tent, for now' };
+let cardHome = null;
+function openHomeCard(u, bud) {
+  if (photo || game) return;
+  closeComposer(); closeCard();
+  cardHome = u; u.at = u.at || { x: u.group.position.x, y: 2.4, z: u.group.position.z };
+  focusOn(u.at, Infinity, distFor(11));
+  const mine = !!(bud && bud.data.isMe), who = bud ? nameOf(bud) : null;
+  document.getElementById('cardName').textContent = mine ? 'Your home' : who ? `${who}’s home` : 'A home';
+  const sub = document.getElementById('cardSub'); sub.textContent = HOME_NAMES[u.kind] || 'A home';
+  const porch = ((bud && bud.data.porch) || []).filter((k) => FINDS[k]);
+  if (porch.length) sub.append(` \u00b7 on the porch: ${porch.map((k) => FINDS[k].icon).join(' ')}`);
+  cardBody.textContent = '';
+  const r = el('div', 'row'), go = el('a', 'btn primary', mine ? 'Go inside' : 'Visit'); go.href = `/house?of=${encodeURIComponent(u.id)}&k=${u.kind}`; r.append(go);
+  if (bud) { const see = el('button', 'btn', mine ? 'Find my bud' : `Find ${who}`); see.type = 'button'; see.addEventListener('click', () => { S.play('pop', { gain: 0.5 }); openCard(bud); }); r.append(see); }
+  cardBody.append(el('p', 'muted', mine ? 'Your doodles and finds are inside.' : 'Step in and see what’s on the walls and shelves.'), r);
+  card.hidden = false; card.scrollTop = 0; hideHint();
 }
 // the spot outside a bud's front door
 function homeFront(id) {
@@ -2872,7 +2891,7 @@ function focusOn(thing, secs = Infinity, dist = focusDist()) {
   camGoal.dist = Math.min(camGoal.dist, Math.max(minDist(), dist));
 }
 // is the camera held on something you're in the middle of (a card, a note, a photo)?
-const pinned = () => !!cam.follow && (cam.follow === cardBud || cam.follow === composing || !!photo);
+const pinned = () => !!cam.follow && (cam.follow === cardBud || (cardHome && cam.follow === cardHome.at) || cam.follow === composing || !!photo);
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), groundHit = new THREE.Vector3(), probe = new THREE.PerspectiveCamera();
 // The spot on the ground under a point on the screen (null if that's sky, or well off the island).
 // settled: as the picture will be once the camera has finished gliding to where it's heading. Zooming and
@@ -3255,7 +3274,7 @@ function clickAt(x, y) {
 
 function openCard(bud) {
   if (cardBud && cardBud !== bud) releaseCardBud();
-  cardBud = bud; cardList = null; card.classList.remove('wide');
+  cardBud = bud; cardList = null; cardHome = null; card.classList.remove('wide');
   // it stays with you while you read its card
   if (bud.state === 'act') endActivity(bud);
   if (bud.state === 'walk' && !bud.rush) { bud.state = 'idle'; bud.target = null; }
@@ -3285,6 +3304,7 @@ function releaseCardBud() {
 }
 function closeCard() {
   if (cardBud && cam.follow === cardBud && cam.followUntil === Infinity) cam.followUntil = T;   // the camera lets go, and stays where it is
+  if (cardHome) { if (cam.follow === cardHome.at) cam.followUntil = T; cardHome = null; }
   releaseCardBud(); card.hidden = true; cardBud = null; cardList = null; cameFrom = null; card.classList.remove('wide');
 }
 
