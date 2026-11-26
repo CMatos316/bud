@@ -37,9 +37,16 @@ export async function runHouse(data, kind, save) {
   const wrap = $('stage'), renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.outputEncoding = THREE.sRGBEncoding; renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1)); wrap.append(renderer.domElement);
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(38, 1, 0.3, 120);
-  scene.add(new THREE.HemisphereLight(0xFFF6E8, 0xB79A80, 0.82));
-  const sun = new THREE.DirectionalLight(0xFFE9C8, 0.5); sun.position.set(3, 8, 9); scene.add(sun);
-  const lamp = new THREE.PointLight(0xFFC98A, 0.55, 14, 2); scene.add(lamp);
+  // the hour outside: it sets the sky behind the room, the light coming in, and how much the lantern matters
+  const hr = new Date().getHours(), asked = new URLSearchParams(location.search).get('tod'), tod = ['day', 'golden', 'night'].includes(asked) ? asked : hr >= 7 && hr < 17 ? 'day' : hr >= 17 && hr < 20 ? 'golden' : 'night';
+  const SKY = { day: { hemi: [0xFFF6E8, 0xB79A80, 0.84], sun: [0xFFE9C8, 0.5], lamp: 0.45, pane: 0xCFEBFF, grass: '#8CC47E', dirt: '#B58A62' },
+    golden: { hemi: [0xFFE2C0, 0xB08A70, 0.78], sun: [0xFFB877, 0.55], lamp: 0.7, pane: 0xFFD3A0, grass: '#A3B86C', dirt: '#B07F58' },
+    night: { hemi: [0xAEB6E8, 0x4A4466, 0.5], sun: [0x8FA0FF, 0.14], lamp: 1.25, pane: 0x2A3160, grass: '#4E7466', dirt: '#6B5A5A' } }[tod];
+  document.body.dataset.tod = tod;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', { day: '#A9D8F3', golden: '#F4B183', night: '#1B2040' }[tod]);
+  scene.add(new THREE.HemisphereLight(...SKY.hemi));
+  const sun = new THREE.DirectionalLight(...SKY.sun); sun.position.set(3, 8, 9); scene.add(sun);
+  const lamp = new THREE.PointLight(0xFFC98A, SKY.lamp, 14, 2); scene.add(lamp);
   const room = new THREE.Group(); scene.add(room);
   const frames = [], spots = [];          // where the six doodles and the six finds go: { x, y, z, ry }
   let walk, SPAN = 8, TALL = 3, DEEP = 5;  // walk(x, z) -> the nearest spot a bud can stand; and the room's size, for the camera
@@ -48,7 +55,7 @@ export async function runHouse(data, kind, save) {
   const shapeWall = (pts, mat) => { const s = new THREE.Shape(); pts.forEach(([x, y], i) => (i ? s.lineTo(x, y) : s.moveTo(x, y))); s.closePath(); return new THREE.Mesh(new THREE.ShapeGeometry(s), mat); };
   const planks = (w, d, y = 0) => { const g = new THREE.Group(); const n = Math.round(w / 0.7); for (let i = 0; i < n; i++) g.add(box(w / n - 0.04, 0.08, d, i % 2 ? floorM : M('#BF9C6E'), -w / 2 + (i + 0.5) * w / n, y - 0.04, 0)); return g; };
   const rug = (r, x = 0, z = 0.4) => { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 36), trimM); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.02, z); const i = new THREE.Mesh(new THREE.CircleGeometry(r * 0.72, 36), M(wallC.clone().lerp(new THREE.Color(1, 1, 1), 0.4))); i.rotation.x = -Math.PI / 2; i.position.set(x, 0.03, z); room.add(m, i); };
-  const windowAt = (x, y, z, r = 0.5, ry = 0) => { const g = new THREE.Group(), pane = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshBasicMaterial({ color: 0xCFEBFF })), fr = new THREE.Mesh(new THREE.TorusGeometry(r, 0.06, 6, 24), woodM); g.add(pane, fr, box(r * 2, 0.05, 0.04, woodM), box(0.05, r * 2, 0.04, woodM)); g.position.set(x, y, z); g.rotation.y = ry; room.add(g); };
+  const windowAt = (x, y, z, r = 0.5, ry = 0) => { const g = new THREE.Group(), pane = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshBasicMaterial({ color: SKY.pane })), fr = new THREE.Mesh(new THREE.TorusGeometry(r, 0.06, 6, 24), woodM); g.add(pane, fr, box(r * 2, 0.05, 0.04, woodM), box(0.05, r * 2, 0.04, woodM)); g.position.set(x, y, z); g.rotation.y = ry; room.add(g); };
   // a straight shelf with n spots along it
   function shelf(x, y, z, w, n) { room.add(box(w, 0.08, 0.5, woodM, x, y, z + 0.25)); for (const s of [-1, 1]) room.add(box(0.07, 0.3, 0.4, darkM, x + s * (w / 2 - 0.12), y - 0.18, z + 0.2)); for (let i = 0; i < n; i++) spots.push({ x: x - w / 2 + (i + 0.5) * w / n, y: y + 0.04, z: z + 0.27, ry: 0 }); }
   const rectWalk = (W, D) => (x, z) => [clamp(x, -W / 2 + 0.75, W / 2 - 0.75), clamp(z, -D / 2 + 1.05, D / 2 - 0.2)];
@@ -119,7 +126,7 @@ export async function runHouse(data, kind, save) {
     stilt() {
       const W = 7.6, D = 5, H = 2.9; boxRoom(W, D, H);
       for (let i = 1; i < 6; i++) room.add(box(W, 0.03, 0.02, darkM, 0, i * H / 6, -D / 2 + 0.07));
-      for (const s of [-1, 1]) { const w = box(0.06, 1.1, 1.6, new THREE.MeshBasicMaterial({ color: 0xCFEBFF }), s * (W / 2 - 0.05), 1.7, -0.3); room.add(w, box(0.1, 0.08, 1.8, woodM, s * (W / 2 - 0.08), 1.12, -0.3), box(0.1, 0.08, 1.8, woodM, s * (W / 2 - 0.08), 2.28, -0.3)); }
+      for (const s of [-1, 1]) { const w = box(0.06, 1.1, 1.6, new THREE.MeshBasicMaterial({ color: SKY.pane }), s * (W / 2 - 0.05), 1.7, -0.3); room.add(w, box(0.1, 0.08, 1.8, woodM, s * (W / 2 - 0.08), 1.12, -0.3), box(0.1, 0.08, 1.8, woodM, s * (W / 2 - 0.08), 2.28, -0.3)); }
       room.add(box(1.1, 0.06, 1.1, darkM, W / 2 - 1.2, 0.03, D / 2 - 0.8));   // the hatch you climbed up through
       shelf(0, 0.8, -D / 2 + 0.07, 6.2, 6);
       for (let i = 0; i < 6; i++) frames.push({ x: -2.75 + i * 1.1, y: 1.95, z: -D / 2 + 0.09, ry: 0 });
@@ -131,6 +138,14 @@ export async function runHouse(data, kind, save) {
   // a lantern on a cord, and a mat where the door is
   { const cord = box(0.02, 0.5, 0.02, darkM, 0, lamp.position.y + 0.45, 0.6), glow = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 9), new THREE.MeshStandardMaterial({ color: lin('#FFE9A8'), emissive: lin('#FFB94A'), emissiveIntensity: 1.1 })); glow.position.copy(lamp.position); room.add(cord, glow, box(0.3, 0.06, 0.3, darkM, 0, lamp.position.y + 0.2, 0.6));
     const mat = box(1.3, 0.04, 0.7, darkM, 0, 0.02, walk(0, 99)[1] + 0.1); room.add(mat); }
+
+  // the plot it stands on: a round of grass on a clod of earth, stepping stones up to the door, a bush and some flowers
+  { const R = Math.max(SPAN * 0.66, DEEP * 0.95), cz = -0.1, grassM = M(SKY.grass), top = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 0.97, 0.22, 56), grassM), clod = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.97, R * 0.72, 0.9, 56), M(SKY.dirt));
+    top.scale.z = clod.scale.z = Math.min(1, DEEP * 1.05 / R); top.position.set(0, -0.2, cz); clod.position.set(0, -0.76, cz); room.add(top, clod);
+    const dz = walk(0, 99)[1]; for (let i = 0; i < 3; i++) { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.3 - i * 0.03, 0.3 - i * 0.03, 0.06, 12), M('#C9C2B8')); st.position.set((i % 2 ? 0.16 : -0.12), -0.07, DEEP / 2 + 0.45 + i * 0.62); st.scale.z = 0.8; if (st.position.z < cz + R * top.scale.z - 0.4) room.add(st); }
+    const petals = ['#FF8FA3', '#FFD36E', '#FFFFFF', '#C9A8FF'];
+    for (const [fx, k] of [[-SPAN / 2 + 0.5, 0], [-SPAN / 2 + 1.2, 1], [SPAN / 2 - 0.6, 2], [SPAN / 2 - 1.4, 3], [-1.5, 2], [1.7, 0]]) { const fz = DEEP / 2 + 0.35 + (k % 2) * 0.3; room.add(box(0.03, 0.26, 0.03, M('#5E9E58'), fx, 0.04, fz)); const fl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), M(petals[k])); fl.position.set(fx, 0.2, fz); room.add(fl); }
+    for (const sx of [-1, 1]) { const bush = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 9), M(tod === 'night' ? '#3F6657' : '#6BBF7A')); bush.scale.y = 0.75; bush.position.set(sx * (SPAN / 2 + 0.35), 0.12, DEEP / 2 - 0.2); room.add(bush); } }
 
   /* ---------- what's on the walls and shelves ---------- */
   const taps = [], frameViews = [], spotViews = [];
@@ -187,6 +202,7 @@ export async function runHouse(data, kind, save) {
 
   /* ---------- tapping: the floor to walk, a frame or a shelf spot to use it ---------- */
   const ray = new THREE.Raycaster(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hint = $('hint');
+  let hintT = 0; const tell = (text, ms = 6000) => { hint.textContent = text; hint.classList.add('show'); clearTimeout(hintT); hintT = setTimeout(() => hint.classList.remove('show'), ms); };
   let going = null;   // the frame or shelf spot your bud is walking up to
   function tapAt(cx, cy) {
     const r = renderer.domElement.getBoundingClientRect(), v = new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1); ray.setFromCamera(v, camera);
@@ -209,13 +225,13 @@ export async function runHouse(data, kind, save) {
   async function put(change) {
     const walls = data.walls.map((w) => (w ? w.id : null)), shelves = data.shelves.slice(); change(walls, shelves); close();
     try { const next = await save({ walls, shelves }); Object.assign(data, { walls: next.walls, shelves: next.shelves, have: next.have || data.have }); show(); S.play('chime', { gain: 0.4 }); if (me) { me.pop = 1; me.happy = true; setTimeout(() => { me.happy = false; }, 1200); } }
-    catch (e) { hint.textContent = `That didn’t save: ${e.message}.`; S.play('boing', { gain: 0.3 }); }
+    catch (e) { tell(`That didn’t save: ${e.message}.`); S.play('boing', { gain: 0.3 }); }
   }
   function open(u) {
     sBody.textContent = ''; sNote.textContent = '';
     if (u.type === 'wall') {
       const w = data.walls[u.i];
-      if (!data.mine) { if (!w) { hint.textContent = 'An empty frame.'; return; } sTitle.textContent = w.caption || 'A doodle'; const img = el('img', 'big'); img.src = w.thumb; img.alt = w.caption || 'a doodle'; sBody.append(img); sNote.textContent = `drawn by ${w.from}`; sheet.hidden = false; return; }
+      if (!data.mine) { if (!w) { tell('An empty frame.'); return; } sTitle.textContent = w.caption || 'A doodle'; const img = el('img', 'big'); img.src = w.thumb; img.alt = w.caption || 'a doodle'; sBody.append(img); sNote.textContent = `drawn by ${w.from}`; sheet.hidden = false; return; }
       sTitle.textContent = w ? 'This frame' : 'Hang a doodle';
       if (w) { const img = el('img', 'big'); img.src = w.thumb; img.alt = w.caption || 'a doodle'; sBody.append(img); sNote.textContent = `${w.caption ? `“${w.caption}” ` : ''}drawn by ${w.from}`; const off = el('button', 'btn quiet', 'Take it down'); off.type = 'button'; off.addEventListener('click', () => put((walls) => { walls[u.i] = null; })); sBody.append(off); }
       const hungIds = new Set(data.walls.filter(Boolean).map((x) => x.id)), free = (data.have?.doodles || []).filter((d) => !hungIds.has(d.id));
@@ -224,7 +240,7 @@ export async function runHouse(data, kind, save) {
       sheet.hidden = false; return;
     }
     const k = data.shelves[u.i];
-    if (!data.mine) { hint.textContent = k ? `A ${FINDS[k].name}, from Lighthouse Rock.` : 'An empty spot on the shelf.'; return; }
+    if (!data.mine) { tell(k ? `A ${FINDS[k].name}, from Lighthouse Rock.` : 'An empty spot on the shelf.'); return; }
     sTitle.textContent = k ? `A ${FINDS[k].name}` : 'Set something out';
     if (k) { const off = el('button', 'btn quiet', 'Take it off the shelf'); off.type = 'button'; off.addEventListener('click', () => put((_, shelves) => { shelves[u.i] = null; })); sBody.append(off); }
     const used = {}; for (const x of data.shelves) if (x) used[x] = (used[x] || 0) + 1;
@@ -237,16 +253,17 @@ export async function runHouse(data, kind, save) {
   /* ---------- the camera: square on to the open side, back far enough to see the whole room ---------- */
   function fit() {
     const w = wrap.clientWidth, h = wrap.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
-    const look = new THREE.Vector3(0, TALL * 0.44, -DEEP * 0.2), pts = []; for (const x of [-SPAN / 2 - 0.3, SPAN / 2 + 0.3]) pts.push(new THREE.Vector3(x, 0, -DEEP / 2), new THREE.Vector3(x, TALL * 0.92, -DEEP / 2), new THREE.Vector3(x, 0, DEEP / 2));
-    const Z = w / h < 0.8 ? Math.min(1, 6 / SPAN) : 1; pan = SPAN / 2 * (1 - Z); for (const p of pts) p.x *= Z;
-    let d = 6; for (let i = 0; i < 80; i++, d *= 1.04) { camera.position.set(0, TALL * 0.5 + d * 0.3, d); camera.lookAt(look); camera.updateMatrixWorld(); if (pts.every((p) => { const q = p.clone().project(camera); return Math.abs(q.x) < 0.96 && Math.abs(q.y) < 0.94; })) break; }
+    const look = new THREE.Vector3(0, TALL * (w / h < 0.8 ? 0.34 : 0.44), -DEEP * 0.2), pts = []; for (const x of [-SPAN / 2 - 0.3, SPAN / 2 + 0.3]) pts.push(new THREE.Vector3(x, 0, -DEEP / 2), new THREE.Vector3(x, TALL * 0.92, -DEEP / 2), new THREE.Vector3(x, 0, DEEP / 2));
+    const tallScreen = w / h < 0.8, Z = tallScreen && me ? Math.min(1, 5.3 / SPAN) : 1; pan = SPAN / 2 * (1 - Z); for (const p of pts) p.x *= Z;
+    let d = 6; for (let i = 0; i < 80; i++, d *= 1.04) { camera.position.set(0, TALL * 0.5 + d * 0.3, d); camera.lookAt(look); camera.updateMatrixWorld(); if (pts.every((p) => { const q = p.clone().project(camera); return Math.abs(q.x) < 0.97 && q.y < (tallScreen ? 0.72 : 0.8) && q.y > -0.8; })) break; }
     camY = camera.position.y; camD = d; lookAt = look; aim();
   }
   let pan = 0, camX = 0, camY = 0, camD = 6, lookAt = null;
   function aim() { camera.position.set(camX, camY, camD); camera.lookAt(lookAt.x + camX, lookAt.y, lookAt.z); }
   new ResizeObserver(fit).observe(wrap); fit();
   $('title').textContent = data.mine ? 'Your home' : `${data.owner.name}’s home`;
-  hint.textContent = data.mine ? `${BLURB[kind] ? BLURB[kind][0].toUpperCase() + BLURB[kind].slice(1) : 'Home'}. Tap a frame to hang a doodle, or a shelf spot to set out a find.` : `${data.owner.name} lives in ${BLURB[kind] || 'here'}. Tap things to look at them.`;
+  $('sub').textContent = BLURB[kind] ? BLURB[kind][0].toUpperCase() + BLURB[kind].slice(1) : '';
+  tell(data.mine ? 'Tap a frame to hang a doodle, or a shelf to set out a find.' : 'Tap a doodle or a find for a closer look.', 9000);
 
   let now = 0, last = performance.now();
   function frame(t) {
