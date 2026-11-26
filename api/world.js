@@ -17,6 +17,7 @@ import { awayView, awayAct, porchOf, gloamShelf, dinnerToast, dinnerToasts } fro
 import { houseView, houseSet } from '../lib/house.js';
 import { gloamTalk, gloamForget } from '../lib/gloam.js';
 import { dayKey, dinnerOn } from '../js/away.js';
+import { thanksgivingHello } from '../lib/greeting.js';
 import { waitUntil } from '@vercel/functions';
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -31,6 +32,8 @@ export async function GET(request) {
   if (!session) return json({ error: 'sign in first' }, 401);
   try {
     const me = session.id;
+    // a one-off hello from Bud to the server (lib/greeting.js)
+    if (new URL(request.url).searchParams.get('greet') === 'thanksgiving') { const r = await thanksgivingHello(me); return json(r, r.status || 200); }
     // Lighthouse Rock (/far) only needs your own bud and what you've done there
     if (new URL(request.url).searchParams.get('away') === '1') {
       const [budDoc, userDoc] = await Promise.all([refs.bud(me).get(), refs.user(me).get()]);

@@ -55,4 +55,12 @@ if (W.dinnerOn()) {
   await A.dinnerToast(id(2), 'naps'); r = await A.dinnerToast(id(1), 'the pie'); ok(r.toasts.length === 2 && r.toasts.find((t) => t.by === id(1)).text === 'the pie' && (await A.dinnerToasts()).length === 2, 'one toast each: saying another replaces yours');
   ok((await A.dinnerToast(id(1), '   ')).status === 400, 'an empty toast is turned down');
 } else ok((await A.dinnerToast(id(1), 'pie')).status === 409 && (await A.dinnerToasts()).length === 0, 'after the dinner day, toasts are closed');
+// Bud's one hello to the server
+if (W.dinnerOn()) {
+  const H = await import('../../lib/greeting.js'), D = await import('../royal-server/fakediscord.mjs');
+  D.setPost(false); let threw = false; try { await H.thanksgivingHello(id(1)); } catch (e) { threw = true; } D.setPost(true);
+  r = await H.thanksgivingHello(id(1)); const m = D.posted[0];
+  ok(threw && r.sent && D.posted.length === 1 && m.path === '/channels/C/messages' && m.body.content === 'Happy Thanksgiving @everyone! 🦃' && m.body.allowed_mentions.parse[0] === 'everyone', 'a failed send can be retried, and then it goes out to the channel with the everyone mention allowed');
+  r = await H.thanksgivingHello(id(2)); ok(r.already && !r.sent && D.posted.length === 1, 'it only ever goes out once');
+}
 console.log(fails ? `${fails} FAILED` : 'all checks passed');

@@ -9,6 +9,7 @@ class Doc {
   async get() { return new Snap(this, store.get(this.path)); }
   async set(d, o) { store.set(this.path, o?.merge ? { ...(store.get(this.path) || {}), ...clone(d) } : clone(d)); }
   async update(d) { if (!store.has(this.path)) throw new Error('no doc'); store.set(this.path, { ...store.get(this.path), ...clone(d) }); }
+  async delete() { store.delete(this.path); }
 }
 class Query {
   constructor(path, filters = [], lim = 1e9) { this.path = path; this.filters = filters; this.lim = lim; }
