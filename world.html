@@ -569,7 +569,7 @@ body { transition: background 2s linear; }
 <script type="module">
 import { setExtents, buildMesh, drawEyeStyle, setClock, clamp, inPoly, distToPoly, SPACING as EYE_SPACING } from '/js/bud-core.js';
 import { weatherAt, seasonAt, snowCoverAt, groundWetAt, sunTimes, skyHour, forecast } from '/js/seasons.js';
-import { FINDS, ROCK } from '/js/away.js';
+import { FINDS, ROCK, CARVING } from '/js/away.js';
 import { makeFind } from '/js/finds3d.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
@@ -1125,6 +1125,7 @@ function tapHome(u) {
 }
 // A home's own card: the camera comes over to the home (not to its bud, who may be anywhere), and the card is about
 // the home: whose it is, the way inside, and a way over to its bud.
+const CARVING_SVG = '<svg viewBox="0 0 320 120" role="img" aria-label="A carving: small round figures climbing up out of the clouds" style="display:block;width:100%"><g fill="none" stroke="#E9D9BF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity=".9"><path d="M6 104q12-14 26 0q14-16 30 0q12-12 26 0q16-16 32 0q12-12 26 0"/><circle cx="286" cy="24" r="12"/><path d="M286 6v-4M270 12l-3-3M302 12l3-3M298 24h10" /><circle cx="246" cy="40" r="11"/><circle cx="208" cy="54" r="11"/><circle cx="170" cy="68" r="10"/><circle cx="134" cy="82" r="10"/><path d="M108 100a10 10 0 0 1 18-6" stroke-dasharray="3 5"/><path d="M281 22h.1M291 22h.1M242 38h.1M250 38h.1M204 52h.1M212 52h.1M166 66h.1M174 66h.1M130 80h.1M138 80h.1" stroke-width="3.4"/></g></svg>';
 const HOME_NAMES = { cottage: 'A cottage', hut: 'A round hut', tall: 'A tall house', aframe: 'An A-frame', burrow: 'A burrow', stilt: 'A house on stilts', tent: 'A tent, for now' };
 let cardHome = null;
 function openHomeCard(u, bud) {
@@ -1141,6 +1142,14 @@ function openHomeCard(u, bud) {
   const r = el('div', 'row'), go = el('a', 'btn primary', mine ? 'Go inside' : 'Visit'); go.href = `/house?of=${encodeURIComponent(u.id)}&k=${u.kind}`; r.append(go);
   if (bud) { const see = el('button', 'btn', mine ? 'Find my bud' : `Find ${who}`); see.type = 'button'; see.addEventListener('click', () => { S.play('pop', { gain: 0.5 }); openCard(bud); }); r.append(see); }
   cardBody.append(el('p', 'muted', mine ? 'Your doodles and finds are inside.' : 'Step in and see what’s on the walls and shelves.'), r);
+  if (u.kind === 'stilt') {   // every house on stilts has the same old carving underneath (the lore: js/away.js CARVING)
+    const look = el('button', 'btn', 'Look under the house'); look.type = 'button'; r.append(look);
+    look.addEventListener('click', () => {
+      S.play('pop', { gain: 0.5 }); look.remove();
+      const fig = el('div'); fig.innerHTML = CARVING_SVG; fig.style.cssText = 'margin: 12px 0 6px; border-radius: 12px; overflow: hidden; background: #8A6A4E;';
+      cardBody.append(fig, el('p', 'muted', CARVING), el('p', 'muted', 'They say there’s one just like it on a stone at Lighthouse Rock.')); card.scrollTop = card.scrollHeight;
+    });
+  }
   card.hidden = false; card.scrollTop = 0; hideHint();
 }
 // the spot outside a bud's front door

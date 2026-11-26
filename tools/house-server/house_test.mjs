@@ -39,4 +39,14 @@ ok((await A.gloamShelf()).length === 2 && (await H.houseView(id(1), id(1))).shel
 store.set(`guilds/G/users/${id(2)}`, { away: { finds: { acorn: 30 } } });
 for (let i = 0; i < 20; i++) await A.awayAct(id(2), { do: 'shelf', kind: 'acorn' });
 const sh = await A.gloamShelf(); ok(sh.length === A.SHELF_MAX && sh[0].bud === 'Taro' && !sh.some((i) => i.bud === 'Mochi'), 'the shelf keeps the newest eighteen');
+// the lore: Wick's later pages, and what the shelf does to what Gloam will say
+const W = await import('../../js/away.js'), G = await import('../../lib/gloam.js');
+ok(W.PAGES.length === 8 && W.LETTER === 5 && W.PAGE_COUNT === 6 && W.pageNo(4) === 4 && W.pageNo(6) === 5 && W.pageNo(7) === 6, 'two more pages, numbered after the letter so saved pages keep their numbers');
+r = await A.awayAct(id(1), { do: 'page', n: 7 }); ok(r.away.pages.includes(7) && (await A.awayAct(id(1), { do: 'page', n: 8 })).status === 400, 'the new pages can be found and saved; there is no page past them');
+const base = { budName: 'Mochi', notes: [], lore: 0, canTell: null, doing: 'porch', inside: false, wx: { storm: 0, rain: 0, snow: 0, fog: 0, cloud: 0, wind: 0 }, season: 'autumn', hour: 12, found: [], last: false, letter: false, given: 0 };
+const from = (n, kind = 'mushroom') => Array.from({ length: n }, (_, i) => ({ kind, by: 'u' + i, bud: 'B' + i, day: 'x' }));
+let sys = G.system({ ...base, level: 2, shelf: from(1) });
+ok(sys.includes('soup') && !sys.includes('snail shell: ') && !sys.includes('never for ships') && sys.includes('four stories about where buds come from'), 'Gloam is given the memory for what is on the shelf, only that one, and the four theories');
+ok(!G.system({ ...base, level: 2, shelf: [] }).includes('bring these back'), 'an empty shelf brings nothing back');
+ok(G.system({ ...base, level: 2, shelf: from(G.GIVERS_FOR_SECRET) }).includes('never for ships') && !G.system({ ...base, level: 1, shelf: from(G.GIVERS_FOR_SECRET) }).includes('never for ships') && !G.system({ ...base, level: 3, shelf: [...from(1), ...from(1), ...from(1), ...from(1)] }).includes('never for ships'), 'the last secret needs enough different givers and a keeper who has warmed to you');
 console.log(fails ? `${fails} FAILED` : 'all checks passed');

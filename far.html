@@ -150,7 +150,7 @@ button.slot:disabled { opacity: .5; }
 // lighthouse, and keep its grumpy keeper company. Saving goes through /api/world (lib/away.js).
 import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
 import { weatherAt, seasonAt, snowCoverAt, sunTimes } from '/js/seasons.js';
-import { FINDS, FIND_KINDS, KEEPER, dailyFinds, dayKey, seededRng, fondLevel, PAGES, LETTER, FAR_TREE } from '/js/away.js';
+import { FINDS, FIND_KINDS, KEEPER, dailyFinds, dayKey, seededRng, fondLevel, PAGES, LETTER, FAR_TREE, PAGE_COUNT, pageNo, CARVING, SQUIRREL_NOTES } from '/js/away.js';
 import { makeFind } from '/js/finds3d.js';
 
 const S = window.BudSound || { play() {}, babble() {}, ambient() {}, weather() {}, setNight() {}, bindToggle() {}, onChange() {}, muted: true };
@@ -345,6 +345,7 @@ function buildDecor() {
     const m = new THREE.MeshStandardMaterial({ color: toLinear('#8D93A8'), emissive: toLinear('#9FE8FF'), emissiveIntensity: 0, roughness: 0.9, flatShading: true });
     const s = cyl(0.3, 0.42, h, 6, m, x, height(x, z) + h / 2 - 0.1, z); s.rotation.y = a; s.rotation.z = (rs() - 0.5) * 0.16; out.add(s);
     obstacles.push({ x, z, r: 0.48 }); ring.stones.push({ m, lit: 0 });
+    if (i === 0) { const patch = box(0.36, 0.5, 0.05, mat('#C3C7D6'), x + Math.cos(a) * 0.37, height(x, z) + 0.75, z + Math.sin(a) * 0.37); patch.rotation.y = Math.PI / 2 - a; out.add(patch); }   // the outer face of this one has a carving on it (CARVE)
   }
   // a bench looking east over the clouds
   { const x = 19.5, z = -3.5, y = height(x, z), g = new THREE.Group(), w = mat('#B5703E');
@@ -357,6 +358,7 @@ function buildDecor() {
     plank.position.y = 1.6; g.add(plank); g.position.set(x, y, z); g.rotation.y = -0.15; out.add(g); obstacles.push({ x, z, r: 0.35 }); }
 }
 const ring = { stones: [], at: -99, step: 0, playing: false, in: false };
+const CARVE = { x: RING.x + Math.cos(0.3) * (RING.r + 1.05), z: RING.z + Math.sin(0.3) * (RING.r + 1.05) };   // where you stand to look at the carved stone
 
 // the sea of clouds underneath, the home island far off to the south, and a few clouds up high
 const clouds = [];
@@ -736,6 +738,8 @@ const TPAGES = [null,
   { x: TRUNK.x - 0.2, z: TRUNK.z + 2.9, where: 'in the hollow of the trunk' },
   { x: TI.x - 6.4, z: TI.z - 2.6, where: 'by the telescope' },
   { x: TRUNK.x - 2.6, z: TRUNK.z - 3.6, where: 'under the scarf, behind the tree' },
+  { x: TRUNK.x + 3.5, z: TRUNK.z + 3.3, where: 'under the swing' },
+  { x: TI.x - 8.4, z: TI.z + 1.6, where: 'at the edge, where the moss stops' },
 ];
 const treeObstacles = [];
 const ftree = { g: new THREE.Group(), terrain: null, stars: [], stones: [], canopy: [], wick: null, falling: [], pages: [], swing: null };
@@ -888,10 +892,19 @@ function travel(to) {
   }, 1250);
 }
 
+/* a note that isn't one of Wick's pages (the carving, the squirrel's opinions): same card, different words */
+function openNote(title, text, note = '') { walkTo = null; $('pageTitle').textContent = title; $('pageText').textContent = text; $('pageNote').textContent = note; $('pageCard').hidden = false; S.play('paint', { gain: 2 }); }
+// Under every other acorn there is a small furious note. They come in order, then start again.
+function squirrelNote() {
+  let n = 0; try { n = Number(localStorage.getItem('bud.acorns')) || 0; localStorage.setItem('bud.acorns', String(n + 1)); } catch (e) { return; }
+  if (n % 2) return;
+  const i = (n / 2) % SQUIRREL_NOTES.length;
+  setTimeout(() => { if (mode === 'play' && $('pageCard').hidden && $('findsCard').hidden) { say(me, 'there’s a note under it…', 1600); openNote('A very small note', SQUIRREL_NOTES[i], `Pinned under the acorn with a thorn. Note ${i + 1} of ${SQUIRREL_NOTES.length}.`); } }, 1900);
+}
 /* reading a page */
 function openPage(n) {
   const sealed = n === LETTER && !away.letter;
-  $('pageTitle').textContent = n === LETTER ? 'A sealed letter' : `A page from a journal (${n} of ${PAGES.length - 2})`;
+  $('pageTitle').textContent = n === LETTER ? 'A sealed letter' : `A page from a journal (${pageNo(n)} of ${PAGE_COUNT})`;
   $('pageText').textContent = sealed ? 'It’s sealed with red wax, and addressed in shaky handwriting: “for gloam”.' : PAGES[n];
   $('pageNote').textContent = sealed ? 'Gloam is at the lighthouse.' : n === LETTER ? 'Gloam let you read it.' : TPAGES[n] ? `Found ${TPAGES[n].where}.` : '';
   $('pageCard').hidden = false; S.play('paint', { gain: 2 });
@@ -1107,9 +1120,9 @@ function openFinds() {
   $('findsSub').textContent = `${kindsFound()} of ${FIND_KINDS.length} kinds found. ` + (left ? `${left} thing${left === 1 ? '' : 's'} still out there today.` : 'You found everything that turned up today. Tomorrow brings new things.');
   // Wick's journal, once you've found a page of it
   const j = $('journal'); j.textContent = ''; $('journalBox').hidden = !away.pages.length;
-  for (const n of away.pages) { const b = document.createElement('button'); b.type = 'button'; b.textContent = n === LETTER ? 'The letter' : `Page ${n}`; b.addEventListener('click', () => { $('findsCard').hidden = true; openPage(n); }); j.appendChild(b); }
+  for (const n of away.pages) { const b = document.createElement('button'); b.type = 'button'; b.textContent = n === LETTER ? 'The letter' : `Page ${pageNo(n)}`; b.addEventListener('click', () => { $('findsCard').hidden = true; openPage(n); }); j.appendChild(b); }
   const loose = away.pages.filter((n) => n !== LETTER).length;
-  $('journalSub').textContent = `${loose} of ${PAGES.length - 2} pages${away.pages.includes(LETTER) ? ', and a letter' : ''}. Found at ${FAR_TREE}.`;
+  $('journalSub').textContent = `${loose} of ${PAGE_COUNT} pages${away.pages.includes(LETTER) ? ', and a letter' : ''}. Found at ${FAR_TREE}.`;
   $('findsCard').hidden = false; S.play('pop', { gain: 0.5 });
 }
 $('findsBtn').addEventListener('click', openFinds);
@@ -1128,6 +1141,7 @@ function pickUp(f) {
     say(me, first ? pick([`ooh! a ${info.name}!`, `whoa, a ${info.name}!`, `a ${info.name}! for the porch!`]) : pick([`another ${info.name}!`, `a ${info.name}. nice.`, 'got it!']), 2200);
     away.finds[f.kind] = (away.finds[f.kind] || 0) + 1; updateFindsPill();
     toast(`${info.icon} ${info.name}${first ? ` · new! ${kindsFound()} of ${FIND_KINDS.length} kinds` : ''}`);
+    if (f.kind === 'acorn') squirrelNote();
     post({ do: 'take', i: f.i }).then((r) => { if (r.away) { away = r.away; updateFindsPill(); } else if (!r.ok) toast('That one couldn’t be saved. It’ll be back if you reload.'); });
     setTimeout(() => { if (mode === 'busy') mode = 'play'; }, 700);
   };
@@ -1284,6 +1298,7 @@ function findAction() {
   if (best) return { label: best.dig ? 'Dig here' : `Pick up the ${FINDS[best.kind].name}`, run: () => pickUp(best) };
   if (near(DOOR.x, DOOR.z, 1.5)) return { label: 'Go inside', run: goIn };
   if (near(RING.x, RING.z, 1.5)) return { label: 'Step through the stones', run: () => travel('tree') };
+  if (near(CARVE.x, CARVE.z, 1.05)) return { label: 'Look at the carving', run: () => { me.heading = Math.atan2(RING.x - me.x, RING.z - me.z); openNote('A carving on the stone', CARVING, 'Somebody on Bud Island says the same picture is under the houses on stilts.'); } };
   if (onPier(me.x, me.z) && me.z > SHORE + 1.6) return { label: 'Sail home', run: sailHome };
   return null;
 }

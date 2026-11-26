@@ -70,3 +70,20 @@ export const PAGES = [
   'gloam, if this ever finds you: i’m sorry about supper. i found where the stars go, and they needed a keeper more than you needed me. you never did need me as much as you think. keep the lamp lit. on clear nights i can see it from the top branches, and i wave. — wick',
 ];
 export const LETTER = 5;
+// Two pages found later than the rest (numbered after the letter so nobody's saved pages shift). Page 6 says what
+// Glow is; page 7 is torn, and is as close as anyone gets to saying where buds come from.
+PAGES.push(
+  'i cut a seed open today (sorry, tree). it glows inside. only a crumb, but it glows. every seed carries a little starlight wherever the wind drops it, and the tree that grows there keeps it. so that’s what the pines sweat out at dusk. that’s what gloam scrapes into the lamp and calls glow. the lamp has been burning stars this whole time and neither of us knew.',
+  'a star nobody hangs back up doesn’t go out. i watched one on the stony side for nine nights. it got smaller, and rounder, and softer at the edges. on the tenth morning it was gone, and there were small wet footprints going down to the dock. i’m not saying what i think. i’m only writing down the footpr',
+);
+// How many loose pages there are (everything but the letter), and which one a page is when you count them in order.
+export const PAGE_COUNT = PAGES.length - 2;
+export const pageNo = (n) => (n > LETTER ? n - 1 : n);
+// The carving: the same picture turns up under every house on stilts and on one of the humming stones. Nobody knows who made it.
+export const CARVING = 'Scratched in deep, and very old: a row of small round figures climbing up out of the clouds, one after another. The first one is holding a light. The last one is only half drawn.';
+// Somebody small has opinions about where buds come from, and pins them under acorns.
+export const SQUIRREL_NOTES = [
+  'BUDS ARE ACORNS THAT GOT BURIED WRONG. everyone knows this. do not take my acorns.',
+  'CORRECTION. buds are acorns buried UPSIDE DOWN. i have buried 1,204 the right way up and not one became a bud. this proves it.',
+  'i buried one upside down to check. it became an oak. the oak will not answer questions. STILL INVESTIGATING. put the acorn back.',
+];
