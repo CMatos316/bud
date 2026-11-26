@@ -150,7 +150,7 @@ button.slot:disabled { opacity: .5; }
 // lighthouse, and keep its grumpy keeper company. Saving goes through /api/world (lib/away.js).
 import { setExtents, buildMesh, drawEyeStyle, clamp } from '/js/bud-core.js';
 import { weatherAt, seasonAt, snowCoverAt, sunTimes } from '/js/seasons.js';
-import { FINDS, FIND_KINDS, KEEPER, dailyFinds, dayKey, seededRng, fondLevel, PAGES, LETTER, FAR_TREE, PAGE_COUNT, pageNo, CARVING, SQUIRREL_NOTES } from '/js/away.js';
+import { FINDS, FIND_KINDS, KEEPER, dailyFinds, dayKey, seededRng, fondLevel, PAGES, LETTER, FAR_TREE, PAGE_COUNT, pageNo, CARVING, SQUIRREL_NOTES, dinnerOn } from '/js/away.js';
 import { makeFind } from '/js/finds3d.js';
 
 const S = window.BudSound || { play() {}, babble() {}, ambient() {}, weather() {}, setNight() {}, bindToggle() {}, onChange() {}, muted: true };
@@ -652,6 +652,10 @@ async function makeGloam() {
 }
 // where the keeper is right now: indoors after dark and in bad weather, otherwise out fishing, gardening or by its door
 function placeGloam() {
+  if (dinner.on) {   // tonight it is at the head of the table, whatever the hour or the weather
+    Object.assign(gloamAt, { area: 'out', x: DINNER.x + dinner.L / 2 + 1.7, z: DINNER.z, heading: -Math.PI / 2, doing: 'dinner' });
+    gloam.x = gloamAt.x; gloam.z = gloamAt.z; gloam.heading = gloam.home = gloamAt.heading; gloam.rod.visible = false; return;
+  }
   const hour = HOUR_NOW, slot = Math.floor(hour / 3), r = seededRng('gloam:' + DAY + ':' + slot)(), want = params.get('gloam');
   const indoors = want ? want === 'in' : (NIGHT > 0.6 || WX.rain > 0.25 || WX.snow > 0.25 || r < 0.25);
   if (indoors) Object.assign(gloamAt, { area: 'in', x: -0.55, z: -1.75, heading: 0.35, doing: 'stove' });
@@ -660,6 +664,87 @@ function placeGloam() {
   else Object.assign(gloamAt, { area: 'out', x: 2.9, z: LH.z + 4.9, heading: 0.3, doing: 'porch' });
   gloam.x = gloamAt.x; gloam.z = gloamAt.z; gloam.heading = gloam.home = gloamAt.heading;
   gloam.rod.visible = gloamAt.doing === 'fish';
+}
+
+/* ---------------- dinner on the Rock ----------------
+   One evening only (js/away.js dinnerOn): every bud from the island is here, at a long table in the meadow, with the
+   keeper at the head and an empty chair at the far end. The server sends the other buds along with yours. */
+const DINNER = { x: 4.5, z: -6.5 }, dinner = { on: false, L: 0, guests: [], seat: null, bulbs: [], next: 5, sat: false };
+const CHATTER = ['pass the rolls!', 'this is SO good', 'who made the pie?', 'more gravy please', 'gloam, sit down!', 'best. dinner. ever.', 'i’m so full', 'save room for pie', 'cheers!!', 'thank you gloam!', 'is there more squash?', 'to the island!'];
+const HOSTING = ['…there’s plenty. eat.', '…mind the tablecloth.', '…fine. it’s nice. don’t tell anyone.', '…somebody pass that chair a plate. just in case.', '…elbows.', '…i made too much. take some home.'];
+async function buildDinner(list) {
+  const r = seededRng('dinner:' + DAY), all = list.slice(); for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
+  const n = Math.min(14, all.length), perSide = Math.max(3, Math.ceil((n + 1) / 2)), GAP = 1.62, L = perSide * GAP + 0.5, g = new THREE.Group();
+  // find the clearest stretch of meadow for it: away from trees, rocks, the lagoon and the path
+  { const hx = L / 2 + 2.6, hz = 3.4, things = [...obstacles, ...PATH.map(([x, z]) => ({ x, z, r: 1.4 })), { x: LH.x, z: LH.z, r: 9 }, { x: WOOD.x, z: WOOD.z, r: WOOD.r }, { x: ROCKS.x, z: ROCKS.z, r: ROCKS.r }]; let best = -1e9;
+    for (let cz = -14; cz <= 4; cz += 0.5) for (let cx = -6; cx <= 10; cx += 0.5) {
+      let clear = 9; for (const o of things) clear = Math.min(clear, Math.hypot(Math.max(0, Math.abs(o.x - cx) - hx), Math.max(0, Math.abs(o.z - cz) - hz)) - o.r);
+      const score = Math.min(clear, 2) - Math.hypot(cx - 4.5, cz + 6.5) * 0.02; if (score > best) { best = score; DINNER.x = cx; DINNER.z = cz; }
+    } }
+  Object.assign(dinner, { on: true, L });
+  const wood = M('#8A5A3A'), dark = M('#6B4630'), cloth = M('#F6EFE2'), runner = M('#C8553D'), white = M('#FFFDF7'), TOP = 0.98;
+  g.add(box(L, 0.1, 1.5, wood, 0, TOP - 0.08, 0), box(L - 0.2, 0.03, 1.56, cloth, 0, TOP - 0.015, 0), box(L - 0.7, 0.02, 0.44, runner, 0, TOP + 0.005, 0));
+  for (const sx of [-1, 1]) { g.add(box(0.03, 0.34, 1.56, cloth, sx * (L / 2 - 0.1), TOP - 0.19, 0)); for (const sz of [-1, 1]) g.add(box(0.13, TOP - 0.1, 0.13, dark, sx * (L / 2 - 0.35), (TOP - 0.1) / 2, sz * 0.55)); }
+  // what's on it: pies, greens, a squash, rolls and a jug, over and over down the middle, with candles between
+  const dish = [
+    () => { const d = new THREE.Group(); d.add(cyl(0.3, 0.24, 0.1, 16, M('#D9A566'), 0, 0.05, 0), cyl(0.25, 0.25, 0.03, 16, M('#B8693A'), 0, 0.11, 0)); return d; },
+    () => { const d = new THREE.Group(), s = ball(0.24, M('#7FB069'), 0, 0.14, 0, 10); s.scale.y = 0.55; d.add(cyl(0.3, 0.18, 0.14, 14, white, 0, 0.07, 0), s); return d; },
+    () => { const d = new THREE.Group(), s = ball(0.27, M('#E8873A'), 0, 0.2, 0, 12); s.scale.y = 0.78; d.add(s, cyl(0.03, 0.045, 0.12, 6, M('#5E7D3A'), 0, 0.44, 0)); return d; },
+    () => { const d = new THREE.Group(); d.add(cyl(0.3, 0.26, 0.05, 14, M('#C9A77A'), 0, 0.025, 0)); for (const [x, z] of [[-0.12, 0.05], [0.1, 0.1], [0.02, -0.12], [0, 0.02]]) { const b = ball(0.1, M('#E6BE7E'), x, x === 0 ? 0.2 : 0.11, z, 8); d.add(b); } return d; },
+    () => { const d = new THREE.Group(); d.add(cyl(0.11, 0.15, 0.36, 10, M('#8FB8D8'), 0, 0.18, 0), cyl(0.07, 0.11, 0.08, 10, M('#8FB8D8'), 0, 0.4, 0)); return d; },
+  ];
+  for (let x = -L / 2 + 0.75, k = 0; x < L / 2 - 0.6; x += 0.82, k++) {
+    if (k % 3 === 2) { const fl = ball(0.045, new THREE.MeshBasicMaterial({ color: 0xFFD27A }), x, TOP + 0.33, 0, 6); fl.scale.y = 1.5; g.add(cyl(0.035, 0.035, 0.26, 6, white, x, TOP + 0.15, 0), fl); dinner.bulbs.push(fl); continue; }
+    const d = dish[(k * 2 + Math.floor(k / 3)) % dish.length](); d.position.set(x, TOP + 0.015, (k % 2 ? 0.05 : -0.05)); d.rotation.y = k; g.add(d);
+  }
+  // the seats: down both sides, then one at the far end that nobody is sitting in
+  const seats = [];
+  for (let k = 0; k < perSide; k++) for (const sz of [-1, 1]) { const x = -L / 2 + 0.25 + GAP / 2 + k * GAP; seats.push({ x, sz }); g.add(cyl(0.2, 0.2, 0.02, 14, white, x, TOP + 0.02, sz * 0.5), cyl(0.06, 0.05, 0.1, 8, M(['#E8873A', '#7FB069', '#8FB8D8', '#C8553D'][(k + (sz > 0 ? 2 : 0)) % 4]), x + 0.3, TOP + 0.06, sz * 0.42)); }
+  { const cx = -L / 2 - 0.95; g.add(box(0.62, 0.07, 0.62, wood, cx, 0.55, 0), box(0.07, 0.75, 0.62, wood, cx - 0.3, 0.9, 0)); for (const sz of [-1, 1]) for (const sx of [-1, 1]) g.add(box(0.07, 0.55, 0.07, dark, cx + sx * 0.25, 0.275, sz * 0.25)); g.add(cyl(0.2, 0.2, 0.02, 14, white, -L / 2 + 0.32, TOP + 0.02, 0), cyl(0.07, 0.06, 0.12, 8, M('#56607F'), -L / 2 + 0.3, TOP + 0.07, 0.34)); }
+  // lights on poles all the way round
+  const PH = 3.3, px = L / 2 + 0.9, pz = 2.5, bulbCols = [0xFFD27A, 0xFF9E7A, 0xFFF1C2, 0xFFB84D];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(cyl(0.05, 0.07, PH, 6, dark, sx * px, PH / 2, sz * pz));
+  const string = (ax, az, bx, bz) => { const len = Math.hypot(bx - ax, bz - az), m = Math.max(4, Math.round(len / 0.62)); for (let i = 1; i < m; i++) { const t = i / m, b = ball(0.085, new THREE.MeshBasicMaterial({ color: bulbCols[(i + dinner.bulbs.length) % 4] }), ax + (bx - ax) * t, PH - 0.08 - Math.sin(t * Math.PI) * Math.min(0.55, len * 0.05), az + (bz - az) * t, 8); g.add(b); dinner.bulbs.push(b); } };
+  string(-px, -pz, px, -pz); string(-px, pz, px, pz); string(-px, -pz, -px, pz); string(px, -pz, px, pz);
+  const glow = new THREE.PointLight(0xFFC98A, 0.25 + NIGHT * 1.3, 17, 2); glow.position.set(0, 2.5, 0); g.add(glow);
+  g.position.set(DINNER.x, height(DINNER.x, DINNER.z), DINNER.z); out.add(g);
+  for (let x = -L / 2 + 0.6; x <= L / 2 - 0.5; x += 1.1) obstacles.push({ x: DINNER.x + x, z: DINNER.z, r: 0.85 });
+  // everyone who came. Yours has a place kept for it on the near side, by the keeper, so you can walk straight up to it
+  const mine = seats.splice(seats.length - 1, 1)[0];
+  const sit = (s) => ({ x: DINNER.x + s.x, z: DINNER.z + s.sz * 1.62, heading: s.sz > 0 ? Math.PI : 0 });
+  dinner.guests = await Promise.all(all.slice(0, n).map(async (data, i) => { const b = await makeBud(data, { size: 1.32 }); Object.assign(b, sit(seats[i]), { look: { x: DINNER.x + seats[i].x + (r() - 0.5) * 3, z: DINNER.z }, nextHop: 2 + r() * 9 }); return b; }));
+  dinner.seat = sit(mine);
+}
+function dinnerTick(dt) {
+  if (!dinner.on) return;
+  const outside = area !== 'in', close = outside && area !== 'tree' && Math.hypot(me.x - DINNER.x, me.z - DINNER.z) < dinner.L / 2 + 16;
+  for (const b of dinner.guests) {
+    b.root.visible = outside; if (!outside) continue;
+    b.nextHop -= dt; if (b.nextHop < 0) { b.nextHop = 5 + Math.random() * 11; b.vy = 3.6; b.y = 0.01; b.happyUntil = T + 1.4; }
+    placeBud(b, dt, height(b.x, b.z)); placeBubble(b);
+  }
+  if (dinner.sat) {   // at your place you turn to face the table; wander off and the place is kept for you
+    const d = Math.hypot(me.x - dinner.seat.x, me.z - dinner.seat.z);
+    if (d > 5) dinner.sat = false; else if (d < 0.7 && !walkTo && me.moving < 0.05) { let t = Math.PI - me.heading; while (t > Math.PI) t -= Math.PI * 2; while (t < -Math.PI) t += Math.PI * 2; me.heading += t * Math.min(1, dt * 6); }
+  }
+  dinner.bulbs.forEach((b, i) => { const s = 1 + 0.12 * Math.sin(T * 3 + i * 1.7); b.scale.set(s, b.scale.y > 1.3 ? s * 1.5 : s, s); });
+  if (!close || mode !== 'play' || chat.open) return;
+  dinner.next -= dt;
+  if (dinner.next < 0) {
+    dinner.next = 3.5 + Math.random() * 4.5;
+    if (Math.random() < 0.22 && gloam && T > gloam.bubbleUntil) say(gloam, pick(HOSTING), 2800);
+    else if (dinner.guests.length) { const b = pick(dinner.guests); if (T > b.bubbleUntil) { say(b, pick(CHATTER), 2200); b.happyUntil = T + 1.5; } }
+  }
+
+}
+// your place at the table: you walk over, and everybody says hello
+function joinDinner() {
+  dinner.sat = true; walkTo = { x: dinner.seat.x, z: dinner.seat.z, t: T + 14 }; S.play('chime', { gain: 0.5 });
+  say(me, pick(['happy dinner, everyone!', 'i made it!!', 'something smells amazing!']), 2200);
+  dinner.guests.forEach((b, i) => setTimeout(() => { b.vy = 4.4; b.y = 0.01; b.happyUntil = T + 2.2; b.nextHop = 6 + Math.random() * 8; }, 250 + i * 90));
+  const name = (me.data.nickname || me.data.trueName || 'you').toLowerCase();
+  dinner.guests.slice(0, 3).forEach((b, i) => setTimeout(() => say(b, [`${name}!!`, 'you made it!', 'we saved you a seat!'][i], 2200), 700 + i * 650));
+  if (gloam) setTimeout(() => { if (!chat.open) say(gloam, '…you’re late. sit.', 2600); }, 2900);
 }
 
 /* ---------------- the day's finds ---------------- */
@@ -1296,6 +1381,7 @@ function findAction() {
   let best = null, bd = 1.7;
   for (const f of finds) { if (f.taken) continue; const d = Math.hypot(me.x - f.x, me.z - f.z); if (d < bd) { bd = d; best = f; } }
   if (best) return { label: best.dig ? 'Dig here' : `Pick up the ${FINDS[best.kind].name}`, run: () => pickUp(best) };
+  if (dinner.on && !dinner.sat && Math.abs(me.x - DINNER.x) < dinner.L / 2 + 3 && me.z > DINNER.z && me.z - DINNER.z < 5.2 && !(gloam && near(gloam.x, gloam.z, 2.2))) return { label: 'Join the table', run: joinDinner };
   if (near(DOOR.x, DOOR.z, 1.5)) return { label: 'Go inside', run: goIn };
   if (near(RING.x, RING.z, 1.5)) return { label: 'Step through the stones', run: () => travel('tree') };
   if (near(CARVE.x, CARVE.z, 1.05)) return { label: 'Look at the carving', run: () => { me.heading = Math.atan2(RING.x - me.x, RING.z - me.z); openNote('A carving on the stone', CARVING, 'Somebody on Bud Island says the same picture is under the houses on stilts.'); } };
@@ -1487,6 +1573,7 @@ function frame(ms) {
   aimCamera(dt); fadeBlockers(dt);
   showAction();
   placeBubble(me); if (gloam) placeBubble(gloam);
+  dinnerTick(dt);
   renderer.render(scene, camera);
 }
 
@@ -1515,6 +1602,7 @@ S.onChange(() => S.ambient(!S.muted)); S.ambient(true);
   buildFinds(away.taken); buildBirds();
   me = await makeBud(world.bud);
   await makeGloam();
+  if (dinnerOn() || params.get('dinner') === '1') await buildDinner(world.guests || []);
   buildAtmosphere(); placeGloam();
   gloam.mood = away.level >= 2 ? null : 'annoyed';
   setArea('out'); updateFindsPill();

@@ -31,6 +31,10 @@ export function dayKey(ms = Date.now()) {
   const { y, m, d } = etParts(ms);
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
+// One evening only: every bud takes the ferry over for an outdoor dinner at the keeper's. From the moment this ships
+// until midnight (Eastern) the island is empty and the table on the Rock is full; the next day everything is as it was.
+export const DINNER_DAY = '2026-11-26';
+export const dinnerOn = (ms = Date.now()) => dayKey(ms) === DINNER_DAY;
 function rng(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }

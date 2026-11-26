@@ -178,6 +178,11 @@ body { transition: background 2s linear; }
 }
 .hint.gone { opacity: 0; }
 /* the ferry: a button to set sail once you've tapped the boat, and the fade as it carries your bud off */
+/* the one evening everyone is over at the keeper's for dinner */
+.dinnerbar { position: fixed; z-index: 4; left: 0; right: 0; margin-inline: auto; width: max-content; max-width: calc(100% - 24px); bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 12px; padding: 9px 9px 9px 18px; border-radius: 999px; background: rgba(255,253,248,.94); color: #1D1C2B; font-weight: 600; font-size: 15px; line-height: 1.25;
+  box-shadow: 0 10px 26px -12px rgba(29,28,43,.6); }
+.dinnerbar a { flex: none; font-weight: 700; color: #fff; background: #C8553D; border-radius: 999px; padding: 10px 16px; text-decoration: none; }
 .sail {
   position: fixed; z-index: 4; left: 0; right: 0; margin-inline: auto; width: max-content; max-width: calc(100% - 32px);
   bottom: calc(22px + env(safe-area-inset-bottom, 0px)); font: inherit; font-weight: 600; font-size: 17px; min-height: 50px;
@@ -507,6 +512,7 @@ body { transition: background 2s linear; }
 <div class="title" id="title"><h1 id="titleText">Bud island</h1><p id="titleSub">Everyone&rsquo;s buds live here.</p></div>
 <div class="hint" id="hint">Drag to look around &middot; scroll to zoom in anywhere &middot; tap a bud to say hi</div>
 <button type="button" class="sail" id="sailBtn" hidden>Sail to Lighthouse Rock</button>
+<div class="dinnerbar" id="dinnerBar" hidden><span id="dinnerText"></span><a href="/far">Join them</a></div>
 <div id="sailFade"></div>
 <div class="card" id="card" hidden role="dialog" aria-labelledby="cardName">
   <h2 id="cardName"></h2><button type="button" class="x" id="cardClose" aria-label="Close">&times;</button>
@@ -569,7 +575,7 @@ body { transition: background 2s linear; }
 <script type="module">
 import { setExtents, buildMesh, drawEyeStyle, setClock, clamp, inPoly, distToPoly, SPACING as EYE_SPACING } from '/js/bud-core.js';
 import { weatherAt, seasonAt, snowCoverAt, groundWetAt, sunTimes, skyHour, forecast } from '/js/seasons.js';
-import { FINDS, ROCK, CARVING } from '/js/away.js';
+import { FINDS, ROCK, CARVING, DINNER_DAY, dinnerOn } from '/js/away.js';
 import { makeFind } from '/js/finds3d.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
@@ -1162,7 +1168,7 @@ function homeFront(id) {
 const sailBtn = document.getElementById('sailBtn');
 const ferry = { stage: null, t: 0, bud: null, hide: 0 };
 function ferryAt(x, y) {
-  if (!town.boat || !town.group || !town.group.visible || ferry.stage) return false;
+  if (!town.boat || !town.group || !town.group.visible || ferry.stage || dinner.stage) return false;
   ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
   return ray.intersectObject(town.boat.g, true).length > 0;
@@ -1230,10 +1236,53 @@ function setPorch(id, kinds) {
   u.group.add(TBOX(w, 0.07, 0.4, townMat(WOOD), -u.side * (0.2 + w / 2), 0.045, 1.32));
   kinds.slice(0, n).forEach((k, i) => { const f = makeFind(THREE, k); f.position.set(-u.side * (0.42 + i * 0.36), 0.08, 1.32); f.rotation.y = i * 1.1; u.group.add(f); });
 }
+/* ---------------- dinner at the keeper's (one evening: js/away.js DINNER_DAY) ----------------
+   The first time you look at the island that day, every bud is filing down the road to the dock, one behind another,
+   and hopping into the ferry. After that (or if you've just come back from the Rock) the island is simply empty, and
+   a bar at the bottom offers to take you to the table. */
+const dinner = { stage: null, line: [], t: 0 };
+const DINNER_CALLS = ['dinner!!', 'save me a seat!', 'i call the pie!', 'wait for me!', 'i’m starving', 'to gloam’s!', 'is there gravy?', 'all aboard!'];
+function dinnerLeave(bud) { bud.gameHidden = true; bud.root.visible = false; bud.tag.hidden = true; if (bud.bubble) bud.bubble.hidden = true; }
+function dinnerBar(text) { document.getElementById('dinnerText').textContent = text; document.getElementById('dinnerBar').hidden = false; hideHint(); }
+function dinnerStart() {
+  if (!dinnerOn() || !TOWN || !town.boat || !buds.length) return;
+  let seen = false; try { seen = localStorage.getItem('bud.dinner') === DINNER_DAY; } catch (e) {}
+  if (seen || FROM_FAR) { for (const b of buds) dinnerLeave(b); dinner.stage = 'empty'; dinnerBar('🍽️ Everyone’s at Gloam’s for dinner.'); return; }
+  // single file up the road: whoever is nearest the dock goes first, and yours brings up the rear
+  const mine = myBud(), line = buds.filter((b) => b.placed && b !== mine).sort((a, b) => b.z - a.z); if (mine) line.push(mine);
+  dinner.mine = mine;
+  const head = WALK_R - 1.2, gap = clamp((WALK_R - 3) / line.length, 1.3, 2.1);
+  line.forEach((b, i) => { b.x = 0.2 + (i % 2 ? 0.1 : -0.1); b.z = head - i * gap; b.y = 0; b.heading = 0; b.dine = { hop: 0, called: false }; });
+  dinner.line = line; dinner.stage = 'walk'; dinnerBar('🍽️ Everyone’s off to dinner at Gloam’s.');
+}
+function dinnerTick(dt) {
+  if (dinner.stage !== 'walk') return;
+  const b = town.boat; dinner.t += dt;
+  for (const bud of dinner.line) {
+    if (bud.gameHidden) continue;
+    Object.assign(bud, { state: 'dine', target: null, onArrive: null, greetOnArrive: null, partner: null, held: false, rush: false, look: null, greetCooldown: 9 });
+    const d = bud.dine;
+    if (!d.hop) {
+      bud.z += 2.5 * dt; bud.x += (0.2 - bud.x) * Math.min(1, dt * 2); bud.y = bud.z > b.shoreZ - 1.3 ? 0.12 : 0; bud.heading += angleTo(bud.heading, 0) * Math.min(1, dt * 8); bud.hopPhase += dt * 9;
+      if (!d.called && bud.z > WALK_R - 4 && Math.random() < 0.5) say(bud, pick(DINNER_CALLS), 1600);
+      if (bud.z > WALK_R - 4) d.called = true;
+      if (bud.z >= b.z - 0.05) { d.hop = 0.001; d.x0 = bud.x; S.play('boing', { gain: 0.35 * near(bud) }); }
+    } else {                                           // a hop into the boat, and it's away
+      d.hop += dt; const v = Math.min(1, d.hop / 0.45);
+      bud.x = mix(d.x0, b.x, v); bud.y = mix(0.12, b.y + 0.1, v) + Math.sin(v * Math.PI) * 1.0; bud.root.scale.setScalar(1 - v * v * 0.85);
+      if (v >= 1) { dinnerLeave(bud); bud.root.scale.setScalar(1); b.bounce = 1; }
+    }
+  }
+  if (dinner.line.every((x) => x.gameHidden)) {
+    dinner.stage = 'empty'; try { localStorage.setItem('bud.dinner', DINNER_DAY); } catch (e) {}
+    if (dinner.mine && cam.follow === dinner.mine) cam.followUntil = T;
+    dinnerBar('🍽️ Everyone’s at Gloam’s for dinner.'); S.play('whoosh', { gain: 0.5 });
+  }
+}
 function townTick(dt) {
   if (!town.group) return;
   for (const l of town.lit) l.mat.emissiveIntensity = l.day + (l.night - l.day) * NIGHT;
-  ferryTick(dt);
+  ferryTick(dt); dinnerTick(dt);
   for (const u of town.homes.values()) {
     if (!u.bounce) continue;
     u.bounce = Math.max(0, u.bounce - dt * 2.2);
@@ -2463,17 +2512,17 @@ function updateBud(bud, dt) {
   }
 
   // anything that interrupts a hop still lets the bud land
-  if (bud.y > 0 && bud.state !== 'drop' && bud.state !== 'act' && bud.state !== 'board') { bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt); if (bud.y === 0) land(bud); }
+  if (bud.y > 0 && bud.state !== 'drop' && bud.state !== 'act' && bud.state !== 'board' && bud.state !== 'dine') { bud.vy -= 22 * dt; bud.y = Math.max(0, bud.y + bud.vy * dt); if (bud.y === 0) land(bud); }
 
   // stay on the island
   const rr = Math.hypot(bud.x, bud.z);
-  if (rr > WALK_R + 0.5 && bud.state !== 'drop' && bud.state !== 'board') { bud.x *= (WALK_R + 0.5) / rr; bud.z *= (WALK_R + 0.5) / rr; }
+  if (rr > WALK_R + 0.5 && bud.state !== 'drop' && bud.state !== 'board' && bud.state !== 'dine') { bud.x *= (WALK_R + 0.5) / rr; bud.z *= (WALK_R + 0.5) / rr; }
 
   // blinking
   if (T > bud.blinkAt) { bud.blinkStart = T; bud.blinkAt = T + (Math.random() < 0.15 ? 0.3 : rand(2.5, 6)); }
 
   // place it
-  const moving = bud.state === 'walk' || (bud.state === 'act' && bud.act && bud.act.moving) || (bud.state === 'board' && (ferry.stage === 'walk' || ferry.stage === 'pier'));
+  const moving = bud.state === 'walk' || (bud.state === 'act' && bud.act && bud.act.moving) || (bud.state === 'board' && (ferry.stage === 'walk' || ferry.stage === 'pier')) || (bud.state === 'dine' && bud.dine && !bud.dine.hop);
   const hopY = moving ? Math.abs(Math.sin(bud.hopPhase)) * 0.22 * RM : 0;
   bud.root.position.set(bud.x, 0, bud.z);
   bud.hop.position.y = bud.y + hopY;
@@ -5163,7 +5212,8 @@ function showCenter(title, text, linkText, href = '/') {
   // finds from Lighthouse Rock, out on the porches
   if (TOWN) for (const bud of buds) setPorch(bud.data.id, bud.data.porch);
   // back from the Rock: your bud is just off the ferry, at the head of the dock
-  if (FROM_FAR && mine && TOWN) {
+  dinnerStart();
+  if (FROM_FAR && mine && TOWN && !dinner.stage) {
     mine.x = 0.3; mine.z = WALK_R - 1; mine.heading = Math.PI; mine.timer = 4;
     setTimeout(() => { focusOn(mine, 5, distFor(9)); mine.happyUntil = T + 2; mine.syv -= 0.14; mine.lookCameraUntil = T + 4; say(mine, pick(['we’re back!', 'home again!', 'what a trip!']), 2000); }, 900);
   }
