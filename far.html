@@ -44,6 +44,10 @@ canvas#rock { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 @media (max-width: 430px) { .pill { padding: 8px 11px; font-size: 14px; } .place { font-size: 15px; } .bar { gap: 6px; } }
 .spacer { flex: 1; }
 #act { position: fixed; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom)); transform: translateX(-50%); font: inherit; font-weight: 600; font-size: 18px; color: var(--me-ink); background: var(--me); border: 0; border-radius: 999px; padding: 14px 26px; min-height: 52px; cursor: pointer; box-shadow: 0 8px 24px var(--shadow); display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+#seatBar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(142px + env(safe-area-inset-bottom)); display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100vw - 20px); z-index: 3; }
+#seatBar button { font: inherit; font-weight: 600; font-size: 16px; min-height: 48px; padding: 10px 16px; border-radius: 999px; border: 0; background: rgba(255,253,248,.95); color: #1D1C2B; cursor: pointer; box-shadow: 0 8px 22px -10px rgba(20,16,50,.6); }
+#seatBar button:active { transform: scale(.95); }
+#toastIn { width: 100%; box-sizing: border-box; margin: 12px 0 4px; font: inherit; font-size: 16px; color: var(--ink); background: var(--slot); border: 1px solid var(--chip-line); border-radius: 14px; padding: 12px 14px; }
 #act kbd { font: inherit; font-size: 12px; font-weight: 500; opacity: .7; border: 1px solid currentColor; border-radius: 6px; padding: 1px 6px; }
 @media (hover: none) { #act kbd { display: none; } }
 #hint { position: fixed; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--chip); border: 1px solid var(--chip-line); border-radius: 999px; padding: 7px 14px; font-size: 14px; color: var(--ink); width: max-content; max-width: 92vw; text-align: center; transition: opacity .6s; pointer-events: none; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
@@ -106,6 +110,13 @@ button.slot:disabled { opacity: .5; }
 <div id="toast" class="gone" role="status"></div>
 <div id="hint" class="gone"></div>
 <button id="act" type="button" hidden></button>
+<div id="seatBar" hidden></div>
+<div class="card" id="toastCard" role="dialog" aria-labelledby="toastTitle" hidden>
+  <h2 id="toastTitle">Raise a toast</h2>
+  <p>What are you thankful for? Everyone at the table hears it, and your bud keeps saying it for the rest of the dinner.</p>
+  <input id="toastIn" type="text" maxlength="60" enterkeyhint="done" aria-label="What you are thankful for" placeholder="I’m thankful for…">
+  <div class="row"><button class="btn" id="toastCancel" type="button">Not now</button><button class="btn primary" id="toastSay" type="button">Say it</button></div>
+</div>
 <div id="stick" hidden><i></i></div>
 <form id="chat" hidden autocomplete="off">
   <div id="chips"></div>
@@ -727,16 +738,61 @@ function dinnerTick(dt) {
     const d = Math.hypot(me.x - dinner.seat.x, me.z - dinner.seat.z);
     if (d > 5) dinner.sat = false; else if (d < 0.7 && !walkTo && me.moving < 0.05) { let t = Math.PI - me.heading; while (t > Math.PI) t -= Math.PI * 2; while (t < -Math.PI) t += Math.PI * 2; me.heading += t * Math.min(1, dt * 6); }
   }
+  seatBar();
+  if (dinner.fly) {   // a dish on its way down the table
+    const f = dinner.fly, v = Math.min(1, (f.t += dt) / 0.7), gx = f.g.x, gz = f.g.z + (f.g.heading ? -1.1 : 1.1);
+    f.m.position.set(f.x0 + (gx - f.x0) * v, height(DINNER.x, DINNER.z) + 1.2 + Math.sin(v * Math.PI) * 1.6, f.z0 + (gz - f.z0) * v); f.m.rotation.y += dt * 8;
+    if (v >= 1) { scene.remove(f.m); dinner.fly = null; f.g.vy = 4.6; f.g.y = 0.01; f.g.happyUntil = T + 2.2; say(f.g, pick(['thank you!', 'yesss', 'you’re the best!', 'mmm!!']), 2000); S.play('sparkle', { gain: 0.5 }); }
+  }
   dinner.bulbs.forEach((b, i) => { const s = 1 + 0.12 * Math.sin(T * 3 + i * 1.7); b.scale.set(s, b.scale.y > 1.3 ? s * 1.5 : s, s); });
   if (!close || mode !== 'play' || chat.open) return;
   dinner.next -= dt;
   if (dinner.next < 0) {
     dinner.next = 3.5 + Math.random() * 4.5;
     if (Math.random() < 0.22 && gloam && T > gloam.bubbleUntil) say(gloam, pick(HOSTING), 2800);
-    else if (dinner.guests.length) { const b = pick(dinner.guests); if (T > b.bubbleUntil) { say(b, pick(CHATTER), 2200); b.happyUntil = T + 1.5; } }
+    else if (dinner.guests.length && !dinner.pass) { const b = pick(dinner.guests), mine = dinner.toasts[b.data.id]; if (T > b.bubbleUntil) { if (mine && Math.random() < 0.5) say(b, `i’m thankful for ${mine}`, 3600); else say(b, pick(CHATTER), 2200); b.happyUntil = T + 1.5; } }
   }
 
 }
+/* Things to do once you're sitting down: pass dishes to whoever asks for them, and raise a toast. */
+const DISHES = [['pie', '🥧', '#D9A566'], ['greens', '🥗', '#7FB069'], ['squash', '🎃', '#E8873A'], ['rolls', '🥐', '#E6BE7E'], ['cider', '🫖', '#8FB8D8']];
+Object.assign(dinner, { toasts: {}, pass: null, passed: 0, fly: null, barKey: '' });
+const seated = () => dinner.on && dinner.sat && !!dinner.seat && Math.hypot(me.x - dinner.seat.x, me.z - dinner.seat.z) < 0.9 && area === 'out' && mode === 'play';
+function seatBar() {
+  const bar = $('seatBar'), on = seated() && !chat.open && $('toastCard').hidden, key = !on ? 'off' : dinner.pass ? 'ask:' + dinner.pass.opts.join() : 'menu:' + !!dinner.toasts[myId];
+  if (key === dinner.barKey) return; dinner.barKey = key; bar.textContent = ''; bar.hidden = !on;
+  if (!on) { if (!seated()) dinner.pass = null; return; }
+  const btn = (label, run) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.addEventListener('click', run); bar.append(b); };
+  if (dinner.pass) for (const k of dinner.pass.opts) { const d = DISHES.find((x) => x[0] === k); btn(`${d[1]} ${k}`, () => passDish(k)); }
+  else { btn(dinner.passed ? '🍽️ Pass another' : '🍽️ Pass a dish', askForDish); btn(dinner.toasts[myId] ? '🥂 Change your toast' : '🥂 Raise a toast', openToast); }
+}
+function askForDish() {
+  if (!dinner.guests.length) { say(gloam, '…pass it to whom?', 2200); return; }
+  const g = pick(dinner.guests), want = pick(DISHES)[0], opts = [want, ...DISHES.map((d) => d[0]).filter((k) => k !== want).sort(() => Math.random() - 0.5).slice(0, 2)].sort(() => Math.random() - 0.5);
+  dinner.pass = { g, want, opts }; dinner.next = 6; g.vy = 3.4; g.y = 0.01; say(g, pick([`pass the ${want}, please!`, `could i get the ${want}?`, `${want}! over here!`]), 6000); S.play('pop', { gain: 0.5 });
+}
+function passDish(k) {
+  const p = dinner.pass; if (!p) return;
+  if (k !== p.want) { say(p.g, pick([`that’s… the ${k}.`, `no, the ${p.want}!`, `close! the ${p.want}.`]), 2600); S.play('boing', { gain: 0.4 }); return; }
+  dinner.pass = null; dinner.passed++; dinner.next = 4; S.play('chime', { gain: 0.5 });
+  const col = DISHES.find((d) => d[0] === k)[2], m = ball(0.2, M(col), me.x, 0, me.z, 10); scene.add(m);
+  dinner.fly = { m, t: 0, x0: me.x, z0: me.z, g: p.g }; say(me, pick(['here you go!', 'coming over!', 'catch!']), 1400);
+  if (dinner.passed === 5 && gloam) setTimeout(() => { if (!chat.open) say(gloam, '…you’re useful. have the last roll.', 3200); toast('🍽️ Five dishes passed. Gloam noticed.', 4200); }, 1800);
+}
+function openToast() { walkTo = null; $('toastIn').value = dinner.toasts[myId] || ''; $('toastCard').hidden = false; S.play('pop', { gain: 0.5 }); if (!TOUCH) $('toastIn').focus(); }
+async function sayToast() {
+  const text = $('toastIn').value.replace(/\s+/g, ' ').trim().slice(0, 60); if (!text) return;
+  $('toastCard').hidden = true; $('toastIn').blur();
+  const r = await post({ do: 'toast', text });
+  if (!r.ok) { toast(r.error ? `That didn’t save: ${r.error}.` : 'That didn’t save. Try again in a moment.'); return; }
+  setToasts(r.toasts); say(me, `i’m thankful for ${text}`, 4200); me.vy = 5; me.y = 0.01; me.happyUntil = T + 3; S.play('chime', { gain: 0.6 }); dinner.next = 7;
+  dinner.guests.forEach((b, i) => setTimeout(() => { b.vy = 4.2; b.y = 0.01; b.happyUntil = T + 2; }, 900 + i * 70));
+  dinner.guests.slice(0, 2).forEach((b, i) => setTimeout(() => say(b, ['cheers!!', 'hear, hear!'][i], 2000), 2600 + i * 500));
+  if (gloam) setTimeout(() => { if (!chat.open) say(gloam, /gloam|keeper|you\b/i.test(text) ? '…don’t. …thank you.' : pick(['…hm. good one.', '…i’ll drink to that.', '…well said. eat.']), 3000); }, 4200);
+}
+function setToasts(list) { dinner.toasts = {}; for (const t of list || []) dinner.toasts[t.by] = t.text; }
+$('toastSay').addEventListener('click', sayToast);
+$('toastCancel').addEventListener('click', () => { $('toastCard').hidden = true; });
 // your place at the table: you walk over, and everybody says hello
 function joinDinner() {
   dinner.sat = true; walkTo = { x: dinner.seat.x, z: dinner.seat.z, t: T + 14 }; S.play('chime', { gain: 0.5 });
@@ -745,6 +801,7 @@ function joinDinner() {
   const name = (me.data.nickname || me.data.trueName || 'you').toLowerCase();
   dinner.guests.slice(0, 3).forEach((b, i) => setTimeout(() => say(b, [`${name}!!`, 'you made it!', 'we saved you a seat!'][i], 2200), 700 + i * 650));
   if (gloam) setTimeout(() => { if (!chat.open) say(gloam, '…you’re late. sit.', 2600); }, 2900);
+  setTimeout(() => { if (seated()) toast('Pass a dish to whoever asks, or raise a toast.', 4200); }, 4600);
 }
 
 /* ---------------- the day's finds ---------------- */
@@ -1081,6 +1138,7 @@ addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (!$('findsCard').hidden) { if (e.code === 'Escape' || e.code === 'Enter') $('findsCard').hidden = true; return; }
   if (!$('pageCard').hidden) { if (e.code === 'Escape' || e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); $('pageCard').hidden = true; } return; }
+  if (!$('toastCard').hidden) { if (e.code === 'Escape') $('toastCard').hidden = true; else if (e.code === 'Enter') sayToast(); return; }
   if (!$('shelfCard').hidden) { if (e.code === 'Escape') $('shelfCard').hidden = true; return; }
   if (KEYMAP[e.code]) { keys.add(e.code); walkTo = null; e.preventDefault(); }
   if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyE') && !e.repeat) { e.preventDefault(); doAction(); }
@@ -1388,7 +1446,7 @@ function findAction() {
   if (onPier(me.x, me.z) && me.z > SHORE + 1.6) return { label: 'Sail home', run: sailHome };
   return null;
 }
-function doAction() { if (action && $('findsCard').hidden && $('pageCard').hidden && $('shelfCard').hidden) action.run(); }
+function doAction() { if (action && $('findsCard').hidden && $('pageCard').hidden && $('shelfCard').hidden && $('toastCard').hidden) action.run(); }
 /* The keeper's shelf: see what's on it and who left it, and leave something of your own. */
 function openShelf() {
   walkTo = null; const list = $('shelfList'), grid = $('shelfGrid'); list.textContent = ''; grid.textContent = '';
@@ -1602,7 +1660,7 @@ S.onChange(() => S.ambient(!S.muted)); S.ambient(true);
   buildFinds(away.taken); buildBirds();
   me = await makeBud(world.bud);
   await makeGloam();
-  if (dinnerOn() || params.get('dinner') === '1') await buildDinner(world.guests || []);
+  if (dinnerOn() || params.get('dinner') === '1') { await buildDinner(world.guests || []); setToasts(world.toasts); }
   buildAtmosphere(); placeGloam();
   gloam.mood = away.level >= 2 ? null : 'annoyed';
   setArea('out'); updateFindsPill();

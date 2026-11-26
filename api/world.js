@@ -13,7 +13,7 @@ import { myGames as myPults } from '../lib/bpgame.js';
 import { wearing, grantOnVisit, wardrobeView } from '../lib/wardrobe.js';
 import { inCommon, cleanTags, ensureTags } from '../lib/interests.js';
 import { townFor } from '../lib/townStore.js';
-import { awayView, awayAct, porchOf, gloamShelf } from '../lib/away.js';
+import { awayView, awayAct, porchOf, gloamShelf, dinnerToast, dinnerToasts } from '../lib/away.js';
 import { houseView, houseSet } from '../lib/house.js';
 import { gloamTalk, gloamForget } from '../lib/gloam.js';
 import { dayKey, dinnerOn } from '../js/away.js';
@@ -36,12 +36,13 @@ export async function GET(request) {
       const [budDoc, userDoc] = await Promise.all([refs.bud(me).get(), refs.user(me).get()]);
       const d = budDoc.exists ? budDoc.data() : null, bud = d ? budForWorld(me, d, session.name, true) : null;
       // the one evening everybody is over for dinner (js/away.js dinnerOn): send the other buds too, so they can be at the table
-      let guests;
+      let guests, toasts;
       if (dinnerOn()) {
+        toasts = await dinnerToasts();
         const all = await db().collection('guilds').doc(GUILD_ID).collection('buds').select(...FIELDS).limit(MAX_BUDS).get();
         guests = all.docs.filter((x) => x.id !== me).map((x) => budForWorld(x.id, x.data(), null, false)).filter((b) => b.r.length === 64);
       }
-      return json({ me: { id: me, name: session.name }, bud: bud && bud.r.length === 64 ? bud : null, day: dayKey(), away: awayView(userDoc.exists ? userDoc.get('away') : null), shelf: await gloamShelf(), ...(guests ? { guests } : {}) });
+      return json({ me: { id: me, name: session.name }, bud: bud && bud.r.length === 64 ? bud : null, day: dayKey(), away: awayView(userDoc.exists ? userDoc.get('away') : null), shelf: await gloamShelf(), ...(guests ? { guests, toasts } : {}) });
     }
     // inside someone's home (/house): what's on the walls and shelves
     const house = new URL(request.url).searchParams.get('house');
@@ -217,7 +218,7 @@ export async function POST(request) {
   // something done on Lighthouse Rock: a find picked up, a hello to the keeper
   if (body?.away) {
     try {
-      const r = body.away.do === 'say' ? await gloamTalk(session.id, body.away) : body.away.do === 'forget' ? await gloamForget(session.id) : await awayAct(session.id, body.away);
+      const r = body.away.do === 'say' ? await gloamTalk(session.id, body.away) : body.away.do === 'forget' ? await gloamForget(session.id) : body.away.do === 'toast' ? await dinnerToast(session.id, body.away.text) : await awayAct(session.id, body.away);
       return json(r, r.status || 200);
     } catch (err) { console.error('away failed:', err); return json({ error: 'could not save that' }, 500); }
   }

@@ -49,4 +49,10 @@ let sys = G.system({ ...base, level: 2, shelf: from(1) });
 ok(sys.includes('soup') && !sys.includes('snail shell: ') && !sys.includes('never for ships') && sys.includes('four stories about where buds come from'), 'Gloam is given the memory for what is on the shelf, only that one, and the four theories');
 ok(!G.system({ ...base, level: 2, shelf: [] }).includes('bring these back'), 'an empty shelf brings nothing back');
 ok(G.system({ ...base, level: 2, shelf: from(G.GIVERS_FOR_SECRET) }).includes('never for ships') && !G.system({ ...base, level: 1, shelf: from(G.GIVERS_FOR_SECRET) }).includes('never for ships') && !G.system({ ...base, level: 3, shelf: [...from(1), ...from(1), ...from(1), ...from(1)] }).includes('never for ships'), 'the last secret needs enough different givers and a keeper who has warmed to you');
+// the dinner's toasts (only meaningful on the dinner day; the checks say which side of it we are on)
+if (W.dinnerOn()) {
+  r = await A.dinnerToast(id(1), '  my   friends\u0007 ' + 'x'.repeat(90)); ok(r.ok && r.toasts.length === 1 && r.toasts[0].text.startsWith('my friends x') && r.toasts[0].text.length === 60 && r.toasts[0].bud === 'Mochi', 'a toast is tidied, cut to sixty characters and kept with the bud’s name');
+  await A.dinnerToast(id(2), 'naps'); r = await A.dinnerToast(id(1), 'the pie'); ok(r.toasts.length === 2 && r.toasts.find((t) => t.by === id(1)).text === 'the pie' && (await A.dinnerToasts()).length === 2, 'one toast each: saying another replaces yours');
+  ok((await A.dinnerToast(id(1), '   ')).status === 400, 'an empty toast is turned down');
+} else ok((await A.dinnerToast(id(1), 'pie')).status === 409 && (await A.dinnerToasts()).length === 0, 'after the dinner day, toasts are closed');
 console.log(fails ? `${fails} FAILED` : 'all checks passed');
